@@ -13,6 +13,12 @@ evidence/unpack_ios/
 evidence/*.har
 evidence/login.har
 
+# 逆向工具的缓存（classes.json 12MB / symmap.json 2MB，跑 ios_scan.py 自动重建）
+# 曾经被误提交过，这里钉死。注意 evidence/ios_misc/*.jgb 是 FINDINGS_HAR.md
+# 引用的「加固残留」证据（含 32B 疑似密钥），**不能**一起忽略。
+evidence/ios_misc/classes.json
+evidence/ios_misc/symmap.json
+
 # ---------- 构建产物 ----------
 dist/
 ios/LeapmotorLite/build/
