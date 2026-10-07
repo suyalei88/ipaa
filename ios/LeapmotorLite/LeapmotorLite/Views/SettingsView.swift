@@ -92,6 +92,16 @@ struct SettingsView: View {
                     .foregroundStyle(opPassword.isEmpty ? Color.secondary : Color.lmAccent)
             }
 
+            // 只提示，不拦。官方操作密码一般是 4~6 位，但我们没有权威依据去硬拒，
+            // 更不能像以前那样 prefix(8) 静默截断 —— 静默改用户输入正是这次
+            // 「车控报密码错误」的同类事故（.oneTimeCode 也是悄悄换掉了输入）。
+            if !opPassword.isEmpty, !(4...6).contains(opPassword.count) {
+                Label("官方操作密码一般是 4~6 位，当前 \(opPassword.count) 位，请确认没多输/少输",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(Color.lmWarn)
+            }
+
             if !opPassword.isEmpty {
                 previewBlock
             }
@@ -219,8 +229,13 @@ struct SettingsView: View {
 
     // MARK: - 小工具
 
+    /// 只滤掉非数字，**不截断**。
+    ///
+    /// 以前这里是 `prefix(8)`，会静默吃掉第 9 位之后的输入 —— 和
+    /// `.oneTimeCode` 污染输入是同一类事故：用户看着自己输对了，发出去的却不对。
+    /// 长度上限给个宽松的 16 只是防病态输入，正常密码根本到不了。
     private func sanitize(_ v: String) -> String {
-        String(v.filter(\.isNumber).prefix(8))
+        String(v.filter(\.isNumber).prefix(16))
     }
 
     private func prefix(_ s: String, _ n: Int) -> String {

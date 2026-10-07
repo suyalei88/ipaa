@@ -171,7 +171,7 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `ios/LeapmotorLite/` — SwiftUI 车控 App（17 个 Swift 文件 + Info.plist + Assets.xcassets）
 - `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环）
 - `ios/LeapmotorLite/LeapmotorLite/Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求）
-- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R8，CI 里会跑）
+- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R9，CI 里会跑）
 - `ios/LeapmotorLite/README.md` — 编译 / 使用 / 协议文档
 
 **逆向与分析**
