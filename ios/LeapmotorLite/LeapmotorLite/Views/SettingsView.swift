@@ -176,6 +176,11 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(v.displayName).foregroundStyle(.primary)
                             Text(v.vin).font(.caption).foregroundStyle(.secondary)
+                            // ★ 2026-10-08：`vehicle/list` 本来就返回年款和车型，
+                            //   以前只显示名字和 VIN，等于把已拿到的信息扔了。
+                            Text("\(v.yearText) · \(v.carType ?? "--") · 能力位 \(v.abilityCount)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
                         Spacer()
                         if client.selectedVehicle?.vin == v.vin {
@@ -195,6 +200,27 @@ struct SettingsView: View {
 
     private var featureSection: some View {
         Section("功能") {
+            // ★ 2026-10-08 加：抓包审计发现的一批「官方有、我们没展示」的信息
+            //   （精确版型 / 固件版本 / OTA 日志 / 功能开关表 / 分享记录 /
+            //     29 个 cmdid 全集）集中放在这一页，纯只读。
+            NavigationLink {
+                VehicleProfileView()
+            } label: {
+                // ★ 必须显式包一层 HStack：NavigationLink 的 label 是 ViewBuilder，
+                //   直接并列 Label + Spacer + Text 会变成一个 TupleView，
+                //   在 List 行里的排布不确定。显式 HStack 才稳。
+                HStack {
+                    Label("车辆档案（版型 / 固件 / 功能开关 / 指令全集）",
+                          systemImage: "doc.text.magnifyingglass")
+                    // 未读消息角标 —— 数据来自 msgcenter，在 refreshAll 里顺带拉
+                    if let n = client.noticeCount, let unread = n.unread, unread > 0 {
+                        Spacer(minLength: 8)
+                        Text("\(unread) 条未读")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.lmBad)
+                    }
+                }
+            }
             NavigationLink {
                 LocationView()
             } label: {

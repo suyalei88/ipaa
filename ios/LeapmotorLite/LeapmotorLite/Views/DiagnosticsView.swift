@@ -303,6 +303,29 @@ struct DiagnosticsView: View {
                 Label("探测 官方逆地理编码（3 种参数各试一次）", systemImage: "map.circle")
             }
 
+            // ★ 2026-10-08 加：抓包审计里发现、但之前没接的三个**只读**接口。
+            //   都是 GET / POST 查询，不会动车，所以做成探测没有风险。
+            Divider()
+
+            Button {
+                Task { await probeAppointment161() }
+            } label: {
+                Label("探测 远程预约查询（getappointment, cmdid 161）",
+                      systemImage: "calendar.badge.clock")
+            }
+
+            Button {
+                Task { await probeHealthyCharging() }
+            } label: {
+                Label("探测 健康充电推送开关（queryPushState）", systemImage: "bolt.heart")
+            }
+
+            Button {
+                Task { await probePhoneIP() }
+            } label: {
+                Label("探测 手机侧 IP 归属地（apptec）", systemImage: "iphone.gen3")
+            }
+
             if probeBusy {
                 HStack(spacing: 8) {
                     ProgressView().scaleEffect(0.7)
@@ -325,9 +348,16 @@ struct DiagnosticsView: View {
             Text("官方接口探测（结构未知，试出来的）")
         } footer: {
             Text("""
-            这两个端点的路径是从 IPA 字符串表挖的，参数靠推测，没有抓包样本。
-            探测结果有意义的话（返回了地址或坐标），就把这段发出来，
-            可以把它接成定位页的地址来源，比 Apple 的 CLGeocoder 更贴官方。
+            分两类：
+
+            · 停车位置 / 底盘图 / 逆地理编码 —— 路径是从 IPA 字符串表挖的，
+              参数靠推测，**没有抓包样本**。探测结果有意义的话（返回了地址或坐标），
+              就把这段发出来，可以接成定位页的地址来源，比 Apple 的 CLGeocoder 更贴官方。
+
+            · 预约查询 / 健康充电推送 / 手机 IP 归属地 —— 这三个**有真实抓包样本**
+              （2026-10-08 审计时发现的），路径和参数都是照实写的，所以基本一定成功。
+              其中「手机 IP 归属地」返回的是服务端认为**手机**在哪，和车端坐标是
+              两个独立来源 —— 车端坐标不对劲时，先用它把责任范围缩一缩。
             """)
         }
     }
@@ -540,8 +570,18 @@ struct DiagnosticsView: View {
             Text("未验证 cmdid 探测")
         } footer: {
             Text("""
-            cmdid 130 {"value":"true"|"false"} 在抓包里出现过，但没有任何证据说明它开关的是什么 ——
-            所以它**没有**出现在车控页。想确认它是干什么的，只能自己发一次看车有什么反应。
+            上面这些是**有依据但没样本**的指令，所以它们**没有**出现在车控页：
+
+            · cmdid 130 {"value":"true"|"false"} —— 抓包里出现过，但没有任何证据
+              说明它开关的是什么。
+            · cmdid 230 {"value":"3"} —— 风量 3 档。范围（1~9 档）来自车辆配置接口
+              funcConfig.HVAC.fan，但「3 档」这个 payload 本身没样本。
+            · cmdid 230 {"value":"2","temperature":"24"} —— 温度。字段名 temperature
+              是按 funcConfig.HVAC.temperature **反推**的，最不确定的一条。
+
+            ★ 顺带记一笔：抓包里 cmdid 161 只以「查询」形式出现过
+              （getappointment，见上面「官方接口探测」），从来没有以「下发」出现过，
+              所以它不在这个列表里 —— 我们不会发一个连方法都没见过的指令。
 
             发之前请确保：车停在安全位置、你能直接看到车、周围没人。
             另：这一页的请求同样算「操作密码」的尝试次数，密码错 3 次会被服务端锁 5 分钟。
@@ -623,6 +663,62 @@ struct DiagnosticsView: View {
             out.append("— \(label)\n\(r)")
         }
         probeResult = "GET \(LMEndpoints.Path.regeo)\n" + out.joined(separator: "\n\n")
+    }
+
+    // MARK: - 2026-10-08 抓包审计补上的三个只读探测
+
+    /// `appremotectl/getappointment?carvin=…&cmdid=161`
+    ///
+    /// ★ 为什么值得试：`161` 是 `rightList` 里的一员，但整份抓包里它
+    ///   **只以这个 GET 查询的形式出现过一次**，而且 `data` 是**空串** ——
+    ///   所以我们其实不知道它返回什么。它是只读接口，试一次没风险。
+    private func probeAppointment161() async {
+        probeBusy = true
+        defer { probeBusy = false }
+        let r = await client.probeAppointment(cmdid: 161)
+        probeResult = """
+        GET \(LMEndpoints.Path.appointment)?carvin=<VIN>&cmdid=161
+
+        → 抓包里的原样本是 {"result":0,"code":0,"data":""}（data 是空串）。
+          说明这台车当前没有预约项；也说明它的响应结构我们仍然不知道。
+          161 属于 rightList，但语义未确认（160/161 一组，疑似「预约」相关）。
+
+        \(r)
+        """
+    }
+
+    /// `healthyCharging/queryPushState`（POST form: carvin + deviceId）
+    private func probeHealthyCharging() async {
+        probeBusy = true
+        defer { probeBusy = false }
+        let r = await client.probeHealthyChargingPush()
+        probeResult = """
+        POST \(LMEndpoints.Path.healthyChargingPush)
+             form: carvin=<VIN>&deviceId=<本机 deviceId>
+
+        → 抓包原样本：{"data":{"isPush":false}}
+
+        \(r)
+        """
+    }
+
+    /// `tecHost` 的 `ipAnalysis/getAddressByIp`
+    ///
+    /// ★ 这个对「车在淮南、App 显示合肥」那个问题最有用：
+    ///   它返回的是「服务端认为**手机**在哪」，跟车端坐标是两个独立来源。
+    ///   手机侧对、车端不对 → 责任在车端。
+    private func probePhoneIP() async {
+        probeBusy = true
+        defer { probeBusy = false }
+        let r = await client.probeIpAddress()
+        probeResult = """
+        GET \(LMEndpoints.tecHost)\(LMEndpoints.Path.ipAddress)
+
+        → 抓包原样本：{"data":{"country":"中国","province":"安徽","city":"淮南"}}
+          （响应字段是 errorCode 不是 code）
+
+        \(r)
+        """
     }
 
     private func sendRaw() async {

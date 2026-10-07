@@ -20,7 +20,12 @@ struct ControlPanelView: View {
     /// 由 .lmClock 每 0.5 秒推一次，用来驱动锁定期倒计时
     @State private var now = Date()
 
+    /// ★ 2026-10-08：空调风量档位（1~9）—— 未验证，见 hvacGearCard
+    @State private var hvacGear = 3
+    @State private var gearConfirm = false
+
     private let columns = [GridItem(.adaptive(minimum: 104), spacing: 12)]
+    private let gearColumns = [GridItem(.adaptive(minimum: 46), spacing: 6)]
 
     var body: some View {
         ScrollView {
@@ -30,6 +35,7 @@ struct ControlPanelView: View {
                 }
                 statusBanners
                 actionGrid
+                hvacGearCard
                 bleCard
                 footnote
             }
@@ -198,6 +204,127 @@ struct ControlPanelView: View {
         }
     }
 
+    // MARK: - 空调风量档位（未验证）
+    //
+    // ★ 2026-10-08 加。依据：`vehicle/list` 的 `funcConfig.HVAC.fan` 明确写着
+    //   `min=1 max=9 unit=gear` —— 这台车**支持 1~9 档风量**。
+    //
+    // ⚠️ 但抓包里 cmdid 230 只出现过 `{"value":"0"|"2"|"5"}` 三个样本，
+    //    所以 1~9 档的 payload **没有直接证据**，属于「范围有依据、payload 靠推」。
+    //
+    // 为什么不直接塞进上面那个网格？
+    //   上面每个磁贴都是「有抓包证据」的。把 1~9 档混进去，用户会以为它们
+    //   一样可靠。单独一张卡 + 明确标注 + 单独的确认弹窗，用户才知道自己在试什么。
+    //   （这也是这个项目一贯的做法：130 和 161 至今没进车控页。）
+
+    /// 档位候选：优先用车辆自己上报的范围；拿不到就退回 1...9
+    /// （1...9 就是 `funcConfig.HVAC.fan` 的实测 min/max，不是随手写的）。
+    private var hvacGears: [Int] {
+        if let f = client.selectedVehicle?.hvacFanRange, !f.values.isEmpty {
+            return f.values
+        }
+        return Array(1...9)
+    }
+
+    private var hvacGearCard: some View {
+        VStack(spacing: 10) {
+            SectionHeader(text: "空调风量档位（未验证）")
+            LMCard(padding: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let f = client.selectedVehicle?.hvacFanRange {
+                        HStack(spacing: 6) {
+                            Image(systemName: "fanblades")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.lmAccent)
+                            Text("车辆上报的支持范围：\(f.rangeText)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    LazyVGrid(columns: gearColumns, spacing: 6) {
+                        ForEach(hvacGears, id: \.self) { g in
+                            Button {
+                                hvacGear = g
+                            } label: {
+                                Text("\(g)")
+                                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(g == hvacGear ? Color.white : Color.primary)
+                                    .frame(maxWidth: .infinity, minHeight: 34)
+                                    .background(g == hvacGear ? Color.lmAccent : Color.lmCard,
+                                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .stroke(Color.lmAccent.opacity(g == hvacGear ? 0 : 0.28),
+                                                    lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(pendingAction != nil || client.isControlLocked(at: now))
+                        }
+                    }
+
+                    Button {
+                        gearConfirm = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            if pendingAction == hvacGearKey {
+                                ProgressView().scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                                    .font(.system(size: 13))
+                            }
+                            Text("下发风量 \(hvacGear) 档")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(Color.lmAccent.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(pendingAction != nil || client.isControlLocked(at: now))
+
+                    Text("⚠️ 0 / 2 / 5 三档有抓包证据（在上面「空调」分组里）；"
+                         + "这里 1~9 档的**范围**来自车辆配置接口，"
+                         + "但 `{\"value\":\"N\"}` 这种 payload **没有样本**，可能无效。"
+                         + "指令只改空调状态，不会动车。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .confirmationDialog("确认下发风量 \(hvacGear) 档？",
+                            isPresented: $gearConfirm,
+                            titleVisibility: .visible) {
+            Button("确认执行") { Task { await runGear() } }
+            Button("取消", role: .cancel) { }
+        } message: {
+            Text("cmdid \(LMEndpoints.hvacCmdid)，state "
+                 + "{\"value\":\"\(hvacGear)\"}。\n"
+                 + "风量范围 1~9 来自车辆配置接口，但这个 payload 没有抓包证据 —— "
+                 + "只有 0/2/5 是实测过的。")
+        }
+    }
+
+    /// 给档位下发用的伪 action key（只用于按钮上的 loading 状态，不是 commands 表里的 key）
+    private var hvacGearKey: String { "hvac_gear_\(hvacGear)" }
+
+    private func runGear() async {
+        let key = hvacGearKey
+        let gear = hvacGear
+        pendingAction = key
+        defer { pendingAction = nil }
+        let ok = await client.controlRaw(cmdid: LMEndpoints.hvacCmdid,
+                                         state: LMEndpoints.hvacState(gear: gear),
+                                         label: key)
+        toastIsError = !ok
+        toast = ok ? "风量 \(gear) 档 成功" : (client.lastError ?? "风量 \(gear) 档 失败")
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        toast = nil
+        if ok { try? await client.refreshStatus() }
+    }
+
     // MARK: - 蓝牙钥匙入口
     //
     // 放在动作网格之后：蓝牙钥匙跟「云端下发指令」是两条完全独立的链路
@@ -247,7 +374,9 @@ struct ControlPanelView: View {
 
     private var footnote: some View {
         Text("指令下发后会轮询结果。部分功能需要车辆处于对应状态（例如上电前要先解锁）。"
-             + "同一账号在官方 App 与本 App 之间不要频繁交叉操作。")
+             + "同一账号在官方 App 与本 App 之间不要频繁交叉操作。\n"
+             + "「空调风量档位」那张卡里的 1~9 档是**未验证**的：范围来自车辆配置接口，"
+             + "但 payload 没有抓包证据，试的时候留意车有没有真的响应。")
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)

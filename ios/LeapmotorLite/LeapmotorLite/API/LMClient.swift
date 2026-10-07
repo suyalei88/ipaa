@@ -170,6 +170,27 @@ final class LMClient: ObservableObject {
     /// 车况配置里的隐私开关（privacyGPS = 1 时官方会隐藏位置）
     @Published private(set) var privacyGPS = false
 
+    // MARK: - 车辆档案（★ 2026-10-08 抓包审计补上的数据源）
+
+    /// 车机固件版本 + 最近一次 OTA 更新日志（`fota/getCurrentVersion`）
+    @Published private(set) var fotaVersion: LMFotaVersion?
+    /// 3D 车模钥匙 —— 含**精确版型**（`modelParam.carTypeCode`）和官方分享页
+    @Published private(set) var car3DKey: LM3DKey?
+    /// 模块示意图（胎压 / 直进直出 / 辅助泊车）
+    @Published private(set) var appImages: [LMAppImageModule] = []
+    /// 服务端下发的功能开关表（无感蓝牙 / 雷达 / 3D 主题 …）
+    @Published private(set) var bgConf: LMBgConf?
+    /// 车辆分享列表（含 `rightList` —— 29 个 cmdid 的枚举）
+    @Published private(set) var shareList: LMShareVehicleList?
+    /// 消息未读数（`msgcenter`）
+    @Published private(set) var noticeCount: LMNoticeCount?
+    /// 健康充电推送开关（`healthyCharging/queryPushState`）
+    @Published private(set) var healthyChargingPush: Bool?
+    /// 手机侧 IP 归属地文本，例如 `安徽 淮南`（`tecHost` 的 ipAnalysis）
+    @Published private(set) var ipAddressText: String?
+    /// 车辆档案里各个接口的加载情况（哪几个成功、哪几个失败），供页面提示用
+    @Published private(set) var profileLoadLog: [String] = []
+
     // ★ 为什么是「带默认参数的方法」而不是「无参计算属性」：
     //   SwiftUI 不会因为 `Date()` 变了就重绘。如果写成无参计算属性，它只在
     //   `controlLockedUntil` 变化时重新求值 —— 倒计时会永远停在 "300 秒"，
@@ -809,6 +830,189 @@ final class LMClient: ObservableObject {
         }
     }
 
+    // MARK: - 车辆档案（★ 2026-10-08 抓包审计补上的数据源）
+    //
+    // 下面这几个接口都是「审计抓包时发现、但之前没接」的。
+    // 它们的共同点：**有真实抓包样本**，所以路径/参数/响应结构都是照实写的，
+    // 不像 `parking` / `ccc/*` 那组要靠探测。
+    //
+    // 数据基本都是静态的（版型、固件版本、功能开关表），所以只在进入
+    // 「车辆档案」页时拉一次，**不进** `refreshAll` 的轮询路径。
+
+    /// 设备系统版本，形如 `26.4.1`（用于 `osVersion` 参数）
+    private var osVersionText: String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+    }
+
+    /// 设备机型标识，形如 `iPhone16,1`（用于 `manufacture` 参数）
+    private var deviceModelText: String {
+        var info = utsname()
+        uname(&info)
+        let machine = withUnsafeBytes(of: &info.machine) { raw -> String in
+            let bytes = raw.prefix { $0 != 0 }
+            return String(bytes: bytes, encoding: .utf8) ?? "iPhone"
+        }
+        return machine.isEmpty ? "iPhone" : machine
+    }
+
+    /// 一次性拉齐「车辆档案」页要的全部数据。
+    ///
+    /// ★ 设计原则：**每个接口单独兜错**。
+    ///   这 5 个接口里任何一个失败（比如 `sharecar` 在没有分享记录时
+    ///   可能返回别的结构），都不该让整个页面空白 ——
+    ///   能拿到几个就显示几个，成功/失败写进 `profileLoadLog` 给用户看。
+    ///   这和 `refreshAll` 里「配置类接口单独兜错」是同一个思路。
+    func refreshVehicleProfile() async {
+        guard let v = selectedVehicle else { return }
+        var log: [String] = []
+
+        // 1) 3D 车模钥匙 —— 精确版型（carTypeCode）只有这里才有
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.car3dKey,
+                                        params: ["vin": v.vin, "osVersion": osVersionText])
+            car3DKey = try? decode(LMEnvelope<LM3DKey>.self, from: any).data
+            log.append(car3DKey == nil ? "3D 车模：响应为空" : "3D 车模：OK")
+        } catch {
+            log.append("3D 车模：失败（\(error.localizedDescription)）")
+        }
+
+        // 2) 固件版本 + 最近一次 OTA 的完整更新日志
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.fotaVersion,
+                                        params: ["vin": v.vin])
+            fotaVersion = try? decode(LMEnvelope<LMFotaVersion>.self, from: any).data
+            log.append(fotaVersion == nil ? "OTA 版本：响应为空" : "OTA 版本：OK")
+        } catch {
+            log.append("OTA 版本：失败（\(error.localizedDescription)）")
+        }
+
+        // 3) 模块示意图
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.appImage,
+                                        params: ["vin": v.vin])
+            appImages = (try? decode(LMEnvelope<[LMAppImageModule]>.self, from: any).data) ?? []
+            log.append("模块示意图：\(appImages.count) 个")
+        } catch {
+            log.append("模块示意图：失败（\(error.localizedDescription)）")
+        }
+
+        // 4) 功能开关表
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.bgConf,
+                                        params: ["vin": v.vin,
+                                                 "osType": config.deviceType,
+                                                 "osVersion": osVersionText,
+                                                 "sdkVersion": config.subversion,
+                                                 "manufacture": deviceModelText])
+            bgConf = try? decode(LMEnvelope<LMBgConf>.self, from: any).data
+            log.append(bgConf == nil ? "功能开关：响应为空" : "功能开关：OK")
+        } catch {
+            log.append("功能开关：失败（\(error.localizedDescription)）")
+        }
+
+        // 5) 分享列表 —— `rightList`（29 个 cmdid）就在这里
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.shareList,
+                                        params: ["vin": v.vin])
+            shareList = try? decode(LMEnvelope<LMShareVehicleList>.self, from: any).data
+            log.append("分享记录：\(shareList?.carShareInfoList?.count ?? 0) 条")
+        } catch {
+            log.append("分享记录：失败（\(error.localizedDescription)）")
+        }
+
+        profileLoadLog = log
+    }
+
+    /// 消息未读数。
+    ///
+    /// ⚠️ 这个响应**只有 `result` 没有 `code`**，跟主网关不一样；
+    ///    好在 `LMEnvelope.code` 是 optional，`send()` 里那套
+    ///    「code != 0 就抛错」不会误伤它。
+    func refreshNoticeCount() async throws {
+        let now = Date()
+        let begin = now.addingTimeInterval(-180 * 24 * 3600)
+        let any = try await request(method: "GET",
+                                    path: LMEndpoints.Path.noticeCount,
+                                    host: LMEndpoints.msgCenterHost,
+                                    params: [
+                                        "begintime": String(Int(begin.timeIntervalSince1970 * 1000)),
+                                        "endtime": String(Int(now.timeIntervalSince1970 * 1000)),
+                                    ])
+        noticeCount = try? decode(LMEnvelope<LMNoticeCount>.self, from: any).data
+    }
+
+    /// 健康充电推送开关查询（`POST` form: `carvin` + `deviceId`）。只读，不抛错。
+    @discardableResult
+    func probeHealthyChargingPush() async -> String {
+        guard let vin = selectedVehicle?.vin else { return "未选车" }
+        do {
+            let any = try await request(method: "POST",
+                                        path: LMEndpoints.Path.healthyChargingPush,
+                                        form: ["carvin": vin, "deviceId": config.deviceId])
+            let env = try? decode(LMEnvelope<LMHealthyChargingPush>.self, from: any)
+            healthyChargingPush = env?.data?.isPush
+            if let p = healthyChargingPush {
+                return "健康充电推送：\(p ? "已开启" : "未开启")"
+            }
+            return prettyJSON(any)
+        } catch {
+            return "失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// 远程预约查询（`appremotectl/getappointment`，实测 `cmdid=161`）。
+    ///
+    /// ★ 2026-10-08 抓包审计补上：`161` 是 `rightList` 里的一员，但在整份
+    ///   抓包里**只以这个 GET 查询的形式出现过一次**，而且 `data` 是**空串** ——
+    ///   所以它的响应结构我们其实**不知道**，也不能确定它就是
+    ///   「预约空调 / 预约充电」的查询。
+    ///
+    /// 它是**只读**接口，所以放心做成探测：把原始响应原样显示出来，
+    /// 有内容就能看出来，没内容也不会动到车。
+    @discardableResult
+    func probeAppointment(cmdid: Int = 161) async -> String {
+        guard let vin = selectedVehicle?.vin else { return "未选车" }
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.appointment,
+                                        params: ["carvin": vin, "cmdid": String(cmdid)])
+            return prettyJSON(any)
+        } catch {
+            return "失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// 手机侧 IP 归属地（`tecHost` 的 `ipAnalysis/getAddressByIp`）。
+    ///
+    /// ★ 为什么值得接：它和车端坐标是两个**完全独立**的来源。
+    ///   实测手机侧 = 安徽 淮南（正确），车端坐标 = 合肥 —— 一对照就能把
+    ///   「定位不对」的责任范围缩到车端。见 LMModels.swift 的 `LMIPAddress`。
+    ///
+    /// ⚠️ 响应字段是 `errorCode` 而不是 `code`，所以走 `LMIPAddressEnvelope`
+    ///    自己解，不套 `LMEnvelope`。
+    @discardableResult
+    func probeIpAddress() async -> String {
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.ipAddress,
+                                        host: LMEndpoints.tecHost)
+            let env = try? decode(LMIPAddressEnvelope.self, from: any)
+            if let d = env?.data, !d.text.isEmpty {
+                ipAddressText = d.text
+                return "手机侧 IP 归属地：\(d.text)"
+            }
+            return prettyJSON(any)
+        } catch {
+            return "失败：\(error.localizedDescription)"
+        }
+    }
+
     func refreshAll() async {
         do {
             if vehicles.isEmpty { _ = try await loadVehicles() }
@@ -820,6 +1024,8 @@ final class LMClient: ObservableObject {
         }
         // 配置类接口单独兜错：它挂了不该让整个「刷新车况」显示失败
         try? await refreshCommonConfig()
+        // 消息未读数同理 —— 它是锦上添花，失败了不该影响车况
+        try? await refreshNoticeCount()
     }
 
     // MARK: - 蓝牙钥匙
