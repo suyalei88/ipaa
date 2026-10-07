@@ -1,0 +1,371 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		431DDD8770EA552864506B9B /* LMAES.swift in Sources */ = {isa = PBXBuildFile; fileRef = DECFBDD7C8E7A8BF06D895DC /* LMAES.swift */; };
+		43A8947F5769514899CBB511 /* LMHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D2E248EFC739555D286E4DC /* LMHash.swift */; };
+		99B0F85D7E8BB391F24625E7 /* LMRSA.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67F57E28C9A943DAA774356D /* LMRSA.swift */; };
+		4A9EB9E02136315828B92F47 /* LMSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8E8597BBF55A9A5D757419 /* LMSelfTest.swift */; };
+		8195B78798F3346B820ACE08 /* LMSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBD917AC22C24562168AC9DD /* LMSigner.swift */; };
+		97C4CD79605E57FFF1489338 /* LMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D7FAE5111E07ED84CAB5DEA /* LMClient.swift */; };
+		FCCFEA529BB8AF8F506713A9 /* LMEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 526F4AF88AD65B2AA7EC6894 /* LMEndpoints.swift */; };
+		A5EB8150E93165961AADF3BA /* LMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AF9788C8C65178ADC0B9968 /* LMModels.swift */; };
+		D349622BB27C4BC49A2AB8E4 /* LMSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E46160DBFCB7CF96FF25C7 /* LMSessionStore.swift */; };
+		147754A735CDF9CC109CF664 /* ControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D73CF31005539C1C16CC4BC0 /* ControlPanelView.swift */; };
+		1A6C0A1907BFF0D999541487 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA8839B5D92AF356DA3E3772 /* DashboardView.swift */; };
+		CFA14A1F263488FDAAA44FEB /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F74F9AB52A32C95642475E0B /* LoginView.swift */; };
+		3714E809EA5913572BB63871 /* SelfTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5855BD847CBBC1C0C48546 /* SelfTestView.swift */; };
+		F8AEA72856FAF00DC6B4C9B1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31435B0064E63C981A9754A8 /* SettingsView.swift */; };
+		AD7D1D4EEC7C579D1396E3C3 /* LeapmotorLiteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */; };
+		48473DF59511BE9D55AE6216 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		500C8EDC27AEFDD750931F18 /* LeapmotorLite.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LeapmotorLite.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DECFBDD7C8E7A8BF06D895DC /* LMAES.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMAES.swift; sourceTree = "<group>"; };
+		6D2E248EFC739555D286E4DC /* LMHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMHash.swift; sourceTree = "<group>"; };
+		67F57E28C9A943DAA774356D /* LMRSA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMRSA.swift; sourceTree = "<group>"; };
+		8A8E8597BBF55A9A5D757419 /* LMSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSelfTest.swift; sourceTree = "<group>"; };
+		CBD917AC22C24562168AC9DD /* LMSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSigner.swift; sourceTree = "<group>"; };
+		1D7FAE5111E07ED84CAB5DEA /* LMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMClient.swift; sourceTree = "<group>"; };
+		526F4AF88AD65B2AA7EC6894 /* LMEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMEndpoints.swift; sourceTree = "<group>"; };
+		8AF9788C8C65178ADC0B9968 /* LMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMModels.swift; sourceTree = "<group>"; };
+		F9E46160DBFCB7CF96FF25C7 /* LMSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSessionStore.swift; sourceTree = "<group>"; };
+		D73CF31005539C1C16CC4BC0 /* ControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelView.swift; sourceTree = "<group>"; };
+		CA8839B5D92AF356DA3E3772 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		F74F9AB52A32C95642475E0B /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		6F5855BD847CBBC1C0C48546 /* SelfTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfTestView.swift; sourceTree = "<group>"; };
+		31435B0064E63C981A9754A8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeapmotorLiteApp.swift; sourceTree = "<group>"; };
+		1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8AE43D51CDFC2B26D297A33E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		96499682E706E1F7FAFB7A67 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8EBE4E436EB02F4B29C17C88 = {
+			isa = PBXGroup;
+			children = (
+				FAD9564EDFCB7E4AA046E8DF /* LeapmotorLite */,
+				D7EEDE036F63FAE35325BE64 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D7EEDE036F63FAE35325BE64 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				500C8EDC27AEFDD750931F18 /* LeapmotorLite.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FAD9564EDFCB7E4AA046E8DF /* LeapmotorLite */ = {
+			isa = PBXGroup;
+			children = (
+				4EBB3F0B5061532FFAABC0AF /* Crypto */,
+				AE2A4A41186ED8DD7576F55D /* API */,
+				455A1775BB2985D385F39223 /* Store */,
+				D154BF9AE96ED6D023BE10B6 /* Views */,
+				57237621A0BE1CD5D3D4F0EE /* Support */,
+				1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */,
+				503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */,
+			);
+			path = LeapmotorLite;
+			sourceTree = "<group>";
+		};
+		4EBB3F0B5061532FFAABC0AF /* Crypto */ = {
+			isa = PBXGroup;
+			children = (
+				DECFBDD7C8E7A8BF06D895DC /* LMAES.swift */,
+				6D2E248EFC739555D286E4DC /* LMHash.swift */,
+				67F57E28C9A943DAA774356D /* LMRSA.swift */,
+				8A8E8597BBF55A9A5D757419 /* LMSelfTest.swift */,
+				CBD917AC22C24562168AC9DD /* LMSigner.swift */,
+			);
+			path = Crypto;
+			sourceTree = "<group>";
+		};
+		AE2A4A41186ED8DD7576F55D /* API */ = {
+			isa = PBXGroup;
+			children = (
+				1D7FAE5111E07ED84CAB5DEA /* LMClient.swift */,
+				526F4AF88AD65B2AA7EC6894 /* LMEndpoints.swift */,
+				8AF9788C8C65178ADC0B9968 /* LMModels.swift */,
+			);
+			path = API;
+			sourceTree = "<group>";
+		};
+		455A1775BB2985D385F39223 /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				F9E46160DBFCB7CF96FF25C7 /* LMSessionStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+		D154BF9AE96ED6D023BE10B6 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				D73CF31005539C1C16CC4BC0 /* ControlPanelView.swift */,
+				CA8839B5D92AF356DA3E3772 /* DashboardView.swift */,
+				F74F9AB52A32C95642475E0B /* LoginView.swift */,
+				6F5855BD847CBBC1C0C48546 /* SelfTestView.swift */,
+				31435B0064E63C981A9754A8 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		57237621A0BE1CD5D3D4F0EE /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				8AE43D51CDFC2B26D297A33E /* Info.plist */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B2F65123D784A7AC5A2356A1 /* LeapmotorLite */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 46E918C801C3F80FB4CE477C /* Build configuration list for PBXNativeTarget "LeapmotorLite" */;
+			buildPhases = (
+				D02A80A1A0C164F74553DA25 /* Sources */,
+				96499682E706E1F7FAFB7A67 /* Frameworks */,
+				E98A74DC2EE3701514919F64 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LeapmotorLite;
+			productName = LeapmotorLite;
+			productReference = 500C8EDC27AEFDD750931F18 /* LeapmotorLite.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		82A94B4421FD82FF334E2209 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					B2F65123D784A7AC5A2356A1 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 0C96E37999EA70367499E545 /* Build configuration list for PBXProject "LeapmotorLite" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = 8EBE4E436EB02F4B29C17C88;
+			productRefGroup = D7EEDE036F63FAE35325BE64 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				B2F65123D784A7AC5A2356A1 /* LeapmotorLite */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E98A74DC2EE3701514919F64 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				48473DF59511BE9D55AE6216 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D02A80A1A0C164F74553DA25 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				431DDD8770EA552864506B9B /* LMAES.swift in Sources */,
+				43A8947F5769514899CBB511 /* LMHash.swift in Sources */,
+				99B0F85D7E8BB391F24625E7 /* LMRSA.swift in Sources */,
+				4A9EB9E02136315828B92F47 /* LMSelfTest.swift in Sources */,
+				8195B78798F3346B820ACE08 /* LMSigner.swift in Sources */,
+				97C4CD79605E57FFF1489338 /* LMClient.swift in Sources */,
+				FCCFEA529BB8AF8F506713A9 /* LMEndpoints.swift in Sources */,
+				A5EB8150E93165961AADF3BA /* LMModels.swift in Sources */,
+				D349622BB27C4BC49A2AB8E4 /* LMSessionStore.swift in Sources */,
+				147754A735CDF9CC109CF664 /* ControlPanelView.swift in Sources */,
+				1A6C0A1907BFF0D999541487 /* DashboardView.swift in Sources */,
+				CFA14A1F263488FDAAA44FEB /* LoginView.swift in Sources */,
+				3714E809EA5913572BB63871 /* SelfTestView.swift in Sources */,
+				F8AEA72856FAF00DC6B4C9B1 /* SettingsView.swift in Sources */,
+				AD7D1D4EEC7C579D1396E3C3 /* LeapmotorLiteApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		4974A59312D52E96D4D45407 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		BC334A15E0491686E61AC5B0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		479C49C37591280EF446C442 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LeapmotorLite/Support/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.leapmotorlite;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0E19207DC7F4A1622D0A2E6C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LeapmotorLite/Support/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.leapmotorlite;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0C96E37999EA70367499E545 /* Build configuration list for PBXProject "LeapmotorLite" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4974A59312D52E96D4D45407 /* Debug */,
+				BC334A15E0491686E61AC5B0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		46E918C801C3F80FB4CE477C /* Build configuration list for PBXNativeTarget "LeapmotorLite" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				479C49C37591280EF446C442 /* Debug */,
+				0E19207DC7F4A1622D0A2E6C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 82A94B4421FD82FF334E2209 /* Project object */;
+}

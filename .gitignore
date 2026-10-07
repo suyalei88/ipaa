@@ -1,0 +1,45 @@
+# ============================================================
+#  零跑轻控 · 仓库忽略规则
+# ============================================================
+
+# ---------- 原始素材（超大，GitHub 单文件上限 100MB，不要进仓库）----------
+# 这些是逆向用的原始 APK / IPA / 解包产物，需要时本地保留即可
+evidence/leapmotor.apk
+evidence/leapmotor.ipa
+evidence/unpack/
+evidence/unpack_ios/
+
+# 抓包 HAR（单文件最大 2.9MB，可留可删；默认不进仓库，避免泄露个人信息）
+evidence/*.har
+evidence/login.har
+
+# ---------- 构建产物 ----------
+dist/
+ios/LeapmotorLite/build/
+*.ipa
+*.app/
+*.dSYM/
+DerivedData/
+build/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---------- 工具 / 系统 ----------
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# ---------- 敏感信息（登录态！绝对不要提交）----------
+evidence/session.json
+**/session.json
+*.secrets
+.env
+.env.*

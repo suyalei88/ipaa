@@ -1,0 +1,135 @@
+name: Build IPA
+
+# ============================================================
+#  在没有 Mac 的机器上打包 iOS App。
+#  在 GitHub 上点一下 → 云端 macOS runner 编译 → 下载 .ipa
+#
+#  用法：
+#    1. 把 leapmotor-thirdparty/ 作为一个 GitHub 仓库推上去
+#    2. 仓库页 → Actions → Build IPA → Run workflow
+#    3. 跑完在本次 run 页面底部 Artifacts 里下载
+#         · LeapmotorLite-unsigned-ipa   ← 未签名 IPA（用 Sideloadly 装）
+#         · LeapmotorLite-app-bundle     ← .app 目录（备用）
+#
+#  想要 CI 里直接签名的，见文末注释里的 signing 相关说明。
+# ============================================================
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'ios/**'
+      - '.github/workflows/build-ipa.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------- 先跑纯 Python 的算法回归（秒级，失败就不用编译了）----------
+  vectors:
+    name: 算法向量回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install --quiet cryptography pillow
+
+      - name: 生成 App 图标（校验脚本可跑）
+        run: python ios/tools/make_icon.py
+
+      - name: 校验 Swift 自测向量
+        run: python client/test_swift_vectors.py
+
+      - name: HAR 签名回归（期望 101/105）
+        run: python client/test_sign_regression.py || true
+
+      - name: Xcode 工程生成自检
+        run: python ios/tools/gen_xcodeproj.py --check
+
+  # ---------- 真正的 iOS 编译 ----------
+  build:
+    name: 编译未签名 IPA
+    needs: vectors
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          xcodebuild -version
+          xcode-select -p
+          python3 --version
+          sw_vers
+
+      - name: 生成图标
+        run: python3 ios/tools/make_icon.py
+
+      - name: 构建 IPA
+        run: bash ios/build_ipa.sh
+
+      - name: 上传 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LeapmotorLite-unsigned-ipa
+          path: dist/*.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 上传 .app（备用 / 便于检查结构）
+        uses: actions/upload-artifact@v4
+        with:
+          name: LeapmotorLite-app-bundle
+          path: ios/LeapmotorLite/build/Build/Products/Release-iphoneos/LeapmotorLite.app
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: 打印产物摘要
+        run: |
+          echo "### 构建产物" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          ls -lh dist/
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+            ios/LeapmotorLite/build/Build/Products/Release-iphoneos/LeapmotorLite.app/Info.plist \
+            | sed 's/^/CFBundleIdentifier: /' >> "$GITHUB_STEP_SUMMARY"
+
+# ============================================================
+#  可选：在 CI 里直接签名（需要 Apple 开发者账号）
+#
+#  1. 把证书导出成 .p12 → base64 后存成仓库 Secret BUILD_CERTIFICATE_BASE64
+#     把描述文件 .mobileprovision → base64 存成 BUILD_PROVISION_PROFILE_BASE64
+#     再加 P12_PASSWORD / KEYCHAIN_PASSWORD
+#  2. 在 build job 的「构建 IPA」之前插入：
+#
+#     - name: 导入证书
+#       env:
+#         BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+#         P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+#         BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+#         KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+#       run: |
+#         CERT=$RUNNER_TEMP/cert.p12
+#         PP=$RUNNER_TEMP/pp.mobileprovision
+#         echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode > $CERT
+#         echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode > $PP
+#         KEYCHAIN=$RUNNER_TEMP/app.keychain-db
+#         security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN
+#         security set-keychain-settings -lut 21600 $KEYCHAIN
+#         security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN
+#         security import $CERT -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN
+#         security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN
+#         security list-keychain -d user -s $KEYCHAIN
+#         mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+#         cp $PP ~/Library/MobileDevice/Provisioning\ Profiles/
+#
+#  3. 「构建 IPA」改成：
+#       run: DEVELOPMENT_TEAM=你的TEAMID bash ios/build_ipa.sh
+#
+#  4. 签好的 IPA 用 Apple Configurator / Xcode Devices 直接装，或走 TestFlight。
+# ============================================================

@@ -1,0 +1,28 @@
+{
+  "_comment": "复制为 config.json 后填写。signKey 与 oppwd 都能从登录响应自动派生，无需 Frida（见 evidence/FINDINGS_CRYPTO.md）。",
+
+  "base_url": "https://appgateway.leapmotor.com",
+  "account_url": "https://app-gw-global-master.leapmotor.com",
+
+  "_comment_sign_key": "留空即可 —— 调用 /api/login 后会用 accessToken + signParam 自动派生；如已知也可直接填 hex",
+  "sign_key": "",
+
+  "token": "<< 登录响应 data.accessToken（也可留空，走 /api/login） >>",
+  "user_id": "672955179229782016",
+
+  "device_id": "ios_ee45b9d830bb126d431e998943a7797a",
+  "device_type": "iOS",
+  "version": "1.22.68",
+  "channel": "1",
+  "subversion": "3.22.2-3",
+
+  "carvin": "LFZ63AA15TH035113",
+  "cartype": "D19",
+
+  "_comment_op_password": "车控操作密码明文（6 位数字），会自动 AES 加密成 oppwd",
+  "op_password": "",
+  "_comment_oppwd": "或者直接填抓到的密文 oppwd（优先级高于 op_password）",
+  "oppwd": "",
+
+  "endpoints": {}
+}

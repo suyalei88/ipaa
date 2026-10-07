@@ -1,0 +1,806 @@
+{
+ "appgateway.leapmotor.com/carownerservice/v3/api/vehicleinfo/commonConfig": {
+  "n": 55,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/vehicleinfo/commonConfig?vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"data\":{\"isSupportBigModel\":0,\"privacyGPS\":0,\"privacyData\":1,\"parkingAssistConfig\":\"1\",\"vin\":\"LFZ63AA15TH035113\",\"config\":{\"3\":{\"cycles\":\"1,1,1,1,1,1,1\",\"endTime\":\"15:00\",\"percent\":90,\"isEnable\":1,\"recharge\":0,\"beginTim"
+ },
+ "appgateway.leapmotor.com/carownerservice/signal/info/query/distributed": {
+  "n": 5,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/carownerservice/signal/info/query/distributed",
+   "{\"vin\":\"LFZ63AA15TH035113\"}"
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":{\"vin\":\"LFZ63AA15TH035113\",\"collectTime\":1791350721329,\"signalMap\":{\"13481\":0,\"11184\":0,\"16235\":0,\"11183\":0,\"16234\":0,\"16233\":0,\"16232\":0,\"11185\":0,\"1186\":0,\"1182\":25,\"3638\":1"
+ },
+ "lpex-eventtracking.leapmotor.com": {
+  "n": 11,
+  "m": [
+   "CONNECT"
+  ],
+  "req": [
+   "CONNECT",
+   "https://lpex-eventtracking.leapmotor.com",
+   ""
+  ],
+  "resp": ""
+ },
+ "appgateway.leapmotor.com/app/app-signal-service/signal/info/query": {
+  "n": 50,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/app/app-signal-service/signal/info/query",
+   "{\"appVersion\":\"1.22.68\",\"isMainApp\":\"1\",\"osType\":\"iOS\",\"vin\":\"LFZ63AA15TH035113\"}"
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":{\"vin\":\"LFZ63AA15TH035113\",\"collectTime\":1791350716622,\"signalMap\":{\"13481\":0,\"11184\":0,\"16235\":0,\"11183\":0,\"16234\":0,\"16233\":0,\"16232\":0,\"11185\":0,\"1186\":0,\"1182\":25,\"3638\":1"
+ },
+ "appgateway.leapmotor.com/app/app-control-service/v3/api/appremotectl/query": {
+  "n": 38,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/app/app-control-service/v3/api/appremotectl/query?msgID=2740731680",
+   ""
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":1}"
+ },
+ "appgateway.leapmotor.com/app/app-control-service/v3/api/appremotectl": {
+  "n": 19,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/app/app-control-service/v3/api/appremotectl",
+   "carvin=LFZ63AA15TH035113&cmdid=400&oppwd=uHTigfMDS5zIuZX4Gq4NVQ%3D%3D&state=%7B%22operation%22%3A%22on%22%7D"
+  ],
+  "resp": "{\"result\":0,\"data\":\"2740731680\",\"sendtype\":\"0\",\"message\":\"请求成功\",\"timeout\":20,\"code\":0}"
+ },
+ "ueapp-oss-static.leapmotor.com/img/servicelist/icons/20250522/19acdef9fc9f4b13b01cbc7f95f4861f.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20250522/19acdef9fc9f4b13b01cbc7f95f4861f.png",
+   ""
+  ],
+  "resp": "iVBORw0KGgoAAAANSUhEUgAAAFoAAABaCAYAAAA4qEECAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAWqADAAQAAAABAAAAWgAAAABJfIu3AAAKnElEQVR4Ae2cD2xV1R3H20Jpq606pDO0FSjquug2Z1roKDBA"
+ },
+ "ueapp-oss-static.leapmotor.com/img/servicelist/icons/20250522/61e390065a914195915b814fb7b04fe9.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20250522/61e390065a914195915b814fb7b04fe9.png",
+   ""
+  ],
+  "resp": "iVBORw0KGgoAAAANSUhEUgAAAFoAAABaCAYAAAA4qEECAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAWqADAAQAAAABAAAAWgAAAABJfIu3AAAL8UlEQVR4Ae2cfWxWVx3H29IXEHAxvOhoRYizJIL8IW8FgsI2"
+ },
+ "ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231114/cf1b76999047474a95c2a950ffdde65d.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231114/cf1b76999047474a95c2a950ffdde65d.png",
+   ""
+  ],
+  "resp": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAYKADAAQAAAABAAAAYAAAAACpM19OAAAFEUlEQVR4Ae1dS0hUURh2zDJbBApJDYSLoiLKEl8JiruoEFok"
+ },
+ "ueapp-oss-static.leapmotor.com/img/servicelist/icons/20240702/a9838dee639b4f30a2ccbf34bac67063.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20240702/a9838dee639b4f30a2ccbf34bac67063.png",
+   ""
+  ],
+  "resp": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAACBtJREFUeF7tnWtsHcUVx8+ZvbbzMHEkHlZBQIRCW4ISfO/s+toOFZGgCIlABXygvD8A4gPiJRCBFIEBQUCUqqUiAqlIQEBIhJZHKuVD1dYgSGzvTCIiZAgyLxFRiQ/FwRD72nv3cEfZG9bm3uu9vrteh3tW"
+ },
+ "ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231115/4f0093fcf7e14434ab324e6bc129c931.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231115/4f0093fcf7e14434ab324e6bc129c931.png",
+   ""
+  ],
+  "resp": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAYKADAAQAAAABAAAAYAAAAACpM19OAAAJRElEQVR4Ae1dXWwVRRTufwvWUFAgobUPEo0hmiCJaUoVfKCU"
+ },
+ "ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231114/e26bb1ebf9f54d15a3f1e1e582b29bef.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231114/e26bb1ebf9f54d15a3f1e1e582b29bef.png",
+   ""
+  ],
+  "resp": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAYKADAAQAAAABAAAAYAAAAACpM19OAAAPHklEQVR4Ae2de3AV1R3HCUlIUgIIyKOk2oR2mOKLFuQRHpVW"
+ },
+ "ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231114/8cc9de16cc8d47cb90040b29b30a37ef.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231114/8cc9de16cc8d47cb90040b29b30a37ef.png",
+   ""
+  ],
+  "resp": "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAYKADAAQAAAABAAAAYAAAAACpM19OAAAT5UlEQVR4Ae2cCZRWxZXHu9lXtzRGQJRu4pDBRDQge6RBgoII"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/healthyCharging/queryPushState": {
+  "n": 5,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/healthyCharging/queryPushState",
+   "carvin=LFZ63AA15TH035113&deviceId=ios_ee45b9d830bb126d431e998943a7797a"
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":{\"isPush\":false}}"
+ },
+ "lp-resource-pool.leapmotor.cn/lp-picture/servicelist/getUserServiceListAppV2": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://lp-resource-pool.leapmotor.cn/lp-picture/servicelist/getUserServiceListAppV2?userId=672955179229782016&vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"code\":200,\"message\":\"操作成功\",\"data\":{\"carOwnerList\":[{\"id\":-3,\"groupId\":2,\"functionName\":\"维保预约\",\"icon\":\"https://ueapp-oss-static.leapmotor.com/img/servicelist/icons/20231114/8cc9de16cc8d47cb90040b29b30a37ef.png\",\"skipUrl"
+ },
+ "lp-resource-pool.leapmotor.cn": {
+  "n": 3,
+  "m": [
+   "CONNECT"
+  ],
+  "req": [
+   "CONNECT",
+   "https://lp-resource-pool.leapmotor.cn",
+   ""
+  ],
+  "resp": ""
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/chassis/query": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/chassis/query?vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":{\"fileUrl\":\"http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/LFZ63AA15TH035113?Expires=4944944811&OSSAccessKeyId=LTAI4Fmo2WXExVH9PecXNnpy&Signature=L25vvsQnti"
+ },
+ "iov-api.leapmotor.com/file/1.0/vehicle/pointData": {
+  "n": 6,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://iov-api.leapmotor.com/file/1.0/vehicle/pointData?dataName==20261007132501306_LFZ63AA15TH035113_672955179229782016",
+   "CosBCg0xNzkxMzUwNjExOTI3Eg0xNzkxMzUwNjExOTI3GgEzIgbpm7bot5EqA1NESzIFZXJyb3I6A1NES0IVU0RL5ZCv5Yqo6K+35rGC5bCx57uqWiRpb3NfZWU0NWI5ZDgzMGJiMTI2ZDQzMWU5OTg5NDNhNzc5N2FqEjY3Mjk1NTE3OTIyOTc4MjAxNgqGAQoNMTc5MTM1MDYxMjE0OBINMTc5"
+  ],
+  "resp": "{\"code\":20000,\"description\":\"成功\",\"data\":null}"
+ },
+ "appuser.leapmotor.cn": {
+  "n": 3,
+  "m": [
+   "CONNECT"
+  ],
+  "req": [
+   "CONNECT",
+   "https://appuser.leapmotor.cn",
+   ""
+  ],
+  "resp": ""
+ },
+ "msgcenter.leapmotor.cn": {
+  "n": 1,
+  "m": [
+   "CONNECT"
+  ],
+  "req": [
+   "CONNECT",
+   "https://msgcenter.leapmotor.cn",
+   ""
+  ],
+  "resp": ""
+ },
+ "appgateway.leapmotor.com": {
+  "n": 1,
+  "m": [
+   "CONNECT"
+  ],
+  "req": [
+   "CONNECT",
+   "https://appgateway.leapmotor.com",
+   ""
+  ],
+  "resp": ""
+ },
+ "lpau.leapmotor.cn/authenticationcapability/v3/authcap/queryauthinfo": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://lpau.leapmotor.cn/authenticationcapability/v3/authcap/queryauthinfo?accountid=672955179229782016&deviceID=ios_ee45b9d830bb126d431e998943a7797a&nonce=1887666170&signStr=9b6d2e6ef446aab5&timespa",
+   ""
+  ],
+  "resp": "{\"result\":\"200\",\"message\":\"success\",\"data\":{\"id\":1580628,\"accountid\":672955179229782016,\"name\":\"苏胡\",\"idcard\":\"3****************8\",\"nationality\":\"汉\",\"sex\":\"男\",\"birth\":\"19931007\",\"issue\":null,\"starttime\":\"淮南市公安局潘集分局\",\"endt"
+ },
+ "lpau.leapmotor.cn": {
+  "n": 1,
+  "m": [
+   "CONNECT"
+  ],
+  "req": [
+   "CONNECT",
+   "https://lpau.leapmotor.cn",
+   ""
+  ],
+  "resp": ""
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/carpicture/3d/key": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/carpicture/3d/key?osVersion=26.4.1&vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":{\"h5Key\":\"3D-616d34c0-33b8-4a05-a6af-284490d82608\",\"modelVersion\":null,\"modelParam\":{\"carType\":\"D19\",\"selection\":\"null\",\"year\":2026,\"carTypeCode\":\"720智尊版 六座\",\"colorCode\":0,\"ro"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/push/record/unread": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/push/record/unread",
+   ""
+  ],
+  "resp": "<html>\r\n<head><title>503 Service Temporarily Unavailable</title></head>\r\n<body bgcolor=\"white\">\r\n<center><h1>503 Service Temporarily Unavailable</h1></center>\r\n<hr><center>alb</center>\r\n</body>\r\n</html>\r\n"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/drivingrecord/mileage/energy/detail": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/drivingrecord/mileage/energy/detail?vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":{\"totalmileage\":1909,\"deliveryDays\":51}}"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/commoninfo/sync": {
+  "n": 2,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/commoninfo/sync",
+   "type=customSwitch&vin=LFZ63AA15TH035113"
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":{\"list\":[]}}"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/commoninfo/getBgConf": {
+  "n": 3,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/commoninfo/getBgConf?manufacture=iPhone15Pro&osType=iOS&osVersion=26.4.1&sdkVersion=3.22.2-3&vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":{\"ble_restoreWakeup\":true,\"isSupportRadars\":false,\"token_retryRequesy\":false,\"shareWhiteList\":false,\"isSupportSuspendRecovery\":true,\"preWakeupByBle\":false,\"threeDTheme\":true,\"log_uploadAll\":fa"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/appImage/getAppImage": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/appImage/getAppImage?vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":[{\"moduleId\":1,\"moduleName\":\"胎压\",\"subModule\":[{\"subModuleId\":1,\"subModuleName\":\"胎压\",\"image\":\"https://lp-carnet.oss-cn-hangzhou.aliyuncs.com/app/Image/3f4de355-5846-4b26-9079-9"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/bluetoothkey/combine/syncBluetoothKeys": {
+  "n": 2,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/bluetoothkey/combine/syncBluetoothKeys",
+   "vin=LFZ63AA15TH035113"
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":{\"bluetoothKey\":{\"vin\":\"LFZ63AA15TH035113\",\"ecdhPublicKey\":\"-----BEGIN CERTIFICATE-----\\nMIICVTCCAfqgAwIBAgIIAgEAAAAUfYcwCgYIKoEcz1UBg3UwcTELMAkGA1UEBhMC\\nY24xETAPBgNVBAgMCHpoZWppYW5nMREwDwYDV"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/fingervein/updateregistrationId": {
+  "n": 2,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/fingervein/updateregistrationId",
+   "registrationId=2a725bc904644a0da1b089347318bcee&systemType=ios"
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":null}"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/appdevice/updateDeviceInfo": {
+  "n": 2,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/appdevice/updateDeviceInfo",
+   "appversion=1.22.68&model=iPhone%2015%20Pro&osType=iOS&sdkversion=3.22.2-3&version=26.4.1"
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":null}"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/sharecar/getacceptmsg": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/sharecar/getacceptmsg",
+   ""
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":[]}"
+ },
+ "appgateway.leapmotor.com/carownerservice/v3/api/sharecar/getsharemsg": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appgateway.leapmotor.com/carownerservice/v3/api/sharecar/getsharemsg",
+   ""
+  ],
+  "resp": "{\"result\":0,\"code\":0,\"data\":[]}"
+ },
+ "app-gw-global-master.leapmotor.com/app/app-global-service/v1/vehicle/getCarRoute": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://app-gw-global-master.leapmotor.com/app/app-global-service/v1/vehicle/getCarRoute?vin=LFZ63AA15TH035113",
+   ""
+  ],
+  "resp": "{\"code\":0,\"message\":\"SUCCESS\",\"data\":{\"regionCode\":\"central-origin\",\"appCenter\":\"https://appgateway.leapmotor.com\",\"profileId\":1,\"vin\":\"LFZ63AA15TH035113\",\"appCenterFile\":\"https://iov-api.leapmotor.com\",\"appRegion\":\"http"
+ },
+ "app-gw-global-master.leapmotor.com/app/app-global-service/v3/api/commoninfo/transparent/conf": {
+  "n": 2,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://app-gw-global-master.leapmotor.com/app/app-global-service/v3/api/commoninfo/transparent/conf",
+   "deviceID=ios_ee45b9d830bb126d431e998943a7797a&vin=LFZ63AA15TH035113"
+  ],
+  "resp": "{\"code\":0,\"message\":\"SUCCESS\",\"data\":\"{\\\"bleKeyUnlock\\\":true,\\\"bleKeySwitch\\\":true,\\\"bleKeyLock\\\":true,\\\"bleKeyBtn\\\":true}\"}"
+ },
+ "app-gw-global-master.leapmotor.com/app/app-global-service/v3/api/bluetoothkey/anchor/point/params/simplify": {
+  "n": 2,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://app-gw-global-master.leapmotor.com/app/app-global-service/v3/api/bluetoothkey/anchor/point/params/simplify",
+   "manufacture=iphone&model=iPhone15Pro&vin=LFZ63AA15TH035113"
+  ],
+  "resp": "{\"result\":0,\"data\":{\"userParams\":null,\"recommendedParams\":\"54;1.80;04;12\",\"mac\":\"006037D942C2\",\"bleVersion\":\"5.0\"}}"
+ },
+ "app-gw-global-master.leapmotor.com/app/app-global-service/v1/vehicle/list": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://app-gw-global-master.leapmotor.com/app/app-global-service/v1/vehicle/list",
+   ""
+  ],
+  "resp": "{\"code\":0,\"result\":0,\"message\":\"请求成功\",\"data\":{\"sharedcars\":[],\"bindcars\":[{\"allocationCode\":14,\"carAlias\":\"D19\",\"outColor\":\"black\",\"year\":2026,\"vinNickname\":\"D19\",\"plateNumber\":\"LFZ63AA15TH035113\",\"carConfigEdition\":\"\",\""
+ },
+ "ueapp-oss-static.leapmotor.com/img/manage/love_car/20260727/7c0aba4a700044ddb3a6c05727f3ef02.jpg": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/manage/love_car/20260727/7c0aba4a700044ddb3a6c05727f3ef02.jpg?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAATZtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAABAAAAImlsb2MAAAAAREAAAQABAAAAAAFaAAEAAAAAAABEUQAAACNpaW5mAAAAAAABAAAAFWluZmUCAAAAAAEAAGh2YzEAAAAAtmlwcnAA"
+ },
+ "ueapp-oss-static.leapmotor.com/img/manage/love_car/20260727/d988346097f6443cb6bd9f1d24e4a1d4.jpg": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/manage/love_car/20260727/d988346097f6443cb6bd9f1d24e4a1d4.jpg?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAATVtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAABAAAAImlsb2MAAAAAREAAAQABAAAAAAFZAAEAAAAAAAAbZgAAACNpaW5mAAAAAAABAAAAFWluZmUCAAAAAAEAAGh2YzEAAAAAtWlwcnAA"
+ },
+ "ueapp-oss-static.leapmotor.com/img/manage/love_car/20261001/7ed8835563cc44968cb6767301ef8b0e.jpg": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/manage/love_car/20261001/7ed8835563cc44968cb6767301ef8b0e.jpg?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWljAAABdG1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAHBpY3QAAAAAAAAAAAAAAAAAAAAADnBpdG0AAAAAAAEAAAAiaWxvYwAAAABEQAABAAEAAAAAAZQAAQAAAAAAAPs0AAAAI2lpbmYAAAAAAAEAAAAVaW5mZQIAAAAAAQAAaHZjMQAAAAD0aXBycAAAANRp"
+ },
+ "ueapp-oss-static.leapmotor.com/img/user_level_logo/lv_icon_0%402x.png": {
+  "n": 3,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/user_level_logo/lv_icon_0%402x.png?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAmxtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAABAAAANGlsb2MAAAAAREAAAgABAAAAAAKQAAEAAAAAAAACHgACAAAAAASuAAEAAAAAAAABjAAAADhpaW5mAAAAAAACAAAAFWluZmUCAAAA"
+ },
+ "ueapp-oss-static.leapmotor.com/img/usecar/car/20250425/1a6bd12a3dac40ef96fb27dd7258b247.png": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/usecar/car/20250425/1a6bd12a3dac40ef96fb27dd7258b247.png?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAkNtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAABAAAANGlsb2MAAAAAREAAAgABAAAAAAJnAAEAAAAAAAAA4gACAAAAAANJAAEAAAAAAAABoQAAADhpaW5mAAAAAAACAAAAFWluZmUCAAAA"
+ },
+ "apptec.leapmotor.cn/app-community/app-widget/today-hot": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://apptec.leapmotor.cn/app-community/app-widget/today-hot",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":[{\"id\":\"2800248\",\"title\":\"\\uD83D\\uDC49充电桩故障排查无从下手？疑难故障不会报修？几分钟就能学会！\\uD83D\\uDC48 \\uD83E\\uDEA7遇到以下情况，按照图示排查，几分钟轻松解决问题： \\uD83D\\uDC9B黄灯闪6次，黄灯闪4次。 ❤红灯不充电。 \\uD83D\\uDC9A绿灯闪烁几秒后转绿灯常"
+ },
+ "app-gw-global-master.leapmotor.com/base/base-user/account/v1/login": {
+  "n": 2,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://app-gw-global-master.leapmotor.com/base/base-user/account/v1/login",
+   "{\"identifier\":\"672955179229782016\",\"identifierType\":\"1\",\"security\":\"3DD9DF4A2A5F4367B5E63F22A36DF2A13DD9DF4A2A5F4367B5E63F22A36DF2A1\"}"
+  ],
+  "resp": "{\"code\":0,\"message\":\"SUCCESS\",\"data\":{\"accountId\":672955179229782016,\"nickname\":\"笑\",\"accessToken\":\"eyJub25jZSI6ImEyNzEwYjZkNDgwNDQ2ZTlhMjExOGI2YjIzZmQ3MDU3IiwiYWxnIjoiSFMyNTYiLCJ0eXAiOiJKV1QifQ.eyJ1c2VyX25hbWUiOiJhY2NvdW"
+ },
+ "appuser.leapmotor.cn/app-user/applogin/compliance/sendmessagecode": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://appuser.leapmotor.cn/app-user/applogin/compliance/sendmessagecode?phoneNo=vDH5CHNhF0bciDVc1g/oFvvGh9PCVnEdIZ/7UIJI/UnjNfrpC0ATUhmsAwB5eNaUf0Mv2H7t%2B6xgpXVElGGy43faB13Nynyzxut8Afu0Qi3xTaXa9htJ",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":null}"
+ },
+ "store-center.leapmotor.cn/leap-store/storeTab/getAreaStoreBannerServiceTabFrontV2": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://store-center.leapmotor.cn/leap-store/storeTab/getAreaStoreBannerServiceTabFrontV2?cityCode=340400&latitude=32.583950&limit=1&longitude=117.005297&sortType=0&storeType=0",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":{\"recommendType\":1,\"areaInfoVO\":{\"areaId\":1,\"areaName\":\"杭州零跑\",\"areaAbbreviation\":\"杭州\",\"areaHeadImg\":\"https://ueapp.oss-cn-hangzhou.aliyuncs.com/img/region/area/img01.jpg?OSS"
+ },
+ "apptec.leapmotor.com/app-community/appVersionManage/buy-car-support": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://apptec.leapmotor.com/app-community/appVersionManage/buy-car-support?appVersion=1.22.68&client=IOS",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":{\"supportBuyCar\":true,\"noticeTxt\":\"更新App体验最新版本，如继续使用当前版本部分功能将受限\",\"useButtonTxt\":\"继续使用\",\"updateButtonTxt\":\"前往更新\",\"frequency\":0}}"
+ },
+ "ueapp-oss-static.leapmotor.com/img/manage/video_cover/20260924/750bdeda616b4c67bbc9e6a4def2af24.png": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/manage/video_cover/20260924/750bdeda616b4c67bbc9e6a4def2af24.png?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWljAAACcm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAHBpY3QAAAAAAAAAAAAAAAAAAAAADnBpdG0AAAAAAAEAAAA0aWxvYwAAAABEQAACAAEAAAAAApIAAQAAAAAAAHnJAAIAAAAAfFsAAQAAAAAAAACzAAAAOGlpbmYAAAAAAAIAAAAVaW5mZQIAAAAAAQAA"
+ },
+ "msgcenter.leapmotor.cn/msgcenter/v1/noticemsg/selectmsgcount": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://msgcenter.leapmotor.cn/msgcenter/v1/noticemsg/selectmsgcount?begintime=1776220842243&endtime=1791350572991",
+   ""
+  ],
+  "resp": "{\"result\":0,\"message\":\"请求成功\",\"data\":{\"devicetotal\":0,\"total\":0,\"unread\":0,\"usertotal\":0,\"alreadyread\":0}}"
+ },
+ "apptec.leapmotor.cn/appNewInterface/getAppPopupInfo": {
+  "n": 4,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://apptec.leapmotor.cn/appNewInterface/getAppPopupInfo",
+   "appVersion=1.22.68&userId="
+  ],
+  "resp": "{\"message\":\"执行成功!\",\"data\":[],\"errorCode\":\"0\"}"
+ },
+ "apptec.leapmotor.cn/app-community/appThemes/getConfigList": {
+  "n": 4,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://apptec.leapmotor.cn/app-community/appThemes/getConfigList",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":{\"themesConfigList\":null}}"
+ },
+ "apptec.leapmotor.cn/ipAnalysis/getAddressByIp": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://apptec.leapmotor.cn/ipAnalysis/getAddressByIp",
+   ""
+  ],
+  "resp": "{\"message\":\"执行成功!\",\"data\":{\"country\":\"中国\",\"province\":\"安徽\",\"city\":\"淮南\",\"currentTime\":1791350572866},\"errorCode\":\"0\"}"
+ },
+ "apptec.leapmotor.cn/appNewInterface/getAppStartPageInfo": {
+  "n": 4,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://apptec.leapmotor.cn/appNewInterface/getAppStartPageInfo",
+   ""
+  ],
+  "resp": "{\"message\":\"执行成功!\",\"data\":[],\"errorCode\":\"0\"}"
+ },
+ "app-front-gateway.leapmotor.cn/app-club/app/zero-residence/get-entrance": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://app-front-gateway.leapmotor.cn/app-club/app/zero-residence/get-entrance",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":{\"displayEntrance\":true,\"switchToZeroResidence\":true}}"
+ },
+ "mqtt-center.leapmotor.cn/mqtt/token/applyToken": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://mqtt-center.leapmotor.cn/mqtt/token/applyToken?clientId=GID_APP_PROD%40%40%40iOS_370bb4de7b3965167e4e1f299828ff41&deviceId=ios_ee45b9d830bb126d431e998943a7797a&forceRefresh=0&salt=2118854932&s",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":{\"requestId\":\"01A114C6-CAC0-5085-9DB5-8062F829A3FA\",\"token\":\"LzMT+XLFl5s/YWJ/MlDz4t/Lq5HC1iGU1P28HAMaxYxn8aQbALNtml7QZKl9L9kPLKITyKLRyd8r9ka01qMH/+jZwDUSzsd48afURfvnSRrIv3ld"
+ },
+ "apptec.leapmotor.cn/app-community/appColumn/getList": {
+  "n": 2,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://apptec.leapmotor.cn/app-community/appColumn/getList?isNew=true",
+   ""
+  ],
+  "resp": "{\"code\":200,\"success\":true,\"msg\":\"操作成功\",\"data\":[{\"id\":2,\"title\":\"热门\",\"type\":0,\"icon\":\"\",\"iconHeight\":null,\"iconWidth\":null,\"selectImage\":\"\",\"selectImageHeight\":null,\"selectImageWidth\":null,\"unSelectImage\":\"\",\"unSelectIma"
+ },
+ "lpex-eventtracking.leapmotor.com/u/a/v1/74abe59a": {
+  "n": 1,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://lpex-eventtracking.leapmotor.com/u/a/v1/74abe59a",
+   ""
+  ],
+  "resp": ""
+ },
+ "app-gw-global-master.leapmotor.com/app/app-global-service/v3/api/commoninfo/transparent/conf/upload": {
+  "n": 1,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://app-gw-global-master.leapmotor.com/app/app-global-service/v3/api/commoninfo/transparent/conf/upload",
+   "conf=%7B%22bleKeyUnlock%22%3Atrue%2C%22bleKeySwitch%22%3Atrue%2C%22bleKeyLock%22%3Atrue%2C%22bleKeyBtn%22%3Atrue%7D&deviceID=ios_ee45b9d830bb126d431e998943a7797a&vin=LFZ63AA15TH035113"
+  ],
+  "resp": "BRIAAARqbqlfJpBpjYnth0WSswySKE491qlNuNENQ/RIRuVNokf6Aw=="
+ },
+ "lpex-eventtracking.leapmotor.com/u/a/v1/ede6bcb2": {
+  "n": 1,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://lpex-eventtracking.leapmotor.com/u/a/v1/ede6bcb2",
+   ""
+  ],
+  "resp": ""
+ },
+ "lpex-eventtracking.leapmotor.com/u/a/v1/4ca74afd": {
+  "n": 1,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://lpex-eventtracking.leapmotor.com/u/a/v1/4ca74afd",
+   ""
+  ],
+  "resp": ""
+ },
+ "ueapp-oss-static.leapmotor.com/img/usecar/car/20240830/362b9047dec449eb930dc93db8462fbc.png": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/usecar/car/20240830/362b9047dec449eb930dc93db8462fbc.png?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAkJtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAABAAAANGlsb2MAAAAAREAAAgABAAAAAAJmAAEAAAAAAAAA7wACAAAAAANVAAEAAAAAAAABmQAAADhpaW5mAAAAAAACAAAAFWluZmUCAAAA"
+ },
+ "ueapp-oss-static.leapmotor.com/img/usecar/car/20250427/648e782b4e1f4398befa62be174eb2d5.png": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/usecar/car/20250427/648e782b4e1f4398befa62be174eb2d5.png?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAkJtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAABAAAANGlsb2MAAAAAREAAAgABAAAAAAJmAAEAAAAAAAAAiQACAAAAAALvAAEAAAAAAAAA3gAAADhpaW5mAAAAAAACAAAAFWluZmUCAAAA"
+ },
+ "ueapp-oss-static.leapmotor.com/img/usecar/car/20240830/c2c5b8beba29475f80694947830df0ea.png": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/usecar/car/20240830/c2c5b8beba29475f80694947830df0ea.png?x-oss-process=image/format,heic",
+   ""
+  ],
+  "resp": "AAAAHGZ0eXBoZWljAAAAAG1pZjFoZWljbWlhZgAAAkNtZXRhAAAAAAAAACFoZGxyAAAAAAAAAABwaWN0AAAAAAAAAAAAAAAAAAAAAA5waXRtAAAAAAABAAAANGlsb2MAAAAAREAAAgABAAAAAAJnAAEAAAAAAAABSAACAAAAAAOvAAEAAAAAAAACbQAAADhpaW5mAAAAAAACAAAAFWluZmUCAAAA"
+ },
+ "lpex-eventtracking.leapmotor.com/u/a/v1/74518253": {
+  "n": 1,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://lpex-eventtracking.leapmotor.com/u/a/v1/74518253",
+   ""
+  ],
+  "resp": ""
+ },
+ "lpex-eventtracking.leapmotor.com/u/a/v1/ffefecca": {
+  "n": 1,
+  "m": [
+   "POST"
+  ],
+  "req": [
+   "POST",
+   "https://lpex-eventtracking.leapmotor.com/u/a/v1/ffefecca",
+   ""
+  ],
+  "resp": ""
+ },
+ "ueapp-oss-static.leapmotor.com/img/app/user_posted_img/20261006/12940c1153c14ad9a828970f8d56d3a7IOS_B1791250602523_w1080_h1444.jpg": {
+  "n": 1,
+  "m": [
+   "GET"
+  ],
+  "req": [
+   "GET",
+   "https://ueapp-oss-static.leapmotor.com/img/app/user_posted_img/20261006/12940c1153c14ad9a828970f8d56d3a7IOS_B1791250602523_w1080_h1444.jpg",
+   ""
+  ],
+  "resp": "/9j/4AAQSkZJRgABAQAASABIAAD/4QCMRXhpZgAATU0AKgAAAAgABQESAAMAAAABAAEAAAEaAAUAAAABAAAASgEbAAUAAAABAAAAUgEoAAMAAAABAAIAAIdpAAQAAAABAAAAWgAAAAAAAABIAAAAAQAAAEgAAAABAAOgAQADAAAAAQABAACgAgAEAAAAAQAABDigAwAEAAAAAQAABaQAAAAA/+0A"
+ }
+}

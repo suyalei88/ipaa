@@ -1,0 +1,674 @@
+//
+//  LMClient.swift
+//  LeapmotorLite
+//
+//  零跑车控 API 客户端（Swift / async-await）
+//  端点、请求体格式、cmdid 均来自真实抓包 + iOS 主二进制逆向
+//
+import Foundation
+
+// MARK: - 配置
+
+struct LMConfig {
+    var deviceId: String        = "ios_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+    var deviceType: String      = "iOS"
+    var acceptLanguage: String  = "zh-Hans-CN;q=1, en-CN;q=0.9"
+    var source: String          = "leapmotor"
+    var version: String         = "1.22.68"
+    var channel: String         = "1"
+    var subversion: String      = "3.22.2-3"
+    var userAgent: String       = "leapmotorCarOwner/1.22.68 (iPhone; iOS \(ProcessInfo.processInfo.operatingSystemVersionString); Scale/3.00)"
+    var timeout: TimeInterval   = 20
+
+    /// 短信网关用的 SM4 设备指纹（国密，逆向自原生；登录链路必需）
+    var smDeviceId: String      = LMConfig.capturedSMDeviceId
+
+    /// 复用官方抓包里的 deviceId 可以避免部分风控；留空则自动生成
+    static let capturedDeviceId = "ios_ee45b9d830bb126d431e998943a7797a"
+    /// 抓包里的 SM4 设备指纹
+    static let capturedSMDeviceId =
+        "B1rFqR82E2Z7do2KhMDKziLEuIcoEt4wY8QTy7/43ImlKMu591xoe/c8kgMPsTk4" +
+        "P/nPH8eAUxQCnmA3GjTZODg=="
+}
+
+// MARK: - 会话
+
+struct LMSession: Codable, Equatable {
+    var accessToken: String
+    var refreshToken: String = ""
+    var signKeyHex: String
+    var encryptKeyHex: String
+    var userId: String = ""
+    var accountId: String = ""
+    var nickname: String = ""
+    /// 操作密码（明文），用于每次车控时派生 oppwd
+    var opPassword: String = ""
+
+    var isValid: Bool { !accessToken.isEmpty && !signKeyHex.isEmpty }
+}
+
+// MARK: - 错误
+
+enum LMError: LocalizedError {
+    case notLoggedIn
+    case http(Int, String)
+    case business(Int, String)
+    case decoding(String)
+    case transport(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notLoggedIn:            return "未登录，请先导入或登录会话"
+        case .http(let c, let b):     return "HTTP \(c)：\(b.prefix(200))"
+        case .business(let c, let m): return "业务错误 \(c)：\(m)"
+        case .decoding(let s):        return "解析失败：\(s)"
+        case .transport(let s):       return "网络错误：\(s)"
+        }
+    }
+}
+
+// MARK: - 客户端
+
+@MainActor
+final class LMClient: ObservableObject {
+
+    // MARK: Published 状态
+
+    @Published private(set) var session: LMSession?
+    @Published private(set) var vehicles: [LMVehicle] = []
+    @Published private(set) var selectedVehicle: LMVehicle?
+    @Published private(set) var signals: [String: LMSignalValue] = [:]
+    @Published private(set) var mileage: LMMileageData?
+    @Published private(set) var lastUpdate: Date?
+    @Published private(set) var isBusy = false
+    @Published var lastError: String?
+
+    var config = LMConfig()
+
+    private let store = LMSessionStore()
+    private let urlSession: URLSession
+
+    init() {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 30
+        urlSession = URLSession(configuration: cfg)
+        session = store.load()
+    }
+
+    // MARK: - 会话管理
+
+    func adopt(session newSession: LMSession) {
+        session = newSession
+        store.save(newSession)
+    }
+
+    func signOut() {
+        session = nil
+        vehicles = []
+        selectedVehicle = nil
+        signals = [:]
+        mileage = nil
+        store.clear()
+    }
+
+    func select(vehicle: LMVehicle) {
+        selectedVehicle = vehicle
+    }
+
+    // MARK: - 请求头
+
+    private func buildHeaders(signBody: [String: Any]?, skipAuth: Bool, contentType: String) -> [String: String] {
+        if skipAuth { return ["Content-Type": contentType] }
+
+        let ts = String(Int(Date().timeIntervalSince1970 * 1000))
+        let nonce = String(Int.random(in: 0...2_147_483_646))
+
+        let signHeaders: [String: Any] = [
+            "acceptLanguage": config.acceptLanguage,
+            "channel": config.channel,
+            "deviceId": config.deviceId,
+            "deviceType": config.deviceType,
+            "nonce": nonce,
+            "source": config.source,
+            "timestamp": ts,
+            "version": config.version,
+        ]
+
+        var headers: [String: String] = ["Content-Type": contentType]
+        if let s = session, !s.signKeyHex.isEmpty {
+            if let sign = LMSigner.sign(body: signBody, signHeaders: signHeaders, signKeyHex: s.signKeyHex) {
+                headers["sign"] = sign
+            }
+        }
+        for (k, v) in signHeaders { headers[k] = String(describing: v) }
+
+        headers["x-subversion"] = config.subversion
+        headers["x-canary-version"] = ""
+        headers["x-api-signature-version"] = "2.0"
+        headers["x-region"] = "CN"
+        headers["userId"] = session?.userId ?? ""
+        headers["token"] = session?.accessToken ?? ""
+        headers["carvin"] = selectedVehicle?.vin ?? ""
+        headers["cartype"] = selectedVehicle?.carType ?? ""
+        headers["User-Agent"] = config.userAgent
+        headers["Accept-Language"] = "zh-Hans-CN;q=1, en-CN;q=0.9"
+        return headers
+    }
+
+    // MARK: - 通用请求
+
+    @discardableResult
+    func request(method: String,
+                 path: String,
+                 host: String = LMEndpoints.gateway,
+                 params: [String: String]? = nil,
+                 body: [String: Any]? = nil,
+                 form: [String: String]? = nil,
+                 skipAuth: Bool = false) async throws -> Any {
+
+        // 1) 组装 URL
+        var comps = URLComponents(string: host + path)!
+        if let params = params, !params.isEmpty {
+            comps.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+        guard let url = comps.url else { throw LMError.transport("URL 非法：\(host + path)") }
+
+        // 2) 参与签名的 body 字典
+        var signBody: [String: Any] = [:]
+        if let form = form {
+            for (k, v) in form { signBody[k] = v }
+        } else if let body = body {
+            signBody = body
+        }
+        if let params = params {
+            for (k, v) in params { signBody[k] = v }
+        }
+
+        let contentType = (form != nil) ? "application/x-www-form-urlencoded" : "application/json"
+        let headers = buildHeaders(signBody: signBody, skipAuth: skipAuth, contentType: contentType)
+
+        // 3) 请求体
+        var bodyData: Data?
+        if let form = form {
+            bodyData = form
+                .map { "\(urlEncode($0.key))=\(urlEncode($0.value))" }
+                .joined(separator: "&")
+                .data(using: .utf8)
+        } else if let body = body {
+            bodyData = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        }
+
+        // 4) 发送
+        return try await send(method: method, url: url, headers: headers,
+                              bodyData: bodyData, throwsOnBusinessError: true)
+    }
+
+    /// 低层发送：负责 HTTP、解码、业务码校验（可选）
+    private func send(method: String,
+                      url: URL,
+                      headers: [String: String],
+                      bodyData: Data?,
+                      throwsOnBusinessError: Bool) async throws -> Any {
+
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.allHTTPHeaderFields = headers
+        req.timeoutInterval = config.timeout
+        req.httpBody = bodyData
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await urlSession.data(for: req)
+        } catch {
+            throw LMError.transport(error.localizedDescription)
+        }
+
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard (200..<300).contains(status) else {
+            throw LMError.http(status, String(data: data, encoding: .utf8) ?? "")
+        }
+
+        if let obj = try? JSONSerialization.jsonObject(with: data) {
+            if throwsOnBusinessError, let dict = obj as? [String: Any] {
+                if let code = dict["code"] as? Int, code != 0 {
+                    let msg = (dict["message"] as? String) ?? (dict["msg"] as? String) ?? ""
+                    throw LMError.business(code, msg)
+                }
+            }
+            return obj
+        }
+        return ["_raw": String(data: data, encoding: .utf8) ?? "",
+                "_base64": data.base64EncodedString()]
+    }
+
+    /// appuser 短信网关的请求头（未登录 / 无 sign）
+    private func userHostHeaders(contentType: String) -> [String: String] {
+        [
+            "APPImei": config.deviceId,
+            "APPVersion": config.version,
+            "APPPlatform": "iOS",
+            "C-VERSIONS": "APP",
+            "XFX-CDN-VRS": "v4",
+            "User-Agent": config.userAgent,
+            "Accept": "*/*",
+            "Accept-Language": config.acceptLanguage,
+            "Content-Type": contentType,
+        ]
+    }
+
+    private func urlEncode(_ s: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
+    }
+
+    private func decode<T: Decodable>(_ type: T.Type, from any: Any) throws -> T {
+        guard JSONSerialization.isValidJSONObject(any) else {
+            throw LMError.decoding("响应不是合法 JSON 对象")
+        }
+        let data = try JSONSerialization.data(withJSONObject: any)
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    // MARK: - 登录
+
+    /// 用「导入的登录响应」建立会话（最可靠，100% 已验证）
+    /// - Parameter json: 官方 App 登录接口返回的整个 `data` 对象，或
+    ///                   `{"accessToken":..,"signParam":{"r2":..,"r3":..},"encryptParam":{..}}`
+    func adoptLoginResponse(json: String) throws -> LMSession {
+        guard let data = json.data(using: .utf8) else { throw LMError.decoding("空输入") }
+
+        var root = try JSONSerialization.jsonObject(with: data)
+        // 容忍直接粘贴整个 {code,message,data:{...}} 信封
+        if let dict = root as? [String: Any], let inner = dict["data"] as? [String: Any] {
+            root = inner
+        }
+        guard let dict = root as? [String: Any] else { throw LMError.decoding("不是 JSON 对象") }
+
+        let token = (dict["accessToken"] as? String) ?? ""
+        guard !token.isEmpty else { throw LMError.decoding("缺少 accessToken") }
+
+        let sp = dict["signParam"] as? [String: String]
+        let ep = dict["encryptParam"] as? [String: String]
+
+        var signKeyHex = ""
+        var encryptKeyHex = ""
+        if let sp = sp, let r2 = sp["r2"], let r3 = sp["r3"] {
+            signKeyHex = LMSigner.deriveKey(accessToken: token, r2: r2, r3: r3)?.hexUppercased ?? ""
+        }
+        if let ep = ep, let r2 = ep["r2"], let r3 = ep["r3"] {
+            encryptKeyHex = LMSigner.deriveKey(accessToken: token, r2: r2, r3: r3)?.hexUppercased ?? ""
+        }
+        guard !signKeyHex.isEmpty else { throw LMError.decoding("无法派生 signKey（缺少 signParam.r2/r3）") }
+
+        let s = LMSession(
+            accessToken: token,
+            refreshToken: (dict["refreshToken"] as? String) ?? "",
+            signKeyHex: signKeyHex,
+            encryptKeyHex: encryptKeyHex,
+            userId: String(describing: dict["accountId"] ?? ""),
+            accountId: String(describing: dict["accountId"] ?? ""),
+            nickname: (dict["nickname"] as? String) ?? "",
+            opPassword: session?.opPassword ?? ""
+        )
+        adopt(session: s)
+        return s
+    }
+
+    /// 只填 token + 两组 r2/r3 的简写方式
+    func adoptManual(accessToken: String,
+                     signR2: String, signR3: String,
+                     encR2: String = "", encR3: String = "",
+                     userId: String = "") throws -> LMSession {
+        guard let k = LMSigner.deriveKey(accessToken: accessToken, r2: signR2, r3: signR3) else {
+            throw LMError.decoding("signKey 派生失败")
+        }
+        var encHex = k.hexUppercased
+        if !encR2.isEmpty, !encR3.isEmpty,
+           let e = LMSigner.deriveKey(accessToken: accessToken, r2: encR2, r3: encR3) {
+            encHex = e.hexUppercased
+        }
+        let s = LMSession(accessToken: accessToken,
+                          signKeyHex: k.hexUppercased,
+                          encryptKeyHex: encHex,
+                          userId: userId,
+                          accountId: userId,
+                          opPassword: session?.opPassword ?? "")
+        adopt(session: s)
+        return s
+    }
+
+    /// 账号密码登录（已废弃：security 由服务端 SDK 下发，不是密码哈希）
+    @available(*, deprecated, message: "改用短信验证码登录 loginWithSMSCode")
+    func login(identifier: String, password: String) async throws -> LMSession {
+        let h = LMHash.md5Hex(password).uppercased()
+        return try await login(identifier: identifier, security: h + h)
+    }
+
+    /// 直接传 security（外层 token）的登录
+    func login(identifier: String, security: String) async throws -> LMSession {
+        try await exchangeOuterToken(security, accountId: identifier)
+    }
+
+    // MARK: - 登录（短信验证码 · 全链路实测打通）
+
+    /// 短信登录第 2 步的结果
+    struct SMSLoginResult: Equatable {
+        var outerToken: String
+        var accountId: String
+        var nickname: String
+    }
+
+    /// 第 1 步：发送短信验证码
+    ///
+    /// `GET /app-user/applogin/compliance/sendmessagecode?phoneNo=<RSA>&smDeviceId=<SM4>`
+    ///   · phoneNo = base64( RSA_PKCS1v15( 手机号 ) )   ← 见 LMRSA
+    ///   · 未登录、无 sign
+    @discardableResult
+    func sendSMSCode(phone: String) async throws -> String {
+        let enc = try LMRSA.encrypt(phone)
+        var comps = URLComponents(string: LMEndpoints.userHost + LMEndpoints.Path.sendSMS)!
+        comps.queryItems = [
+            URLQueryItem(name: "phoneNo", value: enc),
+            URLQueryItem(name: "smDeviceId", value: config.smDeviceId),
+        ]
+        guard let url = comps.url else { throw LMError.transport("URL 非法") }
+
+        let any = try await send(method: "GET", url: url,
+                                 headers: userHostHeaders(contentType: "application/json"),
+                                 bodyData: nil, throwsOnBusinessError: false)
+        let d = (any as? [String: Any]) ?? [:]
+        let code = (d["code"] as? Int) ?? -1
+        let msg = (d["msg"] as? String) ?? (d["message"] as? String) ?? ""
+        guard code == 0 || code == 200 else {
+            throw LMError.business(code, msg.isEmpty ? "验证码发送失败" : msg)
+        }
+        return msg.isEmpty ? "验证码已发送" : msg
+    }
+
+    /// 第 2 步：验证码 → 外层 token（SDK login token，还不是 JWT）
+    ///
+    /// `POST /app-user/applogin/check_login_with_phone`，**form-urlencoded**
+    ///   （原生 `POST_Form` @0x104e959b0；用 JSON 会得到 1019 参数不能为空）
+    func fetchOuterToken(phone: String, code: String) async throws -> SMSLoginResult {
+        let enc = try LMRSA.encrypt(phone)
+        guard let url = URL(string: LMEndpoints.userHost + LMEndpoints.Path.checkLoginWithPhone) else {
+            throw LMError.transport("URL 非法")
+        }
+
+        let fields: [String: String] = [
+            "os": "ios",
+            "smDeviceId": config.smDeviceId,
+            "phoneNoCiphertext": enc,
+            "phoneNumber": phone,
+            "smsCode": code,
+            "deviceID": config.deviceId,
+            "pageUrl": "",
+        ]
+        let bodyData = fields
+            .map { "\(urlEncode($0.key))=\(urlEncode($0.value))" }
+            .joined(separator: "&")
+            .data(using: .utf8)
+
+        let any = try await send(method: "POST", url: url,
+                                 headers: userHostHeaders(contentType: "application/x-www-form-urlencoded; charset=UTF-8"),
+                                 bodyData: bodyData, throwsOnBusinessError: false)
+        guard let d = any as? [String: Any] else { throw LMError.decoding("登录响应异常") }
+
+        let code = (d["code"] as? Int) ?? -1
+        guard code == 0 || code == 200 else {
+            let msg = (d["msg"] as? String) ?? (d["message"] as? String) ?? "登录失败"
+            throw LMError.business(code, msg)
+        }
+
+        guard let token = LMClient.findValue(d, key: "token") as? String, !token.isEmpty else {
+            throw LMError.decoding("响应里没有 appLoginVO.token")
+        }
+        let accId = LMClient.findValue(d, key: "accountId").map { String(describing: $0) } ?? ""
+        let nick  = (LMClient.findValue(d, key: "nickname") as? String) ?? ""
+        return SMSLoginResult(outerToken: token, accountId: accId, nickname: nick)
+    }
+
+    /// 第 3 步：外层 token 兑换 JWT（★ SHA256 签名，无密钥）
+    ///
+    /// `POST /base/base-user/account/v1/login`
+    /// body = `{"identifier": accountId, "identifierType": "1", "security": <外层token>}`
+    /// → `data = { accessToken, refreshToken, signParam{r2,r3}, encryptParam{r2,r3}, ... }`
+    func exchangeOuterToken(_ outerToken: String, accountId: String) async throws -> LMSession {
+        let body: [String: Any] = [
+            "identifier": accountId,
+            "identifierType": "1",
+            "security": outerToken,
+        ]
+        let any = try await preLoginRequest(path: LMEndpoints.Path.login,
+                                            host: LMEndpoints.accountHost,
+                                            body: body,
+                                            accountId: accountId)
+        guard let dict = any as? [String: Any] else { throw LMError.decoding("登录响应异常") }
+        if let code = dict["code"] as? Int, code != 0 {
+            let msg = (dict["message"] as? String) ?? (dict["msg"] as? String) ?? ""
+            throw LMError.business(code, msg)
+        }
+        var inner = (dict["data"] as? [String: Any]) ?? dict
+        // 兑换接口若没回 accountId，用短信步骤拿到的补上（userId 请求头需要）
+        if inner["accountId"] == nil, !accountId.isEmpty { inner["accountId"] = accountId }
+        let data = try JSONSerialization.data(withJSONObject: inner)
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        return try adoptLoginResponse(json: json)
+    }
+
+    /// 一步到位：短信登录 → 换 JWT → 建立会话
+    func loginWithSMSCode(phone: String, code: String) async throws -> LMSession {
+        let r = try await fetchOuterToken(phone: phone, code: code)
+        // 正常情况响应里一定带 data.appLoginVO.accountId；缺失时退回手机号当 identifier
+        let ident = r.accountId.isEmpty ? phone : r.accountId
+        return try await exchangeOuterToken(r.outerToken, accountId: ident)
+    }
+
+    // MARK: - 登录前请求（SHA256 签名）
+
+    /// 登录前请求：`sign = SHA256(valueStr)`（无密钥，对应原生 sha256String: @0x106e6f370）
+    private func preLoginRequest(path: String, host: String, body: [String: Any],
+                                 accountId: String = "") async throws -> Any {
+        guard let url = URL(string: host + path) else { throw LMError.transport("URL 非法：\(host + path)") }
+
+        let ts = String(Int(Date().timeIntervalSince1970 * 1000))
+        let nonce = String(Int.random(in: 0...2_147_483_646))
+        let signHeaders: [String: Any] = [
+            "acceptLanguage": config.acceptLanguage,
+            "channel": config.channel,
+            "deviceId": config.deviceId,
+            "deviceType": config.deviceType,
+            "nonce": nonce,
+            "source": config.source,
+            "timestamp": ts,
+            "version": config.version,
+        ]
+        let sign = LMSigner.signPreLogin(body: body, signHeaders: signHeaders)
+
+        // HTTP header 集合与实测 Python 完全一致（注意 signHeaders 用的是驼峰 key 参与签名，
+        // 实际发送的 header 名用小写 deviceid/devicetype）
+        let headers: [String: String] = [
+            "userid": accountId,
+            "source": config.source,
+            "x-api-signature-version": "2.0",
+            "x-region": "CN",
+            "x-canary-version": "",
+            "devicetype": config.deviceType,
+            "channel": config.channel,
+            "cartype": "D19",
+            "x-subversion": config.subversion,
+            "version": config.version,
+            "deviceid": config.deviceId,
+            "acceptLanguage": config.acceptLanguage,
+            "timestamp": ts,
+            "nonce": nonce,
+            "sign": sign,
+            "Content-Type": "application/json",
+            "User-Agent": config.userAgent,
+        ]
+
+        let bodyData = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        return try await send(method: "POST", url: url, headers: headers,
+                              bodyData: bodyData, throwsOnBusinessError: false)
+    }
+
+    /// 递归查找第一个非空 key（对齐 Python find_key）
+    static func findValue(_ obj: Any, key: String) -> Any? {
+        if let d = obj as? [String: Any] {
+            if let v = d[key], !(v is NSNull) {
+                if let s = v as? String {
+                    if !s.isEmpty { return v }
+                } else {
+                    return v
+                }
+            }
+            for (_, v) in d {
+                if let r = findValue(v, key: key) { return r }
+            }
+        } else if let a = obj as? [Any] {
+            for v in a {
+                if let r = findValue(v, key: key) { return r }
+            }
+        }
+        return nil
+    }
+
+    // MARK: - 车辆 / 车况
+
+    func loadVehicles() async throws -> [LMVehicle] {
+        let any = try await request(method: "GET",
+                                    path: LMEndpoints.Path.vehicleList,
+                                    host: LMEndpoints.accountHost)
+        let env = try decode(LMEnvelope<LMVehicleList>.self, from: any)
+        let list = (env.data?.bindcars ?? []) + (env.data?.sharedcars ?? [])
+        vehicles = list
+        if selectedVehicle == nil { selectedVehicle = list.first }
+        return list
+    }
+
+    func refreshStatus() async throws {
+        guard let vin = selectedVehicle?.vin else { throw LMError.notLoggedIn }
+        isBusy = true
+        defer { isBusy = false }
+
+        let body: [String: Any] = [
+            "appVersion": config.version,
+            "isMainApp": "1",
+            "osType": config.deviceType,
+            "vin": vin,
+        ]
+        let any = try await request(method: "POST",
+                                    path: LMEndpoints.Path.signalQuery,
+                                    body: body)
+        let env = try decode(LMEnvelope<LMSignalData>.self, from: any)
+        signals = env.data?.signalMap ?? [:]
+        lastUpdate = Date()
+    }
+
+    func refreshMileage() async throws {
+        guard let vin = selectedVehicle?.vin else { throw LMError.notLoggedIn }
+        let any = try await request(method: "GET",
+                                    path: LMEndpoints.Path.mileage,
+                                    params: ["vin": vin])
+        let env = try decode(LMEnvelope<LMMileageData>.self, from: any)
+        mileage = env.data
+    }
+
+    func refreshAll() async {
+        do {
+            if vehicles.isEmpty { _ = try await loadVehicles() }
+            try await refreshStatus()
+            try await refreshMileage()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    // MARK: - 车控
+
+    /// 发送一条车控指令，返回 msgID
+    func sendControl(_ actionKey: String) async throws -> String {
+        guard let vin = selectedVehicle?.vin else { throw LMError.notLoggedIn }
+        guard let cmd = LMEndpoints.commands[actionKey] else {
+            throw LMError.business(-1, "未知动作：\(actionKey)")
+        }
+        guard let s = session else { throw LMError.notLoggedIn }
+
+        // oppwd：优先用明文操作密码现场加密
+        var oppwd = ""
+        if !s.opPassword.isEmpty {
+            oppwd = try LMSigner.encryptOppwd(accessToken: s.accessToken, password: s.opPassword)
+        } else {
+            throw LMError.business(-2, "未设置操作密码（车控需要 6 位操作密码）")
+        }
+
+        let stateJSON = try jsonString(cmd.state)
+        let form: [String: String] = [
+            "carvin": vin,
+            "cmdid": String(cmd.cmdid),
+            "oppwd": oppwd,
+            "state": stateJSON,
+        ]
+
+        let any = try await request(method: "POST",
+                                    path: LMEndpoints.Path.remoteCtl,
+                                    form: form)
+        let env = try decode(LMEnvelope<String>.self, from: any)
+        guard let msgID = env.data, !msgID.isEmpty else {
+            throw LMError.business(env.code ?? -1, env.message ?? "下发失败")
+        }
+        return msgID
+    }
+
+    /// 轮询车控结果：true = 成功
+    func waitControl(msgID: String, timeout: TimeInterval = 25, interval: TimeInterval = 1.2) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            do {
+                let any = try await request(method: "GET",
+                                            path: LMEndpoints.Path.remoteCtlQuery,
+                                            params: ["msgID": msgID])
+                let env = try decode(LMEnvelope<Int>.self, from: any)
+                if env.data == 1 { return true }
+            } catch {
+                // 轮询期间的偶发错误忽略，继续重试
+            }
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+        }
+        return false
+    }
+
+    /// 一步到位：下发 + 等待
+    func control(_ actionKey: String) async -> Bool {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let msgID = try await sendControl(actionKey)
+            let ok = await waitControl(msgID: msgID)
+            if ok { lastError = nil } else { lastError = "指令已下发，但未在超时内确认成功" }
+            return ok
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    private func jsonString(_ obj: [String: Any]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    // MARK: - 常用车况字段（signalMap 里常用的几个）
+
+    /// 车门锁状态：true = 已锁
+    var isLocked: Bool? { signals["1298"]?.boolValue ?? signals["3262"]?.boolValue }
+    /// 剩余电量 %
+    var batteryPercent: Double? { signals["3260"]?.doubleValue }
+    /// 续航 km
+    var rangeKm: Double? { signals["3257"]?.doubleValue }
+    /// 车内温度
+    var interiorTemp: Double? { signals["1349"]?.doubleValue }
+}

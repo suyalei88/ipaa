@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "这是「导入登录态」要粘贴的内容示例。",
+    "把官方 App 登录接口的整个响应 JSON 原样粘进来即可，App 会自动取 data 里的字段。",
+    "下面 accessToken / r2 / r3 已做脱敏，真实值请从你自己的抓包里取。",
+    "接口：POST https://app-gw-global-master.leapmotor.com/base/base-user/account/v1/login"
+  ],
+  "code": 0,
+  "message": "SUCCESS",
+  "data": {
+    "accountId": 672955179229782016,
+    "nickname": "笑",
+    "accessToken": "eyJub25jZSI6ImEyNzEwYjZkNDgwNDQ2ZTlhMjExOGI2YjIzZmQ3MDU3IiwiYWxnIjoiSFMyNTYiLCJ0eXAiOiJKV1QifQ.eyJ1c2VyX25hbWUiOiJhY2NvdW50SWQ6NjcyOTU1MTc5MjI5NzgyMDE2Iiwic2NvcGUiOlsicmVhZCJdLCJleHAiOjE3OTEzNTc4MTF9.REPLACE_WITH_YOUR_JWT_SIGNATURE_SEGMENT",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.REPLACE_WITH_YOUR_REFRESH_TOKEN",
+    "tokenExpireTime": 7199,
+    "refreshTokenExpireTime": 604799,
+    "base64Cert": "",
+    "signParam": {
+      "r2": "6zoreHkMT7yoe9zi5p5H5Kfc9woIPTOdMtBQYpl/vfo=",
+      "r3": "XM/iTva8QdJ5z7GQQD6Ry/pnSK4ZrAl/xo+CVu03884="
+    },
+    "encryptParam": {
+      "r2": "cYPovbbtY3Bxv+9m0+0+2v7CRs/s1FWbotOguVLySys=",
+      "r3": "xnYhizldbR6gC4IUdU3o9aN5+Wv9RW95VoxyjSa6BR8="
+    }
+  }
+}

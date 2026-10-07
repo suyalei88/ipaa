@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>车控</title>
+<style>
+  :root{--bg:#0e1116;--card:#171b22;--fg:#e8eaed;--sub:#8b93a1;--acc:#2f6bff;--ok:#2ecc71;--warn:#ff5d5d;--line:#242a33}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;padding:16px;padding-bottom:40px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--sub);font-size:12px;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .btn{background:#1e242e;border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:14px;font-size:15px;cursor:pointer;transition:.15s}
+  .btn:active{transform:scale(.97);background:#252c38}
+  .btn.acc{background:var(--acc);border-color:var(--acc)}
+  .btn.danger{border-color:var(--warn);color:var(--warn)}
+  input{width:100%;background:#11151b;border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:12px;font-size:15px;margin-bottom:10px}
+  .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .row label{color:var(--sub);min-width:64px;font-size:13px}
+  .stat{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
+  .stat:last-child{border:none}
+  .stat b{font-weight:600}
+  #log{font:12px/1.5 ui-monospace,Consolas,monospace;color:var(--sub);white-space:pre-wrap;max-height:180px;overflow:auto}
+  .tag{display:inline-block;font-size:11px;color:var(--sub);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-left:6px}
+</style>
+</head>
+<body>
+  <h1>车控 <span class="tag" id="mode">未登录</span></h1>
+  <div class="sub">无广告 · 纯功能 · 本地直连</div>
+
+  <div class="card" id="loginCard">
+    <div class="row"><label>手机号</label><input id="phone" inputmode="numeric" placeholder="13800000000"></div>
+    <div class="grid">
+      <button class="btn" onclick="sendSms()">发验证码</button>
+      <button class="btn acc" onclick="doLogin()">登录</button>
+    </div>
+    <div style="height:10px"></div>
+    <input id="code" inputmode="numeric" placeholder="验证码 / 或填密码">
+  </div>
+
+  <div class="card" id="carCard" style="display:none">
+    <div class="stat"><span>车辆</span><b id="vinTxt">-</b></div>
+    <div class="stat"><span>电量</span><b id="soc">-</b></div>
+    <div class="stat"><span>续航</span><b id="range">-</b></div>
+    <div class="stat"><span>门锁</span><b id="lockTxt">-</b></div>
+    <div style="height:10px"></div>
+    <button class="btn" style="width:100%" onclick="loadStatus()">刷新状态</button>
+  </div>
+
+  <div class="card" id="ctrlCard" style="display:none">
+    <div class="grid">
+      <button class="btn danger" onclick="ctrl('unlock')">解锁</button>
+      <button class="btn acc" onclick="ctrl('lock')">锁车</button>
+      <button class="btn" onclick="ctrl('find')">寻车</button>
+      <button class="btn" onclick="ctrl('trunk')">后备箱</button>
+      <button class="btn" onclick="ctrl('climate',{on:true})">开空调</button>
+      <button class="btn" onclick="ctrl('climate',{on:false})">关空调</button>
+      <button class="btn" onclick="ctrl('window',{open:true})">开车窗</button>
+      <button class="btn" onclick="ctrl('window',{open:false})">关车窗</button>
+      <button class="btn" onclick="ctrl('charge',{start:true})">开始充电</button>
+      <button class="btn" onclick="ctrl('charge',{start:false})">停止充电</button>
+    </div>
+  </div>
+
+  <div class="card"><div id="log">ready</div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const log = m => { $('log').textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + $('log').textContent; };
+let VIN = null;
+
+async function api(path, opt){
+  const r = await fetch(path, opt);
+  const t = await r.text();
+  try { return JSON.parse(t); } catch { return {_raw:t}; }
+}
+
+async function sendSms(){
+  const phone = $('phone').value.trim();
+  log('发送验证码...');
+  log(JSON.stringify(await api('/api/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})})));
+}
+
+async function doLogin(){
+  const phone = $('phone').value.trim(), code = $('code').value.trim();
+  log('登录中...');
+  const r = await api('/api/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone, code, password: code})});
+  log('登录返回: ' + JSON.stringify(r));
+  $('mode').textContent = '已登录';
+  $('loginCard').style.display='none';
+  $('carCard').style.display='block';
+  $('ctrlCard').style.display='block';
+  await loadVehicles();
+}
+
+async function loadVehicles(){
+  const r = await api('/api/vehicles');
+  log('车辆列表: ' + JSON.stringify(r));
+  const d = r.data || r.result || r;
+  const arr = Array.isArray(d) ? d : (d.list || []);
+  if(arr.length){ VIN = arr[0].vin || arr[0].VIN; $('vinTxt').textContent = VIN; await loadStatus(); }
+}
+
+async function loadStatus(){
+  if(!VIN) return;
+  const r = await api('/api/status?vin=' + encodeURIComponent(VIN));
+  log('状态: ' + JSON.stringify(r));
+  const d = r.data || r;
+  $('soc').textContent = (d.soc ?? d.battery ?? '-') + '%';
+  $('range').textContent = (d.range ?? d.mileage ?? '-') + ' km';
+  $('lockTxt').textContent = (d.lockStatus ?? d.locked ?? '-');
+}
+
+async function ctrl(action, args={}){
+  if(!VIN) return;
+  log(`车控 ${action} ...`);
+  const r = await api('/api/control', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vin:VIN,action,args})});
+  log(`${action} 返回: ` + JSON.stringify(r));
+  setTimeout(loadStatus, 3000);
+}
+</script>
+</body>
+</html>
