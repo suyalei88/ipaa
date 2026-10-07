@@ -156,6 +156,13 @@ struct LMSelfTest {
             out.append(Result(name: c.name, passed: c.passed, detail: c.detail))
         }
 
+        // 10) 构建标识
+        //     也不是算法，但「用户分不清自己装的是哪一版」是真实踩过的坑
+        //     （两版都是 1.0.0 (1)）。放在自检里，出问题能第一时间看到。
+        for c in LMBuildInfo.selfCheck() {
+            out.append(Result(name: c.name, passed: c.passed, detail: c.detail))
+        }
+
         return out
     }
 }

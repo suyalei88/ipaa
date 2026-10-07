@@ -118,6 +118,35 @@ jobs:
       - name: 构建 IPA
         run: bash ios/build_ipa.sh
 
+      - name: 校验构建指纹已注入
+        # ★ 为什么要有这一步：2026-10-07 出过一版包，版本号还是 1.0.0 (1)、
+        #   包里也没有任何构建标识，用户装完说「跟上个版本一样」，
+        #   我们只能把两个 IPA 产物都下下来比对二进制字符串才知道谁是谁。
+        #   现在 build_ipa.sh 会把 git 提交号注进 Info.plist，这里确认它**真的被替换了**
+        #   （没替换的话 plist 里会留着字面量 `$(LM_GIT_SHA)`）。
+        run: |
+          PLIST="ios/LeapmotorLite/build/Build/Products/Release-iphoneos/LeapmotorLite.app/Info.plist"
+          VER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")
+          BLD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")
+          SHA=$(/usr/libexec/PlistBuddy -c 'Print :LMGitSHA' "$PLIST")
+          TIM=$(/usr/libexec/PlistBuddy -c 'Print :LMBuildTime' "$PLIST")
+          echo "版本 $VER ($BLD)   指纹 $SHA @ $TIM"
+          echo "### 构建标识" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$VER ($BLD) · $SHA @ $TIM\`" >> "$GITHUB_STEP_SUMMARY"
+
+          # 没替换的话 plist 里会留着字面量 $(LM_GIT_SHA)
+          if [[ "$SHA" == '$('* ]]; then
+            echo "::error::LMGitSHA 没被替换（仍是 $SHA）—— xcodebuild 没收到 LM_GIT_SHA"
+            exit 1
+          fi
+          if [[ -z "$SHA" ]]; then
+            echo "::error::LMGitSHA 为空"
+            exit 1
+          fi
+          if [[ "$VER" == "1.0.0" && "$BLD" == "1" ]]; then
+            echo "::warning::版本号仍是初始的 1.0.0 (1)，记得改 Support/Info.plist 与 LMBuildInfo.tag"
+          fi
+
       - name: 上传 IPA
         uses: actions/upload-artifact@v4
         with:

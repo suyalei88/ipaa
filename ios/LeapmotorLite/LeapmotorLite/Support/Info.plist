@@ -16,10 +16,22 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+	<!-- ★ 每次交付新包都要改这两个值，否则用户无法分辨新旧包
+	     （2026-10-07 踩过：两版都是 1.0.0 (1)，用户装完说「跟上个版本一样」）。
+	     改完顺便把 LMBuildInfo.tag 也改掉，那里是给人看的说明。 -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>1.0.1</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
+
+	<!-- 构建指纹：由 ios/build_ipa.sh 在打包时注入（git 提交号 + UTC 构建时刻）。
+	     这是「这一版到底是哪一次构建」的最终判据 —— 手工改版本号总会忘，
+	     提交号不会。用 Xcode 直接跑（不走 build_ipa.sh）时这两个值不会被替换，
+	     LMBuildInfo 会把「以 $( 开头」的值识别为未注入并显示成「本地构建」。 -->
+	<key>LMGitSHA</key>
+	<string>$(LM_GIT_SHA)</string>
+	<key>LMBuildTime</key>
+	<string>$(LM_BUILD_TIME)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!-- 空的 UILaunchScreen = 系统默认白底启动图。

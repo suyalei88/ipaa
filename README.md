@@ -193,7 +193,8 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `.github/workflows/build-ipa.yml` — 云端打包流水线
 
 **iOS 交付**
-- `ios/LeapmotorLite/` — SwiftUI 车控 App（28 个 Swift 文件 + Info.plist + Assets.xcassets）
+- `ios/LeapmotorLite/` — SwiftUI 车控 App（29 个 Swift 文件 + Info.plist + Assets.xcassets）
+- `ios/LeapmotorLite/LeapmotorLite/LMBuildInfo.swift` — ★ 构建标识（版本号 + 构建 tag + git 提交号），解决「分不清装的是哪一版」
 - `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环 / 充电状态胶囊 / 秒级时钟）
 - `ios/LeapmotorLite/LeapmotorLite/API/LMCoordinate.swift` — ★ 坐标系换算（WGS-84 ↔ GCJ-02）+ 三选一校正策略 + 4 项自检
 - `ios/LeapmotorLite/LeapmotorLite/Views/LocationView.swift` — 车辆定位（MapKit + CLGeocoder + 导航 + 坐标校正卡）

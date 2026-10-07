@@ -238,10 +238,25 @@ struct SettingsView: View {
     // MARK: - 设备
 
     private var deviceSection: some View {
-        Section("设备") {
+        Section {
+            // ★ 放第一行，且允许换行 —— 这是「我装的是哪一版」的唯一可靠判据。
+            //   注意别和下面那个 `version` 搞混：那个是**发给服务端的官方版本号**
+            //   （伪装的），跟我们自己的构建版本完全不是一回事。
+            HStack(alignment: .top) {
+                Text("本 App 构建")
+                Spacer(minLength: 12)
+                Text(LMBuildInfo.displayText)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+            }
             row("deviceId", client.config.deviceId)
-            row("version", client.config.version)
+            row("官方版本号", client.config.version)
             row("deviceType", client.config.deviceType)
+        } header: {
+            Text("设备")
+        } footer: {
+            Text("「官方版本号」是伪装给服务端的，不是本 App 的版本；本 App 版本看第一行。")
         }
     }
 

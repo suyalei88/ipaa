@@ -211,6 +211,10 @@ oppwd("4211") = uHTigfMDS5zIuZX4Gq4NVQ==
 最后一组是**坐标换算**（不属于加解密，但同样属于「算错了整页数据就不对」的纯算法）：
 `WGS-84 → GCJ-02` 的参考向量、往返残差 < 1 mm、境外坐标原样返回、三个校正选项的语义一致性。
 
+再往后是**构建标识**自检：版本号有没有忘改、构建 tag 是否为空、
+git 提交号有没有真的被 `build_ipa.sh` 注进 Info.plist。
+（页面顶部也会显示同一个标识 —— 这是「我装的是哪一版」的最快判据，见 `IPA_BUILD.md`。）
+
 **全部通过**才说明实现与官方 App 逐字节一致。（没装 Xcode 也能验：
 `python client/test_swift_vectors.py` 与 `python client/test_coord_vectors.py`）
 
@@ -254,6 +258,7 @@ ios/
     ├── LeapmotorLite.xcodeproj/     # 由 gen_xcodeproj.py 生成
     └── LeapmotorLite/
         ├── LeapmotorLiteApp.swift       # App 入口 + RootView + MainTabView
+        ├── LMBuildInfo.swift            # ★ 构建标识（版本 + tag + git 提交号）
         ├── Assets.xcassets/             # App 图标（make_icon.py 生成）
         ├── Crypto/
         │   ├── LMHash.swift             # MD5 / MD5-16 / SHA256 / HMAC-SHA256 / XOR3 / Data 工具

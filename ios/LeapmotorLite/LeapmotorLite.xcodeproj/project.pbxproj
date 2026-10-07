@@ -34,6 +34,7 @@
 		9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D451076F292E7189C3B2DBC6 /* SettingsView.swift */; };
 		4815462BBC23FF3D6F58FF3C /* SignalExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */; };
 		7905221120FBB9DB8B74B787 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E662A36FCA7763CF25013E50 /* Theme.swift */; };
+		5D48FAE9F25FB3812A5FE6D2 /* LMBuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6437AB04BA5CC332625C9638 /* LMBuildInfo.swift */; };
 		AD7D1D4EEC7C579D1396E3C3 /* LeapmotorLiteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */; };
 		48473DF59511BE9D55AE6216 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -67,6 +68,7 @@
 		D451076F292E7189C3B2DBC6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalExplorerView.swift; sourceTree = "<group>"; };
 		E662A36FCA7763CF25013E50 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		6437AB04BA5CC332625C9638 /* LMBuildInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMBuildInfo.swift; sourceTree = "<group>"; };
 		503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeapmotorLiteApp.swift; sourceTree = "<group>"; };
 		1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B0213FAF817FCC4915F0DC1C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				D154BF9AE96ED6D023BE10B6 /* Views */,
 				57237621A0BE1CD5D3D4F0EE /* Support */,
 				1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */,
+				6437AB04BA5CC332625C9638 /* LMBuildInfo.swift */,
 				503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */,
 			);
 			path = LeapmotorLite;
@@ -281,6 +284,7 @@
 				9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */,
 				4815462BBC23FF3D6F58FF3C /* SignalExplorerView.swift in Sources */,
 				7905221120FBB9DB8B74B787 /* Theme.swift in Sources */,
+				5D48FAE9F25FB3812A5FE6D2 /* LMBuildInfo.swift in Sources */,
 				AD7D1D4EEC7C579D1396E3C3 /* LeapmotorLiteApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

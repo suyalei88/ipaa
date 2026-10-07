@@ -3,7 +3,10 @@
 //  LeapmotorLite
 //
 //  算法自检页：用真实抓包向量验证 HMAC / XOR3 / AES / MD5 实现，
-//  外加坐标换算（WGS-84 ↔ GCJ-02）的参考向量校验。
+//  外加坐标换算（WGS-84 ↔ GCJ-02）的参考向量校验，以及构建标识检查。
+//
+//  ★ 顶部会显示 `LMBuildInfo.displayText`（版本号 + 构建 tag）——
+//    这是「我装的到底是哪一版」的最快判据，别删。
 //
 import SwiftUI
 import Foundation
@@ -29,6 +32,14 @@ struct SelfTestView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+
+                    // ★ 构建标识放这里：用户打开这一页就能确认装的是哪一版，
+                    //   不用再去翻 IPA 产物比对二进制。
+                    Text(LMBuildInfo.displayText)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)

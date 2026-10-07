@@ -73,7 +73,16 @@ else
   warn "未签名模式（给 Sideloadly / AltStore / TrollStore 再签名用）"
 fi
 
-# ---------- 4) 构建 ----------
+# ---------- 4) 构建指纹 ----------
+# ★ 把 git 提交号和构建时刻注进 Info.plist（见 Support/Info.plist 的 LMGitSHA / LMBuildTime）。
+#   为什么必须有：2026-10-07 那次两版包的版本号都是 1.0.0 (1)，用户装完说
+#   「跟上个版本一样」，我们只能把两个 IPA 都下下来比对二进制才知道谁是谁。
+#   手工改版本号总会忘，提交号不会 —— 每个包天然唯一。
+GIT_SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+BUILD_TIME="$(date -u '+%Y-%m-%d %H:%MZ')"
+say "构建指纹: $GIT_SHA @ $BUILD_TIME"
+
+# ---------- 5) 构建 ----------
 say "xcodebuild (Release / iphoneos)…"
 rm -rf "$BUILD_DIR"
 set -x
@@ -84,6 +93,8 @@ xcodebuild \
   -sdk iphoneos \
   -destination "generic/platform=iOS" \
   -derivedDataPath "$BUILD_DIR" \
+  LM_GIT_SHA="$GIT_SHA" \
+  LM_BUILD_TIME="$BUILD_TIME" \
   "${SIGN_ARGS[@]}" \
   build
 set +x
@@ -91,11 +102,39 @@ set +x
 APP="$BUILD_DIR/Build/Products/Release-iphoneos/$APP_NAME.app"
 [[ -d "$APP" ]] || die "构建产物不存在：$APP"
 
+# ---------- 4b) 构建指纹兜底 ----------
+# 上面用 `LM_GIT_SHA=...` 传给 xcodebuild，由 Info.plist 的 `$(LM_GIT_SHA)` 展开。
+# 绝大多数情况这一步就够了；但万一某个 Xcode 版本不把命令行自定义设置喂给
+# Info.plist 展开，plist 里就会留着字面量 `$(LM_GIT_SHA)`。
+# 所以这里检查一次，没展开就当场用 PlistBuddy 补上。
+#
+# ⚠️ 只在**未签名**模式下补：签名包里改 Info.plist 会破坏签名。
+#    签名模式如果没展开，只能靠 CI 那一步报错，让人去查 Xcode 行为。
+_raw_sha="$(/usr/libexec/PlistBuddy -c 'Print :LMGitSHA' "$APP/Info.plist" 2>/dev/null || echo '')"
+if [[ "$_raw_sha" == '$('* ]]; then
+  if [[ "$SUFFIX" == "unsigned" ]]; then
+    warn "xcodebuild 没展开 LM_GIT_SHA，改用 PlistBuddy 兜底写入"
+    /usr/libexec/PlistBuddy -c "Set :LMGitSHA $GIT_SHA" "$APP/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :LMBuildTime $BUILD_TIME" "$APP/Info.plist"
+  else
+    warn "xcodebuild 没展开 LM_GIT_SHA，且当前是签名模式 —— 不改 plist（会破坏签名）"
+  fi
+fi
+
 BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist" 2>/dev/null || echo '?')"
+APP_VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist" 2>/dev/null || echo '?')"
+APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist" 2>/dev/null || echo '?')"
+APP_SHA="$(/usr/libexec/PlistBuddy -c 'Print :LMGitSHA' "$APP/Info.plist" 2>/dev/null || echo '?')"
 say "产物: $APP"
 say "BundleID: $BUNDLE_ID"
+say "版本: $APP_VER ($APP_BUILD)   构建指纹: $APP_SHA"
 
-# ---------- 5) 打包成 .ipa ----------
+# 版本号还是初始值就吼一声 —— 用户会分不清新旧包（2026-10-07 踩过）
+if [[ "$APP_VER" == "1.0.0" && "$APP_BUILD" == "1" ]]; then
+  warn "版本号仍是初始的 1.0.0 (1)！记得改 Support/Info.plist 和 LMBuildInfo.tag"
+fi
+
+# ---------- 6) 打包成 .ipa ----------
 say "打包 .ipa…"
 rm -rf "$OUT_DIR/Payload"
 mkdir -p "$OUT_DIR/Payload"
