@@ -164,6 +164,51 @@ struct BatteryRing: View {
     }
 }
 
+// MARK: - 秒级时钟（驱动倒计时）
+
+/// 让一个 `@State var now: Date` 每 0.5 秒往前走一次。
+///
+/// 为什么需要它：SwiftUI 不会因为 `Date()` 变了就重绘。像「操作密码锁定还剩
+/// N 秒」这种 UI，如果只读一个基于 `Date()` 的计算属性，倒计时会永远停在
+/// 第一帧的数字上，而且到期后按钮仍然是禁用的（没有任何 @Published 变化
+/// 触发重绘）—— 用户会被永久卡住，比不显示倒计时还糟。
+///
+/// 用法：
+/// ```swift
+/// @State private var now = Date()
+/// ...
+/// ScrollView { ... }
+///     .lmClock(until: client.controlLockedUntil, now: $now)
+/// ```
+/// 之后用 `client.isControlLocked(at: now)` / `client.controlLockRemaining(at: now)`。
+///
+/// `deadline == nil` 时只对齐一次就退出，不空转。
+/// `.task(id:)` 会在 `deadline` 变化时自动重启，所以「解锁 → 又被锁」也接得住。
+private struct LMClockModifier: ViewModifier {
+    let deadline: Date?
+    @Binding var now: Date
+
+    func body(content: Content) -> some View {
+        content.task(id: deadline) {
+            now = Date()
+            guard deadline != nil else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if Task.isCancelled { break }
+                now = Date()
+                // 到点了就停，别一直空转（此时 isControlLocked(at:) 已经返回 false）
+                if let d = deadline, d <= now { break }
+            }
+        }
+    }
+}
+
+extension View {
+    func lmClock(until deadline: Date?, now: Binding<Date>) -> some View {
+        modifier(LMClockModifier(deadline: deadline, now: now))
+    }
+}
+
 // MARK: - 状态胶囊
 
 /// 车锁 / 已设防之类的小状态标签。

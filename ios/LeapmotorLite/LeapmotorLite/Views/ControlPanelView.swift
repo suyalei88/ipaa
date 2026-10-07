@@ -17,6 +17,8 @@ struct ControlPanelView: View {
     @State private var confirmKey: String?
     @State private var toast: String?
     @State private var toastIsError = false
+    /// 由 .lmClock 每 0.5 秒推一次，用来驱动锁定期倒计时
+    @State private var now = Date()
 
     private let columns = [GridItem(.adaptive(minimum: 104), spacing: 12)]
 
@@ -37,6 +39,8 @@ struct ControlPanelView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("车控")
         .refreshable { try? await client.refreshStatus() }
+        // ★ 必须有这个：不然倒计时冻在 "300 秒"，而且到期后按钮不会重新启用
+        .lmClock(until: client.controlLockedUntil, now: $now)
         .overlay(alignment: .bottom) { toastView }
         .confirmationDialog("确认下发车控指令？",
                             isPresented: confirmBinding,
@@ -80,11 +84,11 @@ struct ControlPanelView: View {
 
     @ViewBuilder
     private var statusBanners: some View {
-        if client.isControlLocked {
+        if client.isControlLocked(at: now) {
             banner(icon: "lock.trianglebadge.exclamationmark.fill",
                    tint: Color.lmBad,
                    title: "操作密码已锁定",
-                   text: "服务端返回「操作密码累计出错 3 次以上」，请 \(client.controlLockRemaining) 秒后再试。"
+                   text: "服务端返回「操作密码累计出错 3 次以上」，请 \(client.controlLockRemaining(at: now)) 秒后再试。"
                        + "建议先去「设置 → 操作密码」核对密码。")
         } else if client.session?.opPassword.isEmpty ?? true {
             banner(icon: "exclamationmark.triangle.fill",
@@ -158,7 +162,7 @@ struct ControlPanelView: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(pendingAction != nil || client.isControlLocked)
+        .disabled(pendingAction != nil || client.isControlLocked(at: now))
     }
 
     private func tint(for key: String) -> Color {

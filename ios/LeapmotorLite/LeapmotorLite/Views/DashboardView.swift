@@ -13,6 +13,8 @@ struct DashboardView: View {
     @State private var showAllSignals = false
     @State private var toast: String?
     @State private var toastIsError = false
+    /// 由 .lmClock 每 0.5 秒推一次，用来驱动锁定期倒计时
+    @State private var now = Date()
 
     private let tiles = [
         GridItem(.flexible(), spacing: 12),
@@ -38,6 +40,8 @@ struct DashboardView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("车况")
         .refreshable { await client.refreshAll() }
+        // ★ 必须有这个：不然倒计时冻在 "300 秒"，而且到期后快捷车控按钮不会重新启用
+        .lmClock(until: client.controlLockedUntil, now: $now)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if client.isBusy {
@@ -213,14 +217,14 @@ struct DashboardView: View {
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(client.isBusy || client.isControlLocked)
+        .disabled(client.isBusy || client.isControlLocked(at: now))
     }
 
     /// 快捷操作：和车控页走同一条链路（含业务码 70 锁定提示）
     private func runQuick(key: String, title: String) async {
-        if client.isControlLocked {
+        if client.isControlLocked(at: now) {
             toastIsError = true
-            toast = "操作密码被锁定，请 \(client.controlLockRemaining) 秒后再试"
+            toast = "操作密码被锁定，请 \(client.controlLockRemaining(at: now)) 秒后再试"
             return
         }
         let ok = await client.control(key)

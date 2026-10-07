@@ -25,6 +25,21 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
   R5  withUnsafeMutableBytes 闭包内访问外层变量的属性（含 .count）
       error: overlapping accesses to 'x', but modification requires exclusive access
 
+  R6  括号不平衡
+      大段重写 View 之后最容易漏一个 } 或 )，编译器报的却是别处的
+      `expected '}' in ...`，翻半天。
+
+  R7  同名 static 成员重复声明（跨文件扫 extension）
+      invalid redeclaration of 'lmAccent'（把 Color 扩展从 App 挪到 Theme 时忘了删）
+
+  R8  SecureField 上挂 .textContentType(.oneTimeCode)
+      iOS 会把刚收到的短信验证码自动填进操作密码框 → 用户看着是自己输的，
+      实际提交的是 OTP → 服务端一直回「业务错误 70：操作密码累计出错 3 次以上」。
+
+  R9  视图读了依赖当前时间的锁定状态却没挂 .lmClock(until:now:)
+      SwiftUI 不会因为 Date() 变了就重绘 → 倒计时冻在第一帧，
+      而且锁定期到期后按钮永远不会重新启用，用户被永久卡死。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -62,6 +77,7 @@ RULES = {
     "R6": "括号不平衡（大改之后最容易漏，报 expected '}' / expected ')'）",
     "R7": "同名 static 成员重复声明（invalid redeclaration）",
     "R8": "SecureField 挂 .oneTimeCode（短信验证码会被自动填进去）",
+    "R9": "读了依赖当前时间的锁定状态却没挂 .lmClock（倒计时冻住 / 按钮永远禁用）",
 }
 
 
@@ -192,6 +208,23 @@ def check(path: str, src: str):
             add(m.start(), "R8",
                 "SecureField 上挂了 .oneTimeCode → 会被短信验证码自动填充；"
                 "操作密码请用 .password 或不设")
+
+    # R9 —— 读了「跟当前时间有关」的锁定状态，却没挂 .lmClock
+    # SwiftUI 不会因为 Date() 变了就重绘。只读 client.isControlLocked(at:) 的视图
+    # 会把倒计时冻在第一帧的数字上，而且锁定期到期后按钮永远不会重新启用
+    # （没有任何 @Published 变化触发重绘）—— 用户被永久卡死，比不显示倒计时更糟。
+    # 视图必须挂 .lmClock(until:now:) 推一个每秒更新的 now。
+    #
+    # 定义处（LMClient.swift 里那两行 `func ...`）要放行，否则会误报自己。
+    defines_api = "func isControlLocked" in code or "func controlLockRemaining" in code
+    if not defines_api and ("isControlLocked(" in code or "controlLockRemaining(" in code):
+        if ".lmClock(" not in code:
+            idx = code.find("isControlLocked(")
+            if idx < 0:
+                idx = code.find("controlLockRemaining(")
+            add(idx, "R9",
+                "读了 isControlLocked/controlLockRemaining（依赖当前时间）但本文件没有"
+                ".lmClock(until:now:) → 倒计时会冻住，锁定期到期后按钮不会重新启用")
     return hits
 
 

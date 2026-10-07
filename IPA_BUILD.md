@@ -130,6 +130,7 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 | **车控报 `业务错误 70：操作密码累计出错3次以上`** | 发出去的明文密码不对。先去「设置 → 诊断 → 车控体检」看「本地回解」是否等于输入；再看 R8（`.oneTimeCode` 污染）。等 5 分钟再试，期间 App 会自动禁用按钮 |
 | **车控报「操作密码错误」** | 同上。若「本地回解」正常，说明密码和账号不匹配 —— 官方 App 抓包里 `oppwd` 反推出来的明文才是真密码 |
 | 车控按钮点了没反应 | 看是否处于「操作密码已锁定」状态（业务码 70 后本地倒计时 5 分钟） |
+| **锁定倒计时不动 / 5 分钟后按钮还是灰的** | 视图没挂 `.lmClock(until:now:)`（R9）。SwiftUI 不会因为 `Date()` 变了就重绘，必须自己推 `now` |
 | 登录提示 `1019 参数不能为空`（**获取验证码**时报） | `phoneNo` 是 base64 密文，里面的 `+` 必须转义成 `%2B`。**别用 `URLComponents.queryItems`** —— `+` 属于 `CharacterSet.urlQueryAllowed`，它不会转义，服务端按 form 规则把 `+` 解成空格 → 密文损坏。用 `LMClient.makeURL(host:path:params:)`。实测：裸 `+` → 1019，`%2B` → code 200 |
 | 登录提示 `1019 参数不能为空`（**提交验证码**时报） | `check_login_with_phone` 必须发 form-urlencoded（代码里已经是，别改成 JSON） |
 | 登录提示 `302002002 签名信息校验失败` | 登录前签名必须是 **SHA256(valueStr)**，不是 HMAC |
@@ -167,7 +168,7 @@ python3 ios/tools/lint_swift.py     # CI 里也会跑，命中直接 fail
 python3 ios/tools/gen_xcodeproj.py --check   # 新增 .swift 后忘了重生成工程会被这里拦下
 ```
 
-`lint_swift.py` 覆盖 R1–R8：
+`lint_swift.py` 覆盖 R1–R9：
 
 | 规则 | 内容 |
 |---|---|
@@ -179,6 +180,7 @@ python3 ios/tools/gen_xcodeproj.py --check   # 新增 .swift 后忘了重生成�
 | R6 | 括号不平衡 |
 | R7 | 同名 `static` 成员重复声明 |
 | R8 | `SecureField` 挂 `.textContentType(.oneTimeCode)` |
+| R9 | 读了依赖当前时间的锁定状态，却没挂 `.lmClock(until:now:)` |
 
 `gen_xcodeproj.py --check` 另外覆盖 G1（见下）。
 
@@ -322,6 +324,34 @@ SecureField("操作密码", text: $opPassword)
 用户输入的数字被悄悄替换掉，界面上是一排点看不出来，服务端却一直回
 `业务错误 70：操作密码累计出错3次以上，请5分钟后再试`。
 （`.oneTimeCode` 只在**收短信验证码**的 `TextField` 上是正确用法。）
+
+### R9 倒计时必须自己推 `now`，不能只读计算属性
+
+```swift
+// ✗ 倒计时会冻在第一帧的 "300 秒"，而且 5 分钟到期后按钮还是禁用的
+if client.isControlLocked { ... }
+.disabled(client.isControlLocked)
+
+// ✓ 视图挂 .lmClock 推一个每秒更新的 now
+@State private var now = Date()
+...
+.lmClock(until: client.controlLockedUntil, now: $now)
+
+if client.isControlLocked(at: now) { ... }
+.disabled(client.isControlLocked(at: now))
+```
+
+**SwiftUI 不会因为 `Date()` 变了就重绘。** 基于 `Date()` 的计算属性只在
+其它 `@Published` 变化时才重新求值。锁定期那 5 分钟里没有任何状态变化，
+所以：倒计时定格、到期后按钮永远禁用 —— 用户被彻底卡死，比不显示倒计时更糟。
+
+`LMClient` 里因此把 `isControlLocked` / `controlLockRemaining` 写成
+**带默认参数的方法**（`at now: Date = Date()`），而不是无参计算属性：
+这样「此刻」和「某个时间点」是同一个 API，视图传 `now` 就行，
+`sendControl()` 里不传参就是当下。
+
+> 为什么不用「属性 + 方法」同名重载（`var x: Bool { x(at: Date()) }`）：
+> 那种写法能不能过编译得赌，本地没有 `swiftc` 可验，不冒这个险。
 
 ### 附：`ForEach` 的类型推断级联（lint 抓不到，只能靠读错误日志判断）
 

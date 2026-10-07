@@ -118,15 +118,27 @@ final class LMClient: ObservableObject {
     /// 最近一次车控请求的体检单
     @Published private(set) var lastControlTrace: LMControlTrace?
 
-    var isControlLocked: Bool {
+    // ★ 为什么是「带默认参数的方法」而不是「无参计算属性」：
+    //   SwiftUI 不会因为 `Date()` 变了就重绘。如果写成无参计算属性，它只在
+    //   `controlLockedUntil` 变化时重新求值 —— 倒计时会永远停在 "300 秒"，
+    //   而且 5 分钟到期后按钮还是禁用的（没有任何状态变化触发重绘，用户被卡死）。
+    //   视图里必须自己推一个每秒更新的 `now` 传进来。
+    //   见 Theme.swift 的 `.lmClock(until:now:)`。
+    //
+    //   这里刻意不给「属性 + 方法」同名重载：`var x: Bool { x(at: Date()) }`
+    //   这种写法能不能过编译得赌，本地又没有 swiftc 可验，不冒这个险。
+    //   不传参 = 此刻，`isControlLocked()` 读起来跟属性差不多。
+
+    /// 服务端「操作密码累计出错」是否还在锁定期
+    func isControlLocked(at now: Date = Date()) -> Bool {
         guard let t = controlLockedUntil else { return false }
-        return t > Date()
+        return t > now
     }
 
     /// 还剩几秒解锁（向上取整）
-    var controlLockRemaining: Int {
+    func controlLockRemaining(at now: Date = Date()) -> Int {
         guard let t = controlLockedUntil else { return 0 }
-        return max(0, Int(t.timeIntervalSinceNow.rounded(.up)))
+        return max(0, Int(t.timeIntervalSince(now).rounded(.up)))
     }
 
     func clearControlLock() { controlLockedUntil = nil }
@@ -666,8 +678,8 @@ final class LMClient: ObservableObject {
         guard let s = session else { throw LMError.notLoggedIn }
 
         // 服务端还在锁定期就别再打 —— 每打一次都在给「累计出错」计数
-        if isControlLocked {
-            throw LMError.business(70, "操作密码累计出错，请 \(controlLockRemaining) 秒后再试")
+        if isControlLocked() {
+            throw LMError.business(70, "操作密码累计出错，请 \(controlLockRemaining()) 秒后再试")
         }
 
         guard !s.opPassword.isEmpty else {
