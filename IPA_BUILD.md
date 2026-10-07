@@ -121,18 +121,47 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 | 手机上 App 图标是白的 | 图标没生成。跑 `python3 ios/tools/make_icon.py`（需要 `pip install pillow`）后重新打包 |
 | 打开就闪退 | 先确认是 iOS 17+；再看 Xcode Devices 里的崩溃日志。大概率是 Sideloadly 签名时 bundle id 冲突，换个 Apple ID 或删掉旧的重装 |
 | 自检里 `signKey 派生` 失败 | 说明代码被改坏了。`git diff` 看 `Crypto/` 目录 |
-| 登录提示 `1019 参数不能为空` | `check_login_with_phone` 必须发 form-urlencoded（代码里已经是，别改成 JSON） |
+| 登录提示 `1019 参数不能为空`（**获取验证码**时报） | `phoneNo` 是 base64 密文，里面的 `+` 必须转义成 `%2B`。**别用 `URLComponents.queryItems`** —— `+` 属于 `CharacterSet.urlQueryAllowed`，它不会转义，服务端按 form 规则把 `+` 解成空格 → 密文损坏。用 `LMClient.makeURL(host:path:params:)`。实测：裸 `+` → 1019，`%2B` → code 200 |
+| 登录提示 `1019 参数不能为空`（**提交验证码**时报） | `check_login_with_phone` 必须发 form-urlencoded（代码里已经是，别改成 JSON） |
 | 登录提示 `302002002 签名信息校验失败` | 登录前签名必须是 **SHA256(valueStr)**，不是 HMAC |
 | 登录提示 `302010202 第三方TOKEN失效` | 短信验证码/外层 token 过期了，重新获取验证码 |
 
 ---
 
-## 改 Swift 代码前必看：5 个已经踩过的编译坑
+## 改 Swift 代码前必看：已踩过的坑
 
-这些是首次真机编译（Xcode 15.4 / iPhoneOS 17.5 SDK）时暴露出来的，
-静态审查几乎看不出来。**改完代码先自查这五条，能省好几轮 CI（每轮约 2.5 分钟）。**
+这些是首次真机编译（Xcode 15.4 / iPhoneOS 17.5 SDK）+ 首次真机运行暴露出来的，
+静态审查几乎看不出来。**改完代码先跑一遍自动检查，能省好几轮 CI（每轮约 2.5 分钟）：**
 
-### 1. 自定义颜色不能写前导点简写
+```bash
+python3 ios/tools/lint_swift.py     # CI 里也会跑，命中直接 fail
+```
+
+它覆盖下面 R1–R5 五条。R6 靠真机跑自检 + 实际请求验证。
+
+### R1（★ 最容易中，会导致线上请求失败）拼 URL 不要用 `URLComponents`
+
+```swift
+// ✗ 业务错误 1019：参数不能为空
+var comps = URLComponents(string: host + path)!
+comps.queryItems = [URLQueryItem(name: "phoneNo", value: enc)]   // enc 是 base64
+
+// ✓
+let url = makeURL(host: host, path: path, params: ["phoneNo": enc])
+```
+
+`+` 属于 `CharacterSet.urlQueryAllowed`，`URLComponents.queryItems` **不会**把它转义成 `%2B`。
+而 RSA / AES 密文的 base64 里 `+` 很常见，服务端按 form 规则解码时把它当成空格，
+密文随之损坏。实测对比：
+
+```
+phoneNo=<裸 + 的密文>     → {"code":1019,"success":false,"msg":"参数不能为空"}
+phoneNo=<+ 转成 %2B>      → {"code":200,"success":true,"msg":"操作成功"}
+```
+
+（Python 端的 `requests` 会自动转义，所以同一份逻辑 Python 能跑通、Swift 跑不通。）
+
+### R2 自定义颜色不能写前导点简写
 
 ```swift
 // ✗ error: type 'ShapeStyle' has no member 'lmAccent'
@@ -148,7 +177,7 @@ SwiftUI 只给标准色声明了 `extension ShapeStyle where Self == Color`，�
 
 注意 `.tint(.lmAccent)` 是**可以**的 —— `tint` 收的是具体 `Color`，不是泛型。
 
-### 2. 三元运算符两分支必须同类型
+### R3 三元运算符两分支必须同类型
 
 ```swift
 // ✗ .red → Color，.secondary → HierarchicalShapeStyle，两者不同类型
@@ -158,7 +187,7 @@ SwiftUI 只给标准色声明了 `extension ShapeStyle where Self == Color`，�
 .foregroundStyle(isError ? Color.red : Color.secondary)
 ```
 
-### 3. `withUnsafe*` 闭包里别访问外层变量
+### R4 `withUnsafe*` 闭包里别访问外层变量
 
 ```swift
 // ✗ error: overlapping accesses to 'out', but modification requires exclusive access
@@ -179,7 +208,7 @@ out.withUnsafeMutableBytes { outBuf in
 `withUnsafeMutableBytes` 是对变量的**修改**访问，闭包内再读它的属性（哪怕只是 `.count`）
 就会触发 Swift 的独占访问检查。
 
-### 4. Keychain 属性字典的键类型
+### R5 Keychain 属性字典的键类型
 
 ```swift
 // ✗ error: cannot convert value of type 'String' to expected dictionary key type 'CFString'
@@ -193,7 +222,7 @@ let attrs: [String: Any] = [
 ]
 ```
 
-### 5. `ForEach` 的类型推断级联
+### R6 `ForEach` 的类型推断级联（只能靠读错误日志判断）
 
 `ForEach(xs) { ... }` 报出这类**看起来毫不相关**的错误时：
 
@@ -203,7 +232,7 @@ generic parameter 'C' could not be inferred
 initializer 'init(_:)' requires that 'Binding<Subject>' conform to 'StringProtocol'
 ```
 
-八成不是 `ForEach` 本身的问题，而是**闭包体里别处有类型错误**（比如第 1 条那种），
+八成不是 `ForEach` 本身的问题，而是**闭包体里别处有类型错误**（比如 R2 那种），
 导致编译器回退去试 `Binding<C>` 重载。先把闭包内的错误修掉；
 想彻底消除歧义就显式给 id：
 

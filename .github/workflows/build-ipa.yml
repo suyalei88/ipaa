@@ -45,6 +45,12 @@ jobs:
         # 只给逆向侦察脚本用，CI 不跑那些）。
         run: pip install --quiet -r requirements.txt
 
+      - name: Swift 陷阱静态检查
+        # 拦截「只能靠真机编译/运行才发现」的坑：
+        #   URLComponents 拼 URL（'+' 不转义 → 1019）、[CFString: Any]、
+        #   foregroundStyle(.自定义色)、三元类型不同、withUnsafe 闭包独占访问
+        run: python3 ios/tools/lint_swift.py
+
       - name: 生成 App 图标（校验脚本可跑）
         run: python ios/tools/make_icon.py
 

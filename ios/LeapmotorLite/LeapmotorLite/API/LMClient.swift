@@ -168,11 +168,9 @@ final class LMClient: ObservableObject {
                  skipAuth: Bool = false) async throws -> Any {
 
         // 1) 组装 URL
-        var comps = URLComponents(string: host + path)!
-        if let params = params, !params.isEmpty {
-            comps.queryItems = params.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = makeURL(host: host, path: path, params: params) else {
+            throw LMError.transport("URL 非法：\(host + path)")
         }
-        guard let url = comps.url else { throw LMError.transport("URL 非法：\(host + path)") }
 
         // 2) 参与签名的 body 字典
         var signBody: [String: Any] = [:]
@@ -261,6 +259,26 @@ final class LMClient: ObservableObject {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
         return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
+    }
+
+    /// 拼 URL（含 query string），用严格百分号编码。
+    ///
+    /// ⚠️ 绝不能用 `URLComponents.queryItems` —— `+` 属于 `CharacterSet.urlQueryAllowed`，
+    /// 它**不会**把 `+` 转义成 `%2B`。而 RSA / AES 密文的 base64 里经常出现 `+`，
+    /// 服务端按 form 规则解码时会把它当成空格，密文随之损坏，表现为
+    ///     业务错误 1019：参数不能为空
+    /// （实测：裸 `+` → 1019；`%2B` → code 200）。
+    /// 这里用 `urlEncode`（只放行 unreserved 字符）从根上避免。
+    private func makeURL(host: String, path: String, params: [String: String]?) -> URL? {
+        var s = host + path
+        if let params = params, !params.isEmpty {
+            // 排序只为输出确定、方便比对日志；服务端不依赖 query 顺序
+            let q = params.keys.sorted()
+                .map { "\(urlEncode($0))=\(urlEncode(params[$0]!))" }
+                .joined(separator: "&")
+            s += "?" + q
+        }
+        return URL(string: s)
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from any: Any) throws -> T {
@@ -368,12 +386,12 @@ final class LMClient: ObservableObject {
     @discardableResult
     func sendSMSCode(phone: String) async throws -> String {
         let enc = try LMRSA.encrypt(phone)
-        var comps = URLComponents(string: LMEndpoints.userHost + LMEndpoints.Path.sendSMS)!
-        comps.queryItems = [
-            URLQueryItem(name: "phoneNo", value: enc),
-            URLQueryItem(name: "smDeviceId", value: config.smDeviceId),
-        ]
-        guard let url = comps.url else { throw LMError.transport("URL 非法") }
+        // 必须走 makeURL：phoneNo 是 base64 密文，含 '+' 时用 URLComponents 会坏
+        guard let url = makeURL(host: LMEndpoints.userHost,
+                                path: LMEndpoints.Path.sendSMS,
+                                params: ["phoneNo": enc, "smDeviceId": config.smDeviceId]) else {
+            throw LMError.transport("URL 非法")
+        }
 
         let any = try await send(method: "GET", url: url,
                                  headers: userHostHeaders(contentType: "application/json"),
