@@ -20,6 +20,7 @@ on:
     branches: [ main, master ]
     paths:
       - 'ios/**'
+      - 'client/**'
       - '.github/workflows/build-ipa.yml'
 
 permissions:
@@ -38,7 +39,9 @@ jobs:
           python-version: '3.12'
 
       - name: 安装依赖
-        run: pip install --quiet cryptography pillow
+        # requests 是 test_sign_regression.py 需要的（它会实例化 LeapmotorClient）。
+        # test_swift_vectors.py 本身已与 requests 解耦，裸环境也能跑。
+        run: pip install --quiet cryptography pillow requests
 
       - name: 生成 App 图标（校验脚本可跑）
         run: python ios/tools/make_icon.py

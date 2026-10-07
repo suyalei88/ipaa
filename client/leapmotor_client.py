@@ -38,7 +38,8 @@ signKey 派生（iOS `-[LMVLocalLoginModel modelCustomTransformFromDictionary:]`
     服务端保证 signParam 与 encryptParam 两组的 r2^r3 相同 => signKey == encryptKey。
     signKey 是服务端每会话下发（由 r2/r3 反推），无需 frida。
 
-依赖: pip install requests
+依赖: 只有真正发请求时需要 `pip install requests`；
+      签名 / 密钥派生 / oppwd 编码是纯标准库实现，import 本模块不要求 requests。
 """
 
 from __future__ import annotations
@@ -53,7 +54,23 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from urllib.parse import quote, parse_qsl
 
-import requests
+
+def _require_requests():
+    """惰性导入 requests。
+
+    签名 / 密钥派生 / oppwd 编码这些**纯算法**函数不该拖着 HTTP 库：
+    否则在只装了 cryptography 的环境（CI 的 vectors job）里，
+    连 `test_swift_vectors.py` 都会因为顶层 import 而直接挂掉。
+    只有真正要发请求（构造 LeapmotorClient）时才需要 requests。
+    """
+    try:
+        import requests  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover - 取决于运行环境
+        raise ImportError(
+            "发送 HTTP 请求需要 requests：pip install requests\n"
+            "（纯签名 / 派生算法不需要它，可正常使用）"
+        ) from exc
+    return requests
 
 
 # ============================================================
@@ -317,7 +334,7 @@ class LeapmotorClient:
     def __init__(self, cfg: Optional[Config] = None, ep: Optional[Endpoints] = None):
         self.cfg = cfg or Config()
         self.ep = ep or Endpoints()
-        self.s = requests.Session()
+        self.s = _require_requests().Session()
 
     # ---------- 请求头 ----------
     def build_headers(self, sign_body: Optional[dict] = None,
