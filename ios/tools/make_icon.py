@@ -85,7 +85,9 @@ def build() -> Image.Image:
 
 def write_json(path: str, obj) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    # newline="\n" 是必须的：Windows 上文本模式会把 \n 翻成 \r\n，
+    # 导致同一份脚本在 Windows / macOS 产出的 Contents.json 字节不同。
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
         f.write("\n")
 
