@@ -97,8 +97,6 @@ struct LMBLEKeyPrefs: Equatable {
     private static let kAutoLock   = "lm3rd.ble.autoLock"
     private static let kDoorUnlock = "lm3rd.ble.doorUnlock"
 
-    static let `default` = LMBLEKeyPrefs(autoUnlock: false, autoLock: false, doorUnlock: false)
-
     init(autoUnlock: Bool, autoLock: Bool, doorUnlock: Bool) {
         self.autoUnlock = autoUnlock
         self.autoLock = autoLock

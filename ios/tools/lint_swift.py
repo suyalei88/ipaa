@@ -55,6 +55,16 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       触发条件刻意收得很窄：必须同时有 CoreBluetooth delegate 协议
       + @Published + 没有任何主线程保证，才报 —— 避免误伤。
 
+  R12 局部变量名与同文件的方法名同名
+      真烧过一轮 CI：`LMClient.swift` 的 `probeBLEKey` 里写了
+          let request = [...]          // 想拼一段「请求描述」
+      而同一个类里有
+          func request(method:path:host:params:body:form:skipAuth:) async throws -> Any
+      于是后面 `try await request(method: "GET", ...)` 全被解析成「调用一个 String」，
+      报 `error: cannot call value of non-function type 'String'` ——
+      错误信息**完全不提遮蔽**，只说不是函数，翻半天。
+      Swift 对这类撞名没有任何编译警告，只能靠规则兜。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -95,6 +105,7 @@ RULES = {
     "R9": "读了依赖当前时间的锁定状态却没挂 .lmClock（倒计时冻住 / 按钮永远禁用）",
     "R10": "用了系统框架的符号却没 import 那个框架（MapKit / CoreLocation / UIKit / CoreBluetooth）",
     "R11": "CoreBluetooth delegate 回调里写 @Published 但没保证主线程（编译期无感，运行时崩/不刷新）",
+    "R12": "局部变量名与同文件的方法名同名 → 遮蔽方法调用（报「cannot call value of non-function type」）",
 }
 
 # R10 用：框架 → 该框架里「一眼能认出来」的符号正则
@@ -144,49 +155,125 @@ CB_MAIN_THREAD_PROOF = [
     r"@objc\s+dynamic",          # 少见，但保留
 ]
 
+# R12 用：这些名字跟同名方法撞了是正常的（协议 / SwiftUI 惯用名），直接放行。
+# 不加这个的话每个 `var body: some View` 都会跟 ViewModifier 的
+# `func body(content: Content)` 撞上，满屏噪音。
+R12_IDIOMATIC = {
+    "body", "description", "debugDescription", "hash", "encode", "decode",
+    "isEqual", "copy", "init", "main", "callAsFunction",
+}
+
 
 def blank_comments_and_strings(src: str) -> str:
-    """把注释和字符串内容替换成空格，保留原始行/列位置。"""
+    """把注释和字符串内容替换成空格，保留原始行/列位置。
+
+    ★ 必须认全 Swift 的四种字面量，否则会**静默失步** ——
+      失步比误报危险得多：后面的真代码被当成字符串一起吞掉，
+      所有规则同时失效，而输出还是「0 命中 通过」。
+      真踩过：`#"{"mac":"","version":"2.0"}"#` 这种原始字符串，
+      老实现按普通字符串处理，`{` 被吃掉而 `}` 留下来，
+      括号平衡（R6）当场就是错的。
+
+    支持：
+      · 普通字符串      "..."            （含 \\ 转义，换行即终止）
+      · 多行字符串      \"\"\"...\"\"\"       （可跨行，\\ 可转义）
+      · 原始字符串      #"..."#  ##"..."##  （# 个数必须配对）
+      · 行注释          //
+      · 块注释          /* ... */          （Swift 允许嵌套）
+    """
     out = list(src)
     i, n = 0, len(src)
-    in_str = in_block = False
+
+    def blank(a: int, b: int) -> None:
+        """把 [a, b) 清成空格，但保留换行（行号不能乱）。"""
+        for k in range(a, min(b, n)):
+            if out[k] != "\n":
+                out[k] = " "
+
     while i < n:
         c = src[i]
-        if in_block:
-            if src.startswith("*/", i):
-                out[i] = out[i + 1] = " "
-                in_block = False
-                i += 2
-                continue
-            if c != "\n":
-                out[i] = " "
-            i += 1
-            continue
-        if in_str:
-            if c == "\\" and i + 1 < n:
-                out[i] = out[i + 1] = " "
-                i += 2
-                continue
-            if c == '"':
-                in_str = False
-            elif c != "\n":
-                out[i] = " "
-            i += 1
-            continue
+
+        # ---- 行注释 ----
         if src.startswith("//", i):
             j = src.find("\n", i)
             j = n if j < 0 else j
-            for k in range(i, j):
-                out[k] = " "
+            blank(i, j)
             i = j
             continue
+
+        # ---- 块注释（Swift 支持嵌套）----
         if src.startswith("/*", i):
-            out[i] = out[i + 1] = " "
-            in_block = True
-            i += 2
+            depth, j = 0, i
+            while j < n:
+                if src.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                    continue
+                if src.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                    if depth == 0:
+                        break
+                    continue
+                j += 1
+            blank(i, j)
+            i = min(j, n)
             continue
+
+        # ---- 原始字符串 #"..."# ----
+        if c == "#":
+            h, j = 0, i
+            while j < n and src[j] == "#":
+                h += 1
+                j += 1
+            if j < n and src[j] == '"':
+                k = j + 1
+                while k < n:
+                    if src[k] == '"':
+                        m, cnt = k + 1, 0
+                        while m < n and src[m] == "#" and cnt < h:
+                            cnt += 1
+                            m += 1
+                        if cnt == h:
+                            k = m
+                            break
+                    k += 1
+                blank(i, k)
+                i = min(k, n)
+                continue
+
+        # ---- 多行字符串 """...""" ----
+        if src.startswith('"""', i):
+            j = i + 3
+            while j < n:
+                if src[j] == "\\":
+                    j += 2
+                    continue
+                if src.startswith('"""', j):
+                    j += 3
+                    break
+                j += 1
+            blank(i, j)
+            i = min(j, n)
+            continue
+
+        # ---- 普通字符串 ----
         if c == '"':
-            in_str = True
+            j = i + 1
+            while j < n:
+                if src[j] == "\\":
+                    j += 2
+                    continue
+                if src[j] == '"':
+                    j += 1
+                    break
+                if src[j] == "\n":
+                    break
+                j += 1
+            blank(i, j)
+            i = max(min(j, n), i + 1)
+            continue
+
         i += 1
     return "".join(out)
 
@@ -291,7 +378,6 @@ def check(path: str, src: str):
                 ".lmClock(until:now:) → 倒计时会冻住，锁定期到期后按钮不会重新启用")
 
     # R11 —— CoreBluetooth delegate 回调里写 @Published 但没保证主线程
-    #
     # CBCentralManager 的 delegate 回调**不在主线程**（除非建的时候传 queue: nil）。
     # 在回调里写 @Published 会撞
     #     "Publishing changes from background threads is not allowed"
@@ -308,6 +394,44 @@ def check(path: str, src: str):
             add(idx, "R11",
                 "CoreBluetooth 的 delegate 回调不在主线程，但本文件有 @Published 且没有任何"
                 "主线程保证 → 建 manager 时传 `queue: nil`，或在回调里 DispatchQueue.main.async")
+
+    # R12 —— 局部变量遮蔽同文件的方法名
+    #
+    # 真烧过一轮 CI：LMClient.swift 的 probeBLEKey 里写了
+    #     let request = [ ... ]          // 想拼一段「请求描述」
+    # 而同一个类里有
+    #     func request(method:path:host:params:body:form:skipAuth:) async throws -> Any
+    # 于是后面 `try await request(method: "GET", ...)` 全被解析成「调用一个 String」，
+    # 报
+    #     error: cannot call value of non-function type 'String'
+    # 错误信息**完全不提遮蔽**，只说不是函数 —— 不熟悉的话要翻半天。
+    #
+    # 判定：同文件里出现的 `func 名字(` 与 `let/var 名字` 撞名就报。
+    # 这类撞名在 Swift 里没有任何编译警告，属于纯靠人眼容易漏的。
+    #
+    # ★ 两个约束，都是被误报逼出来的：
+    #   ① 只算「函数体内的局部变量」—— 用花括号深度卡（深度 ≥ 2）。
+    #      类型层的属性声明深度是 1，典型如 `var body: some View`；
+    #      它跟 ViewModifier 里的 `func body(content: Content)` 撞名是
+    #      SwiftUI 的常规写法（Theme.swift 就是这样），报出来纯噪音。
+    #   ② 名字白名单直接排除 body / hash / encode / decode 这类协议惯用名。
+    # 加完这两条之后，剩下的命中基本都是真问题。
+    func_names = set(re.findall(r"\bfunc\s+([A-Za-z_]\w*)\s*[<(]", code)) - R12_IDIOMATIC
+    if func_names:
+        depth = 0
+        for m in re.finditer(r"[{}]|\b(?:let|var)\s+([A-Za-z_]\w*)\s*(?::|=)", code):
+            tok = m.group(0)
+            if tok == "{":
+                depth += 1
+                continue
+            if tok == "}":
+                depth -= 1
+                continue
+            name = m.group(1)
+            if depth >= 2 and name in func_names:
+                add(m.start(), "R12",
+                    f"局部变量 `{name}` 与同文件的方法名撞了 → 会遮蔽方法调用，"
+                    f"报的却是「cannot call value of non-function type」。改个名")
 
     # R10 —— 用了某个系统框架的类型，却没 import 那个框架
     #

@@ -431,12 +431,16 @@ struct DiagnosticsView: View {
         guard let vin = client.selectedVehicle?.vin else { return }
         bleBusy = true
         defer { bleBusy = false }
+        // ★ 显式标类型：`method == "POST" ? ["vin": vin] : nil` 这种三元
+        //   一边是 [String: String]、一边是 nil，参数类型却是 [String: Any]?，
+        //   让推断去猜不如直接写死。
+        let postBody: [String: Any]? = (method == "POST") ? ["vin": vin] : nil
         for prefix in LMEndpoints.pathPrefixes {
             let tag = prefix.isEmpty ? "无前缀" : prefix
             await client.probeBLEKey(barePath: prefix + barePath,
                                      method: method,
                                      params: ["vin": vin],
-                                     body: method == "POST" ? ["vin": vin] : nil,
+                                     body: postBody,
                                      title: "\(title)（\(tag)）")
         }
     }

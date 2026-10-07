@@ -348,7 +348,15 @@ final class LMBLECentral: NSObject, ObservableObject {
             out += "\(f.string(from: e.at))  [\(e.direction.rawValue)]  \(e.text)\n"
             if let h = e.hex { out += "      hex : \(h)\n" }
             if let a = e.ascii { out += "      text: \(a)\n" }
-            if let fs = e.fields { out += "      segs: \(fs.enumerated().map { "[\($0.offset)]\($0.element)" }.joined(separator: "  "))\n" }
+            if let fs = e.fields {
+                // ★ 先把分号段拼好再插值，不要写成
+                //   "\(fs.enumerated().map { "[\($0.offset)]..." }...)"
+                //   —— 三层嵌套字符串字面量套在同一个插值里，解析器容易翻车。
+                let segs = fs.enumerated()
+                    .map { "[\($0.offset)]\($0.element)" }
+                    .joined(separator: "  ")
+                out += "      segs: \(segs)\n"
+            }
         }
         return out
     }

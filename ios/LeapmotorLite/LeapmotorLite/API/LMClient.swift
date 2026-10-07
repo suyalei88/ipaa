@@ -760,10 +760,23 @@ final class LMClient: ObservableObject {
                      body: [String: Any]? = nil,
                      title: String,
                      host: String = LMEndpoints.gateway) async -> LMBLEProbeResult {
-        let request = [
-            params.map { "?" + $0.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "&") } ?? "",
-            body.map { "body=" + prettyJSON($0) } ?? "",
-        ].filter { !$0.isEmpty }.joined(separator: "  ")
+        // ★ 变量名**不能**叫 `request`：本类里有
+        //     func request(method:path:host:params:body:form:skipAuth:) async throws -> Any
+        //   一旦被局部变量遮蔽，下面 `try await request(...)` 会被解析成
+        //   「调用一个 String」，报 `cannot call value of non-function type 'String'`，
+        //   而错误信息完全不提遮蔽 —— 这一版真烧了一轮 CI。
+        //   lint 的 R12 现在专门拦这个。
+        var descParts: [String] = []
+        if let params = params, !params.isEmpty {
+            let q = params.keys.sorted()
+                .map { "\($0)=\(params[$0] ?? "")" }
+                .joined(separator: "&")
+            descParts.append("?" + q)
+        }
+        if let body = body {
+            descParts.append("body=" + prettyJSON(body))
+        }
+        let desc = descParts.joined(separator: "  ")
 
         var text: String
         var ok = false
@@ -781,7 +794,7 @@ final class LMClient: ObservableObject {
         }
 
         let r = LMBLEProbeResult(at: Date(), title: title, path: barePath,
-                                 request: request.isEmpty ? "（无参数）" : request,
+                                 request: desc.isEmpty ? "（无参数）" : desc,
                                  response: text, ok: ok)
         bleProbes.insert(r, at: 0)
         if bleProbes.count > 40 { bleProbes.removeLast(bleProbes.count - 40) }
@@ -802,9 +815,13 @@ final class LMClient: ObservableObject {
         var out: [LMBLEProbeResult] = []
         for prefix in LMEndpoints.pathPrefixes {
             let full = prefix + LMEndpoints.Path.bleKeySync
-            out.append(await probeBLEKey(barePath: full, method: "GET",
-                                         params: ["vin": vin],
-                                         title: "同步钥匙（前缀 \(prefix.isEmpty ? "无" : prefix)）"))
+            let tag = prefix.isEmpty ? "无" : prefix
+            // ★ 先 await 到变量再 append，不写成 `out.append(await f(...))`：
+            //   后者合法但把 await 埋在实参里，读起来费劲，也没必要。
+            let r = await probeBLEKey(barePath: full, method: "GET",
+                                      params: ["vin": vin],
+                                      title: "同步钥匙（前缀 \(tag)）")
+            out.append(r)
         }
         return out
     }
