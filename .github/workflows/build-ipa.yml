@@ -72,8 +72,17 @@ jobs:
           python3 --version
           sw_vers
 
-      - name: 生成图标
-        run: python3 ios/tools/make_icon.py
+      - name: 校验图标已就位
+        # 图标（icon-1024.png + 两个 Contents.json）已随仓库提交，
+        # 所以 build job 不需要 PIL —— make_icon.py 的正确性由 vectors job 验证。
+        # 这里只确认资产存在且尺寸正确，避免把错误推迟到 xcodebuild 才暴露。
+        run: |
+          ICON="ios/LeapmotorLite/LeapmotorLite/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+          if [ ! -f "$ICON" ]; then
+            echo "::error::缺少 $ICON —— 本地跑 python3 ios/tools/make_icon.py 后提交"
+            exit 1
+          fi
+          sips -g pixelWidth -g pixelHeight "$ICON"
 
       - name: 构建 IPA
         run: bash ios/build_ipa.sh
