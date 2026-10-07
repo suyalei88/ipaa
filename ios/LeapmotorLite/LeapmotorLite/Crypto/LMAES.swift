@@ -41,7 +41,13 @@ enum LMAES {
             throw AESError.badKeyOrIV
         }
 
+        // 容量必须在闭包外取出来。
+        // out.withUnsafeMutableBytes 是对 out 的**修改**访问，若在它内部再读
+        // out.count，Swift 的独占访问检查会直接报错：
+        //   "overlapping accesses to 'out', but modification requires exclusive access"
         var out = Data(count: data.count + kCCBlockSizeAES128)
+        let outCapacity = out.count
+        let inLength = data.count
         var moved = 0
         let status: CCCryptorStatus = out.withUnsafeMutableBytes { outBuf in
             data.withUnsafeBytes { inBuf in
@@ -52,8 +58,8 @@ enum LMAES {
                                 CCOptions(kCCOptionPKCS7Padding),   // ← 注意：无 ECB，即 CBC
                                 kBuf.baseAddress, kCCKeySizeAES128,
                                 ivBuf.baseAddress,
-                                inBuf.baseAddress, data.count,
-                                outBuf.baseAddress, out.count,
+                                inBuf.baseAddress, inLength,
+                                outBuf.baseAddress, outCapacity,
                                 &moved)
                     }
                 }
