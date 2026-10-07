@@ -132,6 +132,7 @@ App 自动完成「发码 → 换外层 token → 换 JWT → 派生 signKey」�
 python client/leapmotor_client.py         # 自测：signKey 派生 + oppwd 加密
 python client/test_sign_regression.py     # HAR 回归 → 101/105
 python client/test_swift_vectors.py       # ★ 校验 Swift 自测里的全部向量（无需 Xcode）
+python client/test_coord_vectors.py       # ★ 坐标系换算（WGS-84 ↔ GCJ-02）→ 15/15
 python client/derive_signkey.py           # 从登录响应 HAR 现场派生 signKey
 
 # ★ 完整登录链路（会真的发短信）
@@ -149,11 +150,14 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 | 车况 / 车辆列表 / 车控 | ✅ 100% 命中 |
 | 电量 / 续航 / 里程 / 温度 / 锁态 | ✅ 信号 id 已用多快照线性回归确认（见上表） |
 | 车辆定位（经纬度 + 地图 + 导航） | ✅ `2190/2191`，`3725/3724` 做交叉校验 |
-| 充电信息（剩余充电时间） | ✅ `1200`，两次独立推算 578.5 / 572.6 min/%（误差 1%） |
+| ↳ 车机坐标的**坐标系** | ⚠️ **方向未定** —— 官方 App 两个方向的换算都实现了，静态定不下来。已做成三选一校正（默认 `WGS-84 → GCJ-02`，正好复现「偏 574 米」），站车边上 10 秒可自证。见 `API/LMCoordinate.swift` |
+| 充电信息（距目标电量还要多久） | ✅ `1200` —— 是**纯 SOC 投影** `round(11.33 × (目标 − SOC))`，最小二乘自由拟合出的目标是 **89.8%**，独立对上配置里的 `90`。★ 它**与是否在充电无关**，未充电时也是正数（实测 550） |
+| 是否正在充电 | ✅ 已找到 —— 5 个状态位 `100004/1149/1257/3636/3722` 投票 + 充电电流 `1178`。判据来自「充电 vs 未充电」逐信号 diff |
+| 充电电流 | ✅ `1178`（充电时 −8.3 A，未充电 0.0） |
+| 电池/母线电压（疑似） | ⚠️ `1177` —— **不是功率**（功率未充电时必须为 0，而它是 732.7）。是电压量级的数，具体含义待定，界面已降级标注 |
+| `1255` / `1480` / `3638` | ❌ 与充电状态**无区分度**（两个快照都是 2 / 1 / 1），已从候选里剔除 |
 | 预约充电配置（时段 / 目标电量 / 重复） | ✅ `commonConfig.config["3"]`（只读，不改车） |
 | 电池温度 | ✅ `2183` |
-| 充电功率 / 电流（`1177` / `1178`） | ⚠️ 未定 —— 界面上明确标「疑似」，靠快照对比自行确认 |
-| 是否正在充电（布尔状态位） | ⚠️ 未找到 —— 从 `1200 > 0` 推断，文案写「疑似充电中」 |
 | `parking/query` / `geocode/regeo` 两个端点 | ⚠️ 只有 IPA 字符串表里的路径，参数与响应未验证（诊断页可探测） |
 | 短信验证码登录（全 4 步） | ✅ 已实测打通（收到短信 → 换 JWT → signKey → 车控成功） |
 | 手机号 RSA 加密 | ✅ 已还原（SPKI→PKCS#1，1024-bit → 140 字节 DER） |
@@ -168,8 +172,8 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 | Tab | 内容 |
 |---|---|
 | 车况 | 车辆卡 / 电量环 / 续航·车内温度·总里程 / 状态芯片 / 定位卡 / 充电卡 / 8 个指标磁贴 / 快捷车控 / 全部信号 |
-| 定位 | MapKit 地图打点 / CLGeocoder 中文地址 / 坐标（含两组交叉校验）/ 一键跳高德与 Apple 地图 / 距我多远 |
-| 充电 | 电量环 + 目标电量 / 剩余充电时间 + 预计充满时刻 / 预约充电配置 / 电池温度 / 两套续航与满电估算 / 疑似项专区 |
+| 定位 | MapKit 地图打点 / CLGeocoder 中文地址 / 坐标（含两组交叉校验）/ **坐标校正（三选一 + 现场自证）** / 一键跳高德与 Apple 地图 / 距我多远 |
+| 充电 | 电量环 + 目标电量 / 距目标电量还需多久 + 预计时刻 / **充电判据证据卡（谁投的票）** / 预约充电配置 / 电池温度 / 两套续航与满电估算 / 疑似项专区 |
 | 车控 | 按「门锁·后备箱 / 空调 / 灯光 / 电源」分组，会动物理世界的动作带警示标 + 更重的确认文案 |
 | 设置 | 会话 / 操作密码（含 oppwd 现场预览）/ 车辆 / 功能入口 / 诊断 |
 
@@ -189,10 +193,11 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `.github/workflows/build-ipa.yml` — 云端打包流水线
 
 **iOS 交付**
-- `ios/LeapmotorLite/` — SwiftUI 车控 App（27 个 Swift 文件 + Info.plist + Assets.xcassets）
-- `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环 / 秒级时钟）
-- `ios/LeapmotorLite/LeapmotorLite/Views/LocationView.swift` — 车辆定位（MapKit + CLGeocoder + 导航）
-- `ios/LeapmotorLite/LeapmotorLite/Views/ChargeView.swift` — 充电信息（剩余时间 / 预约充电 / 疑似项专区）
+- `ios/LeapmotorLite/` — SwiftUI 车控 App（28 个 Swift 文件 + Info.plist + Assets.xcassets）
+- `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环 / 充电状态胶囊 / 秒级时钟）
+- `ios/LeapmotorLite/LeapmotorLite/API/LMCoordinate.swift` — ★ 坐标系换算（WGS-84 ↔ GCJ-02）+ 三选一校正策略 + 4 项自检
+- `ios/LeapmotorLite/LeapmotorLite/Views/LocationView.swift` — 车辆定位（MapKit + CLGeocoder + 导航 + 坐标校正卡）
+- `ios/LeapmotorLite/LeapmotorLite/Views/ChargeView.swift` — 充电信息（距目标电量还需多久 / 充电判据证据卡 / 预约充电 / 疑似项专区）
 - `ios/LeapmotorLite/LeapmotorLite/Views/SignalExplorerView.swift` — 信号浏览器 + 快照 A/B 对比
 - `ios/LeapmotorLite/LeapmotorLite/Views/BLEKeyView.swift` — ★ 蓝牙钥匙（云端钥匙记录 / 行为开关 / 接口探测 / 协议进度）
 - `ios/LeapmotorLite/LeapmotorLite/Views/BLEDebugView.swift` — ★ BLE 调试台（扫描 / GATT 树 / 订阅抓帧 / 发原始字节）
@@ -211,6 +216,7 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `client/leapmotor_chain.py` — ★ 完整登录链路（发码 / 登录 / 兑换 / 派生）
 - `client/test_sign_regression.py` — HAR 签名回归
 - `client/test_swift_vectors.py` — Swift 自测向量回归（无需 Xcode）
+- `client/test_coord_vectors.py` — ★ 坐标系换算回归（独立实现比对 + 回头读 Swift 源码文本，钉住「默认校正不是 .none」）
 - `client/ios_clsmeth.py` / `ios_scan_login.py` / `ios_cfref.py` — Mach-O / ObjC 逆向工具（元类方法表 / CFF 扫描 / CFString 交叉引用）
 - `client/objc_parse.py` / `macho_util.py` — Mach-O / ObjC 基础解析
 

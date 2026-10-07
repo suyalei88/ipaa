@@ -10,10 +10,18 @@
 //    3. /carownerservice/v3/api/vehicleinfo/parking/query —— 响应结构未知，
 //       只在「诊断」页做探测，本页不依赖它
 //
-//  ★ 坐标系：车机上报的是 WGS-84 原始 GPS。
-//    · 跳高德必须带 `coordinate=wgs84`，否则会被当成 GCJ-02 再偏一次（差几百米）；
-//    · Apple 地图的 URL scheme 收的就是 WGS-84，不需要自己转换。
-//    自己动手做 WGS→GCJ 偏移是常见的错误来源，这里不碰。
+//  ★ 坐标系（2026-10-07 重写）：
+//    老版本在注释里写死「车机上报的是 WGS-84 原始 GPS」—— 那是**没有证据的断言**，
+//    而且正好是「定位偏到隔壁小区」的成因。真实情况是：
+//      · 车机 T-Box 的 GPS 原生输出 WGS-84；
+//      · 但国内不少车企在云端就加过偏移（GCJ-02），好让 App 直接画到高德上；
+//      · 官方 App（1.22.68）里**两个方向都实现了**（wgs84ToGcj02: / gcj02ToWgs84:
+//        / transformLat:bdLon: / outOfChina:bdLon: / ap_wgs2gcj），
+//        还有 setExternalLocation:isAMapCoordinate: 这种「灌外部坐标要声明系别」的接口，
+//        所以无法据此判定云端给的是哪一系。
+//      · 合肥实测点 (31.801201, 117.342718) 两个方向相差 **574 米**。
+//    → 结论：**不猜**。换算实现在 API/LMCoordinate.swift，由 `carFix` 三选一，
+//      用户站到车旁（或跟官方 App 对比）一眼就能定下来。
 //
 //  ⚠️ 地图上显示的是**最后一次上报**的位置，不是实时的。车停在地库/隧道里时
 //     定位可能十几分钟不更新，所以这里把「采集时间」摆在显眼位置。
@@ -30,6 +38,9 @@ struct LocationView: View {
 
     @StateObject private var me = LMLocationProvider()
 
+    /// 车机坐标 → 地图坐标 的校正方式（持久化，见 LMCoordinate.swift）
+    @State private var carFix: LMCarCoordFix = LMCarCoordFixStore.load()
+
     /// 地图相机
     @State private var camera: MapCameraPosition = .automatic
     /// 逆地理编码出来的中文地址
@@ -42,6 +53,15 @@ struct LocationView: View {
     /// 每 30 秒推一次，用来刷新「x 分钟前」这种相对时间
     @State private var now = Date()
 
+    /// 车机原始坐标（未做任何换算）
+    private var rawCarCoordinate: CLLocationCoordinate2D? { client.coordinate }
+
+    /// 交给地图 / 地址 / 导航用的坐标（已按 `carFix` 换算）
+    private var carCoordinate: CLLocationCoordinate2D? {
+        guard let c = client.coordinate else { return nil }
+        return carFix.apply(c)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             mapArea
@@ -49,6 +69,7 @@ struct LocationView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     addressCard
                     coordinateCard
+                    coordFixCard
                     actionRow
                     distanceCard
                     sourceNote
@@ -99,15 +120,21 @@ struct LocationView: View {
         .onChange(of: me.coordinate?.latitude) { _, _ in
             if me.state == .ready { centerOnVehicle() }
         }
+        // 换了校正方式：落盘 + 重新落点 + 重新解析地址
+        .onChange(of: carFix) { _, newValue in
+            LMCarCoordFixStore.save(newValue)
+            centerOnVehicle()
+            Task { await reverseGeocode(force: true) }
+        }
     }
 
     // MARK: - 地图
 
     @ViewBuilder
     private var mapArea: some View {
-        if client.coordinate != nil {
+        if carCoordinate != nil {
             Map(position: $camera) {
-                if let c = client.coordinate {
+                if let c = carCoordinate {
                     Marker("车辆", systemImage: "car.fill", coordinate: c)
                         .tint(Color.lmAccent)
                 }
@@ -207,7 +234,7 @@ struct LocationView: View {
                     Text(e)
                         .font(.callout)
                         .foregroundStyle(Color.lmWarn)
-                } else if client.coordinate == nil {
+                } else if carCoordinate == nil {
                     Text("--")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -230,7 +257,7 @@ struct LocationView: View {
                         .font(.caption)
                 }
                 .buttonStyle(.borderless)
-                .disabled(client.coordinate == nil || geocoding)
+                .disabled(carCoordinate == nil || geocoding)
             }
         }
     }
@@ -240,9 +267,9 @@ struct LocationView: View {
     private var coordinateCard: some View {
         LMCard(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(text: "坐标（WGS-84）")
+                SectionHeader(text: "坐标（已按当前校正方式换算）")
 
-                if let c = client.coordinate {
+                if let c = carCoordinate {
                     coordRow("纬度", String(format: "%.6f", c.latitude), id: "2190")
                     Divider()
                     coordRow("经度", String(format: "%.6f", c.longitude), id: "2191")
@@ -296,6 +323,78 @@ struct LocationView: View {
         }
     }
 
+    // MARK: - 坐标校正
+
+    /// 车辆定位偏移的头号原因是坐标系不一致。
+    ///
+    /// 这里不替用户猜方向 —— 车机给的是 WGS-84 还是 GCJ-02 无法从二进制静态判定
+    /// （官方 App 两个方向的换算都实现了）。三个选项穷举了全部可能，
+    /// 用户站到车旁看一眼地图就能定下来。
+    private var coordFixCard: some View {
+        LMCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.lmIndigo)
+                    Text("坐标校正")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+
+                Picker("校正方式", selection: $carFix) {
+                    ForEach(LMCarCoordFix.allCases) { f in
+                        Text(f.title).tag(f)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Text(carFix.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                if let raw = rawCarCoordinate, let fixed = carCoordinate {
+                    Divider()
+                    keyRow("车机原始", String(format: "%.6f, %.6f", raw.latitude, raw.longitude))
+                    keyRow("换算之后", String(format: "%.6f, %.6f", fixed.latitude, fixed.longitude))
+                    let moved = LMCoord.distance(raw, fixed)
+                    keyRow("两者相距", moved < 1
+                           ? "不足 1 米"
+                           : String(format: "%.0f 米", moved))
+                }
+
+                Divider()
+
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.lmTeal)
+                    Text("""
+                    怎么确认哪个是对的（10 秒）：
+                    · 站到车旁边，看地图上「车辆」那个针有没有落在车上；
+                    · 或者打开官方 App 看它把车画在哪儿，跟这里对比一眼。
+                    不对就换一个选项 —— 只有三个，总有一个是对的。
+                    """)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func keyRow(_ k: String, _ v: String) -> some View {
+        HStack(alignment: .top) {
+            Text(k)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(v)
+                .font(.system(.caption2, design: .monospaced))
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
     // MARK: - 操作
 
     private var actionRow: some View {
@@ -318,7 +417,7 @@ struct LocationView: View {
                 }
             }
         }
-        .disabled(client.coordinate == nil)
+        .disabled(carCoordinate == nil)
     }
 
     private func bigButton(_ title: String, _ icon: String, _ tint: Color,
@@ -405,7 +504,8 @@ struct LocationView: View {
         Text("""
         位置来自车机上报的信号 2190/2191（另一组 3725/3724 做交叉校验），不是实时 GPS 跟踪。
         车熄火后位置可能长时间不更新；地库里通常没有定位。
-        跳转高德时已按 WGS-84 标注坐标，不会出现常见的「偏到隔壁小区」问题。
+        车机坐标属于哪一系（WGS-84 / GCJ-02）无法从协议静态判定，所以给了「坐标校正」三个选项：
+        国内两系相差约 500~600 米，选对了才落得准。
         """)
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -415,7 +515,10 @@ struct LocationView: View {
     // MARK: - 计算
 
     private var distanceMeters: Double? {
-        guard let c = client.coordinate, let u = me.coordinate else { return nil }
+        // ★ 用「换算到 WGS-84 的车机坐标」跟本机坐标量，别用地图上那两个点。
+        //   本机坐标必然是 WGS-84；地图换算是显示问题，拿它去量距离会白差几百米。
+        guard let raw = client.coordinate, let u = me.coordinate else { return nil }
+        let c = carFix.toWgs84(raw)
         return CLLocation(latitude: u.latitude, longitude: u.longitude)
             .distance(from: CLLocation(latitude: c.latitude, longitude: c.longitude))
     }
@@ -444,23 +547,29 @@ struct LocationView: View {
     }
 
     private var amapURL: URL? {
-        guard let c = client.coordinate else { return nil }
-        // ★ coordinate=wgs84 必须带：告诉高德这是原始 GPS 坐标，让它自己转 GCJ-02。
-        //   不带的话高德会把 WGS-84 当 GCJ-02 再偏一次，落点差几百米。
+        guard let c = carCoordinate else { return nil }
+        // ★ `coordinate=` 必须跟我们实际传的值对得上，否则高德会按它自己的默认值
+        //   再偏一次。取值由 carFix 决定（见 LMCoordinate.swift）：
+        //     .wgs84ToGcj02 → 我们传的是 GCJ-02 → coordinate=gcj02
+        //     .gcj02ToWgs84 → 我们传的是 WGS-84 → coordinate=wgs84
+        //     .none         → 不知道是哪一系，索性不带，让高德按默认处理
         let name = (address ?? "车辆位置").addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "car"
-        let s = "https://uri.amap.com/marker?position=\(c.longitude),\(c.latitude)"
-            + "&name=\(name)&coordinate=wgs84&callnative=1&src=leapmotorlite"
+        var s = "https://uri.amap.com/marker?position=\(c.longitude),\(c.latitude)"
+            + "&name=\(name)&callnative=1&src=leapmotorlite"
+        if let sys = carFix.amapCoordinateParam {
+            s += "&coordinate=\(sys)"
+        }
         return URL(string: s)
     }
 
     private var appleMapsURL: URL? {
-        guard let c = client.coordinate else { return nil }
+        guard let c = carCoordinate else { return nil }
         let q = (address ?? "车辆位置").addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "car"
         return URL(string: "https://maps.apple.com/?ll=\(c.latitude),\(c.longitude)&q=\(q)")
     }
 
     private func copyCoordinate() {
-        guard let c = client.coordinate else { return }
+        guard let c = carCoordinate else { return }
         UIPasteboard.general.string = String(format: "%.6f,%.6f", c.latitude, c.longitude)
         copied = true
         Task {
@@ -470,7 +579,7 @@ struct LocationView: View {
     }
 
     private func centerOnVehicle() {
-        guard let c = client.coordinate else { return }
+        guard let c = carCoordinate else { return }
         let region = MKCoordinateRegion(
             center: c,
             span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005))
@@ -483,8 +592,11 @@ struct LocationView: View {
 
     /// Apple 的 CLGeocoder（内部用的就是高德数据，国内地址够准），
     /// 不依赖我们那个「参数未验证」的 /v3/geocode/regeo。
+    ///
+    /// ★ 传进去的必须是 **WGS-84**（CLGeocoder 属于 CoreLocation），
+    ///   所以先按 carFix 把车机坐标转回来，别直接拿地图坐标去查。
     private func reverseGeocode(force: Bool = false) async {
-        guard let c = client.coordinate else {
+        guard let raw = client.coordinate else {
             address = nil
             placeName = nil
             return
@@ -494,6 +606,7 @@ struct LocationView: View {
         geocodeError = nil
         defer { geocoding = false }
 
+        let c = carFix.toWgs84(raw)
         let loc = CLLocation(latitude: c.latitude, longitude: c.longitude)
         do {
             let marks = try await CLGeocoder().reverseGeocodeLocation(loc)

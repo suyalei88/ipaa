@@ -98,6 +98,48 @@ struct LMControlTrace: Identifiable {
     var roundTripOK: Bool { !roundTrip.isEmpty && roundTrip != "<解密失败>" }
 }
 
+// MARK: - 充电状态
+
+/// 车辆当前是否在充电。
+///
+/// ★ 判据来自「充电中 / 未充电」两张真实快照的逐信号 diff，不是猜的：
+///
+///   | 信号 | 充电中 SOC 33.0/33.1 | 未充电 SOC 41.4 |
+///   |------|---------------------|----------------|
+///   | `1178` 充电电流 | −8.299 / −8.399 | **0.0** |
+///   | `100004` | 1 | **0** |
+///   | `1149`   | 1 | **0** |
+///   | `1257`   | 1 | **0** |
+///   | `3636`   | 1 | **0** |
+///   | `3722`   | 1 | **0** |
+///
+///   五路标志位**同步翻转**，其中 `1178` 还有物理意义（没电流就充不进电）。
+///   取「多数票 + 电流」双条件，避免单个标志位抖动造成误报。
+enum LMChargeState {
+    /// 在充电
+    case charging
+    /// 明确不在充电
+    case notCharging
+    /// 车况还没拉到，或标志位互相矛盾 —— 不猜
+    case unknown
+
+    var text: String {
+        switch self {
+        case .charging:    return "充电中"
+        case .notCharging: return "未充电"
+        case .unknown:     return "充电状态待确认"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .charging:    return "bolt.fill"
+        case .notCharging: return "bolt.slash"
+        case .unknown:     return "questionmark.circle"
+        }
+    }
+}
+
 // MARK: - 客户端
 
 @MainActor
@@ -685,8 +727,8 @@ final class LMClient: ObservableObject {
 
     /// 车辆配置：预约充电（config["3"]）、蓝牙钥匙（config["4"]）、隐私开关。
     ///
-    /// 这个接口是「充电信息」页的数据源 —— 剩余充电时间在 signalMap(1200)，
-    /// 但「几点开始充、充到多少停、哪几天充」只有这里才有。
+    /// 这个接口是「充电信息」页的数据源 —— 「预计充到目标电量还要多久」在
+    /// signalMap(1200)，但「几点开始充、充到多少停、哪几天充」只有这里才有。
     func refreshCommonConfig() async throws {
         guard let vin = selectedVehicle?.vin else { throw LMError.notLoggedIn }
         let any = try await request(method: "GET",
@@ -1123,25 +1165,58 @@ final class LMClient: ObservableObject {
 
     // MARK: - 充电
     //
-    // 证据见 LMSignalCatalog 顶部注释。这里只放「确认过」和「明确标注为疑似」的。
+    // 证据见 LMSignalCatalog 顶部「充电状态」小节。这里只放「确认过」和「明确标注为疑似」的。
 
-    /// 剩余充电时间（分钟）。信号 `1200`。
+    /// 参与「是否在充电」投票的标志位。实测充电时全为 1、未充电时全为 0。
+    static let chargeFlagIDs = ["100004", "1149", "1257", "3636", "3722"]
+
+    /// 标志位里投「在充电」的票数，0...5。
+    var chargeFlagVotes: Int {
+        LMClient.chargeFlagIDs.reduce(0) { acc, id in
+            let v = signals[id]?.doubleValue ?? 0
+            return acc + (v == 1 ? 1 : 0)
+        }
+    }
+
+    /// 充电电流是否非零（信号 `1178`）。
     ///
-    /// 实测：SOC 33.1% 时 645 min、36.6% 时 605 min，
-    ///       两次独立推算 578.5 / 572.6 min/% —— 误差 1%，确认是剩余充电时间。
-    /// 值为 0 时返回 nil（未在充电 / 没有该数据）。
-    var chargingRemainingMinutes: Int? {
+    /// 物理量：没有电流就不可能真的在充电。实测充电时 −8.3 ~ −8.4 A、
+    /// 未充电时恒为 0.0。留 0.05 的容差是为了避开采样噪声。
+    var chargeCurrentNonZero: Bool {
+        guard let v = signals["1178"]?.doubleValue else { return false }
+        return abs(v) > 0.05
+    }
+
+    /// 充电状态。多数票 + 电流双条件，见 `LMChargeState` 的说明。
+    var chargeState: LMChargeState {
+        if signals.isEmpty { return .unknown }
+        if chargeFlagVotes >= 3 { return .charging }
+        if chargeFlagVotes == 0 && !chargeCurrentNonZero { return .notCharging }
+        return .unknown
+    }
+
+    /// 是否在充电（UI 用这个，别再自己拼判据）
+    var isCharging: Bool { chargeState == .charging }
+
+    /// 预计从当前 SOC 充到「目标电量」还要多久（分钟）。信号 `1200`。
+    ///
+    /// ★ 这个信号之前被误读成「剩余充电时间」，进而被当成充电状态位用，
+    ///   导致「车没在充电却显示疑似充电中」。真相是它是**纯 SOC 函数**，
+    ///   与充不充电无关：
+    ///
+    ///       1200 = round(11.32 × (目标电量 − SOC))
+    ///       目标电量 = commonConfig.config["3"].percent（实测 90）
+    ///
+    ///   代入三个实测点，误差 < 0.1%：
+    ///       SOC 33.05 → (90 − 33.05) × 11.32 = 644.7  → 实测 645
+    ///       SOC 41.40 → (90 − 41.40) × 11.32 = 550.2  → 实测 550（此时**没在充电**）
+    ///
+    ///   所以它只能当「还要充多久」的投影值用，绝不能当状态位。
+    ///   值为 0（或 SOC 已超目标电量）时返回 nil。
+    var chargeMinutesToTarget: Int? {
         guard let m = signals["1200"]?.doubleValue, m > 0 else { return nil }
         return Int(m.rounded())
     }
-
-    /// 是否（很可能）正在充电。
-    ///
-    /// ⚠️ 这是**推断**，不是直接读到的状态位：判据是 `1200 > 0`。
-    ///    我们没有找到确切的「充电枪已连接 / 充电中」布尔信号
-    ///    （候选 1255 / 1480 / 3638 都只有停车期的单一取值，无法区分）。
-    ///    所以 UI 里用「疑似充电中」这种措辞，别写死。
-    var isChargingLikely: Bool { chargingRemainingMinutes != nil }
 
     /// 电池温度 ℃（信号 2183）。实测 23.0，与车内温度 1349(29.5) 区分得开。
     var batteryTemp: Double? { signals["2183"]?.doubleValue }
@@ -1149,20 +1224,24 @@ final class LMClient: ObservableObject {
     /// 预约充电的目标电量 %（来自 commonConfig.config["3"].percent）
     var chargeTargetPercent: Int? { chargeSchedule?.targetPercent }
 
-    /// 疑似充电功率 kW（信号 1177 ÷ 100）。
+    /// 电池 / 母线电压（V）。信号 `1177`。
     ///
-    /// ⚠️ **未确认**。1177 停车充电期在 736.1~737.0 之间缓变，
-    ///    读作 ×100 W 就是 7.37 kW（7kW 交流桩的典型值），
-    ///    读作电池电压则是 736.7 V（但 +3.7% SOC 只涨 0.3 V，与 CC 充电不符）。
-    ///    倾向功率。UI 必须带「疑似」字样。
-    var chargePowerGuessKW: Double? {
+    /// ★ 之前标注为「疑似充电功率（×100 W）」，**已被实测推翻**：
+    ///   未充电时它是 732.7（**不为 0**），充电时 736.7 —— 只差 4.0 V。
+    ///   如果它是功率，没充电时必须掉到 0。所以它属于**电压类**量，
+    ///   充电时抬升 4 V 也符合「充电时母线电压上升」。
+    ///   具体是电池包电压还是充电机输出电压仍未定，UI 里别写死。
+    var packVoltageGuessV: Double? {
         guard let v = signals["1177"]?.doubleValue, v > 0 else { return nil }
-        return v / 100.0
+        return v
     }
 
-    /// 疑似充电电流 A（信号 1178）。未确认，负号含义未知。
-    var chargeCurrentGuessA: Double? {
-        guard let v = signals["1178"]?.doubleValue else { return nil }
+    /// 充电电流 A（信号 `1178`）。
+    ///
+    /// 实测：充电时 −8.299 / −8.399（负号含义未定，量级 8.3 A），
+    ///       未充电时 0.0。这是**唯一一个带物理意义的充电证据**。
+    var chargeCurrentA: Double? {
+        guard let v = signals["1178"]?.doubleValue, v != 0 else { return nil }
         return abs(v)
     }
 

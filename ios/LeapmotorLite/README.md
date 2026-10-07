@@ -208,7 +208,11 @@ oppwd("4211") = uHTigfMDS5zIuZX4Gq4NVQ==
 登录前签名 SHA256(valueStr) = 066fda165156e717a624dc4c53c7036ecb38a4c0cbd39d4fcb3d6e82c5df0863
 ```
 
-**全部通过**才说明实现与官方 App 逐字节一致。
+最后一组是**坐标换算**（不属于加解密，但同样属于「算错了整页数据就不对」的纯算法）：
+`WGS-84 → GCJ-02` 的参考向量、往返残差 < 1 mm、境外坐标原样返回、三个校正选项的语义一致性。
+
+**全部通过**才说明实现与官方 App 逐字节一致。（没装 Xcode 也能验：
+`python client/test_swift_vectors.py` 与 `python client/test_coord_vectors.py`）
 
 ### 3.2 登录（短信验证码，推荐）
 
@@ -261,6 +265,7 @@ ios/
         │   ├── LMEndpoints.swift        # host / path / cmdid 表（含蓝牙钥匙 7 个接口）
         │   ├── LMModels.swift           # 响应模型
         │   ├── LMSignalCatalog.swift    # 信号 id → 语义知识库（带置信度 + 判定依据）
+        │   ├── LMCoordinate.swift       # ★ WGS-84 ↔ GCJ-02 换算 + 三选一坐标校正 + 自检
         │   └── LMClient.swift           # 请求构造 + 签名 + 短信登录 + 全部业务方法
         ├── BLE/                         # 蓝牙钥匙（见 IPA_BUILD.md「蓝牙钥匙逆向进展」）
         │   ├── LMBLEProtocol.swift      # ★★ UUID / ECDH 字段 / 分号帧模板 / 逆向证据全记录
@@ -273,8 +278,8 @@ ios/
         │   ├── Theme.swift              # 配色 + 复用组件（卡片 / 磁贴 / 电量环 / .lmClock）
         │   ├── LoginView.swift          # 短信验证码登录 / 导入登录态
         │   ├── DashboardView.swift      # 车况
-        │   ├── LocationView.swift       # 车辆定位（地图 / 地址 / 导航）
-        │   ├── ChargeView.swift         # 充电信息（剩余时间 / 预约充电）
+        │   ├── LocationView.swift       # 车辆定位（地图 / 地址 / 导航 / 坐标校正）
+        │   ├── ChargeView.swift         # 充电信息（距目标电量还需多久 / 充电判据证据 / 预约充电）
         │   ├── ControlPanelView.swift   # 车控
         │   ├── BLEKeyView.swift         # 蓝牙钥匙（钥匙记录 / 开关 / 接口探测 / 协议进度）
         │   ├── BLEDebugView.swift       # BLE 调试台（扫描 / GATT / 订阅抓帧 / 发字节）
@@ -299,6 +304,9 @@ ios/
 | `smDeviceId`（SM4 国密设备指纹） | ⚠️ 复用抓包值；未还原派生算法（不影响使用） |
 | 账号密码登录（`security` 字段） | ⚠️ 已弃用 —— `security` 实为外层 token，改走短信登录 |
 | 车控二进制响应（`LMVCloudBinaryPacket`） | ⚠️ 未解析（当前接口返回的都是 JSON） |
+| 车辆坐标的**坐标系** | ⚠️ **方向未定** —— 官方 App 里 `wgs84ToGcj02` 和 `gcj02ToWgs84` 两个方向都实现了，静态分析定不下来。已做成三选一校正（默认 `WGS-84 → GCJ-02`），在定位页换选项、站车边上 10 秒即可自证 |
+| 充电状态判定 | ✅ 5 个状态位 `100004/1149/1257/3636/3722` 投票 + 充电电流 `1178`，判据来自「充电 vs 未充电」逐信号 diff |
+| `1200` 的语义 | ✅ **不是剩余充电时间**，是纯 SOC 投影 `round(11.33 × (目标 − SOC))`，未充电时也是正数 |
 | 登录态自动续期（refreshToken） | 未实现；token 过期（约 2h）后重新登录即可 |
 | **蓝牙钥匙（BLE）** | ⚠️ **协议未打通**。已从官方 IPA 静态逆向出 UUID / 握手字段 / 分号帧模板（见 `BLE/LMBLEProtocol.swift`），但缺 `passwordCard`、帧语义、cmdId 表。App 里给的是**调试台 + 协议进度**，不是能解锁的钥匙。补齐办法见 `IPA_BUILD.md` |
 

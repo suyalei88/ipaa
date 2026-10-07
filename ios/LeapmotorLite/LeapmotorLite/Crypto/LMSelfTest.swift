@@ -149,6 +149,13 @@ struct LMSelfTest {
             out.append(Result(name: "RSA 公钥 SPKI→PKCS#1", passed: false, detail: "解析失败"))
         }
 
+        // 9) 坐标换算（WGS-84 ↔ GCJ-02）
+        //    不属于加解密，但同样是「算错了就整页数据不对」的纯算法，
+        //    参考向量由 client/test_coord_vectors.py 独立算出。
+        for c in LMCoord.selfCheck() {
+            out.append(Result(name: c.name, passed: c.passed, detail: c.detail))
+        }
+
         return out
     }
 }

@@ -229,6 +229,26 @@ struct StatusPill: View {
     }
 }
 
+// MARK: - 充电状态胶囊
+
+/// 充电状态标签。判据统一来自 `LMChargeState`（见 LMClient 顶部说明），
+/// 首页和充电页共用这一个，避免两处各写一套口径对不上。
+struct LMChargePill: View {
+    let state: LMChargeState
+
+    var body: some View {
+        StatusPill(text: state.text, icon: state.icon, tint: tint)
+    }
+
+    private var tint: Color {
+        switch state {
+        case .charging:    return Color.lmGood
+        case .notCharging: return Color.secondary
+        case .unknown:     return Color.lmWarn
+        }
+    }
+}
+
 // MARK: - 区块标题
 
 /// 小写粗体分区标题，配 ScrollView 用（不是 List 的 Section header）。

@@ -13,6 +13,7 @@
 		7BD7FBF07B39253D76A1123A /* LMSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21605AA59368B17620004802 /* LMSelfTest.swift */; };
 		D3CC54788A45AC052294BDDB /* LMSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46236D7624BAB005E0678FC4 /* LMSigner.swift */; };
 		A2A03EDF6D2846BE4EBA4DF3 /* LMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 248EAADE93448B39F347B406 /* LMClient.swift */; };
+		F2A83C38E1A8B08BA0249E97 /* LMCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E5AB966392F4242695B133 /* LMCoordinate.swift */; };
 		67DB4B82330D1C8B287DA291 /* LMEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3373F1032F8959D7495DA76 /* LMEndpoints.swift */; };
 		9A757E750C4A958BF5B13A6C /* LMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111D949AB8906CEF24EB9CBC /* LMModels.swift */; };
 		BE32F72A1F4E6870E58778BC /* LMSignalCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D10A04F6B381CD7B6E54E02 /* LMSignalCatalog.swift */; };
@@ -45,6 +46,7 @@
 		21605AA59368B17620004802 /* LMSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSelfTest.swift; sourceTree = "<group>"; };
 		46236D7624BAB005E0678FC4 /* LMSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSigner.swift; sourceTree = "<group>"; };
 		248EAADE93448B39F347B406 /* LMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMClient.swift; sourceTree = "<group>"; };
+		42E5AB966392F4242695B133 /* LMCoordinate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMCoordinate.swift; sourceTree = "<group>"; };
 		D3373F1032F8959D7495DA76 /* LMEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMEndpoints.swift; sourceTree = "<group>"; };
 		111D949AB8906CEF24EB9CBC /* LMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMModels.swift; sourceTree = "<group>"; };
 		8D10A04F6B381CD7B6E54E02 /* LMSignalCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSignalCatalog.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				248EAADE93448B39F347B406 /* LMClient.swift */,
+				42E5AB966392F4242695B133 /* LMCoordinate.swift */,
 				D3373F1032F8959D7495DA76 /* LMEndpoints.swift */,
 				111D949AB8906CEF24EB9CBC /* LMModels.swift */,
 				8D10A04F6B381CD7B6E54E02 /* LMSignalCatalog.swift */,
@@ -257,6 +260,7 @@
 				7BD7FBF07B39253D76A1123A /* LMSelfTest.swift in Sources */,
 				D3CC54788A45AC052294BDDB /* LMSigner.swift in Sources */,
 				A2A03EDF6D2846BE4EBA4DF3 /* LMClient.swift in Sources */,
+				F2A83C38E1A8B08BA0249E97 /* LMCoordinate.swift in Sources */,
 				67DB4B82330D1C8B287DA291 /* LMEndpoints.swift in Sources */,
 				9A757E750C4A958BF5B13A6C /* LMModels.swift in Sources */,
 				BE32F72A1F4E6870E58778BC /* LMSignalCatalog.swift in Sources */,

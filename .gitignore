@@ -21,6 +21,12 @@ evidence/login.har
 evidence/ios_misc/classes.json
 evidence/ios_misc/symmap.json
 
+# ---------- 逆向临时目录 ----------
+# rev_tmp/ 是拆官方二进制时的临时落地目录（例如从 IPA 里提出来的
+# leapmotorCarOwner 主二进制，单个 204MB，远超 GitHub 100MB 限制）。
+# 需要时本地重建即可：见 IPA_BUILD.md 里的提取命令。
+rev_tmp/
+
 # ---------- 构建产物 ----------
 dist/
 ios/LeapmotorLite/build/

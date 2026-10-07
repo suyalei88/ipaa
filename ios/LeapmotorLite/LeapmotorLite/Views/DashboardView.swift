@@ -176,9 +176,7 @@ struct DashboardView: View {
     private var statusChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                StatusPill(text: client.isChargingLikely ? "疑似充电中" : "未充电",
-                           icon: client.isChargingLikely ? "bolt.fill" : "bolt.slash",
-                           tint: client.isChargingLikely ? Color.lmGood : Color.secondary)
+                LMChargePill(state: client.chargeState)
 
                 StatusPill(text: client.coordinate == nil ? "无定位" : "已定位",
                            icon: client.coordinate == nil ? "location.slash" : "location.fill",
@@ -288,8 +286,8 @@ struct DashboardView: View {
                             if let t = client.chargeTargetPercent {
                                 miniStat("目标", "\(t) %")
                             }
-                            if let m = client.chargingRemainingMinutes {
-                                miniStat("剩余", shortMinutes(m))
+                            if let m = client.chargeMinutesToTarget {
+                                miniStat("待充", shortMinutes(m))
                             }
                             if let s = client.chargeSchedule {
                                 miniStat("预约", s.isEnabled ? "\(s.beginTime)–\(s.endTime)" : "关")
@@ -314,11 +312,19 @@ struct DashboardView: View {
     }
 
     private var chargeHeadline: String {
-        if let m = client.chargingRemainingMinutes {
-            return "疑似充电中 · 还需 \(shortMinutes(m))"
+        // ★ 只有真的在充电，才把 1200 说成「还需多久」。
+        //   没充电时 1200 是「插枪后大概要充多久」的投影值，不能说成倒计时。
+        if client.isCharging {
+            if let m = client.chargeMinutesToTarget {
+                return "充电中 · 距目标电量还需 \(shortMinutes(m))"
+            }
+            return "充电中"
         }
         if let soc = client.batteryPercent, let t = client.chargeTargetPercent, soc >= Double(t) {
             return "已达到目标电量 \(t)%"
+        }
+        if let m = client.chargeMinutesToTarget {
+            return "未在充电 · 插枪后约需 \(shortMinutes(m))"
         }
         if client.chargeSchedule?.isEnabled == true {
             return "未在充电 · 已设预约充电"
@@ -376,11 +382,11 @@ struct DashboardView: View {
                        tint: Color.lmPurple,
                        sub: "信号 1318")
 
-            MetricTile(title: "充电剩余",
-                       value: client.chargingRemainingMinutes.map { shortMinutes($0) } ?? "--",
+            MetricTile(title: "距目标电量",
+                       value: client.chargeMinutesToTarget.map { shortMinutes($0) } ?? "--",
                        icon: "hourglass",
                        tint: Color.lmGood,
-                       sub: "信号 1200")
+                       sub: "信号 1200 · 投影值")
         }
     }
 

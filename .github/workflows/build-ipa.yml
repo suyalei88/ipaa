@@ -63,6 +63,15 @@ jobs:
       - name: 校验 Swift 自测向量
         run: python client/test_swift_vectors.py
 
+      - name: 校验坐标系换算（WGS-84 ↔ GCJ-02）
+        # 不属于加解密，但同样是「算错了整页定位就偏几百米」的纯算法。
+        # 做两件事：
+        #   1. 用独立实现的 GCJ-02 算法比对参考向量（合肥点 / 全国 6 点 / 境外点）
+        #   2. 回头读 API/LMCoordinate.swift 的源码文本，确认常量、迭代反解、
+        #      三个校正选项、以及「默认值不是 .none」都还在
+        #      —— 默认值被改成 .none 等于这个 bug 没修，所以专门钉住。
+        run: python client/test_coord_vectors.py
+
       - name: HAR 签名回归（期望 101/105）
         run: python client/test_sign_regression.py || true
 

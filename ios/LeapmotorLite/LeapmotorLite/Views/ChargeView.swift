@@ -2,16 +2,19 @@
 //  ChargeView.swift
 //  LeapmotorLite
 //
-//  车辆充电信息：电量 / 剩余充电时间 / 预约充电 / 电池温度 / 续航估算。
+//  车辆充电信息：电量 / 预计充至目标电量 / 预约充电 / 电池温度 / 续航估算。
 //
 //  ★ 这个页面严格区分「确认的」和「猜的」：
-//      · 电量 100003、取整 1204、剩余充电时间 1200、续航 3257/3260、
-//        电池温度 2183、预约充电配置（commonConfig.config["3"]）—— 有证据，正常显示。
-//      · 充电功率 / 电流（1177 / 1178）—— 未确认，界面上明确写「疑似」，
-//        并且给出两种可能的读法，不替用户下结论。
-//      · 「是否在充电」—— 没有找到直接的布尔信号，是从「1200 > 0」推的，
-//        所以文案写「疑似充电中」。
-//    宁可显得啰嗦，也不要让用户以为「7.37 kW」是官方数字。
+//      · 电量 100003、取整 1204、续航 3257/3260、电池温度 2183、
+//        预约充电配置（commonConfig.config["3"]）—— 有证据，正常显示。
+//      · 充电状态 —— 由「5 路标志位投票 + 充电电流 1178」判定，
+//        证据是「充电中 / 未充电」两张真实快照的逐信号 diff。
+//        ★ 2026-10-07 修正：之前用「1200 > 0」判充电是**错的**。
+//          1200 是纯 SOC 投影（≈ round(11.33 × (目标电量 − SOC))），
+//          没充电时照样有值，所以会误报「疑似充电中」。
+//      · 1177 —— 已推翻旧的「充电功率」猜想（没充电时不为 0），
+//        现在按电压类量标注，具体含义仍待确认。
+//    宁可显得啰嗦，也不要让用户以为猜出来的数字是官方数字。
 //
 import SwiftUI
 import Foundation
@@ -25,10 +28,12 @@ struct ChargeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 heroCard
-                if client.isChargingLikely { remainingCard }
+                // 有投影值就显示（它跟充不充电无关），没充电时卡片里会自己说明。
+                if client.chargeMinutesToTarget != nil { remainingCard }
                 scheduleCard
                 batteryCard
                 rangeCard
+                chargeEvidenceCard
                 guessCard
                 footnote
             }
@@ -126,12 +131,10 @@ struct ChargeView: View {
 
     private var statusPill: some View {
         Group {
-            if client.isChargingLikely {
-                StatusPill(text: "疑似充电中", icon: "bolt.fill", tint: Color.lmGood)
-            } else if client.signals.isEmpty {
+            if client.signals.isEmpty {
                 StatusPill(text: "暂无车况", icon: "questionmark.circle", tint: Color.secondary)
             } else {
-                StatusPill(text: "未在充电", icon: "bolt.slash", tint: Color.secondary)
+                LMChargePill(state: client.chargeState)
             }
         }
     }
@@ -163,31 +166,44 @@ struct ChargeView: View {
         }
     }
 
-    // MARK: - 剩余充电时间
+    // MARK: - 预计充至目标电量
 
     private var remainingCard: some View {
         LMCard(padding: 16) {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(text: "剩余充电时间")
+                SectionHeader(text: targetTitle)
 
-                if let m = client.chargingRemainingMinutes {
+                if let m = client.chargeMinutesToTarget {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text(hoursMinutes(m))
                             .font(.system(size: 32, weight: .bold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(Color.lmAccent)
-                        Text("充满")
+                        Text(targetShort)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
 
-                    HStack(spacing: 8) {
-                        Image(systemName: "clock.badge.checkmark")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.lmTeal)
-                        Text("按此推算，约 \(fullAtText(m)) 充满")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    // ★ 只有真的在充电，才把「几点到」写出来。
+                    //   没充电时那是个假设值，写时刻会让人以为在倒计时。
+                    if client.isCharging {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.badge.checkmark")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.lmTeal)
+                            Text("按此推算，约 \(fullAtText(m)) 到达目标电量")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            Image(systemName: "pause.circle")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.lmWarn)
+                            Text("车当前没在充电 —— 这只是「插上充电枪后」的估算，不是倒计时。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Divider()
@@ -201,17 +217,28 @@ struct ChargeView: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Text("信号 1200 为 0，当前没有剩余充电时间。")
+                    Text("信号 1200 为 0，或 SOC 已经到/超过目标电量，没有可算的剩余时间。")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
 
-                Text("信号 1200。判定依据：SOC 33.1% 时 645 min、36.6% 时 605 min，"
-                     + "两次独立推算 578.5 / 572.6 分钟每百分点，误差 1%。")
+                Text("信号 1200。★ 它「不是」充电状态位 —— 实测它是纯 SOC 投影："
+                     + "1200 ≈ round(11.33 × (目标电量 − SOC))，四个实测点离散度 0.18%。"
+                     + "18:02 车没在充电时它照样是 550，所以「有没有在充电」另有判据。")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
         }
+    }
+
+    private var targetTitle: String {
+        if let t = client.chargeTargetPercent { return "预计充至目标电量（\(t)%）" }
+        return "预计充至目标电量"
+    }
+
+    private var targetShort: String {
+        if let t = client.chargeTargetPercent { return "充到 \(t)%" }
+        return "充到目标电量"
     }
 
     private func hoursMinutes(_ m: Int) -> String {
@@ -230,15 +257,17 @@ struct ChargeView: View {
         return f.string(from: d)
     }
 
-    /// 由「剩余时间 + 剩余电量」反推每小时能充多少
+    /// 由「预计耗时 + 还差多少电量」反推每小时能充多少
     private var rateText: String {
-        guard let m = client.chargingRemainingMinutes, m > 0,
-              let soc = client.batteryPercent, soc < 100 else {
+        guard let m = client.chargeMinutesToTarget, m > 0,
+              let soc = client.batteryPercent,
+              let target = client.chargeTargetPercent, Double(target) > soc else {
             return "充电速率：数据不足"
         }
-        let perHour = (100 - soc) / (Double(m) / 60.0)
-        return String(format: "折算充电速率约 %.1f ％/小时（剩余 %.1f ％ ÷ %.1f 小时）",
-                      perHour, 100 - soc, Double(m) / 60.0)
+        let gap = Double(target) - soc
+        let perHour = gap / (Double(m) / 60.0)
+        return String(format: "折算充电速率约 %.1f ％/小时（还差 %.1f ％ ÷ %.1f 小时）",
+                      perHour, gap, Double(m) / 60.0)
     }
 
     // MARK: - 预约充电
@@ -422,7 +451,50 @@ struct ChargeView: View {
         }
     }
 
-    // MARK: - 疑似项
+    // MARK: - 充电状态判据
+
+    /// 把「为什么判定在/不在充电」摊开给用户看。
+    ///
+    /// 这一段不是装饰：判据是逆向出来的，用户随时可以拿它跟官方 App 对一眼。
+    /// 万一哪天车机改了标志位含义，这里第一个能看出来。
+    private var chargeEvidenceCard: some View {
+        LMCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checklist")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.lmTeal)
+                    Text("充电状态是怎么判出来的")
+                        .font(.footnote.weight(.semibold))
+                }
+
+                keyValue("标志位投票",
+                         "\(client.chargeFlagVotes) / \(LMClient.chargeFlagIDs.count)")
+                Text("参与投票的信号：\(LMClient.chargeFlagIDs.joined(separator: " / "))。"
+                     + "实测充电时全为 1、未充电时全为 0。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                keyValue("充电电流 1178",
+                         client.chargeCurrentA.map { String(format: "%.2f A", $0) } ?? "0.00 A")
+                Text("没电流就充不进电，这是唯一带物理意义的判据。"
+                     + "取「多数票 ≥ 3」或「电流非零」即判为充电中。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                keyValue("结论", client.chargeState.text)
+
+                Text("★ 信号 1200 不参与这个判断 —— 它是纯 SOC 投影，"
+                     + "未充电时照样有值（实测 550）。老版本就是拿它当状态位才误报的。")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    // MARK: - 待确认项
 
     private var guessCard: some View {
         LMCard(padding: 16) {
@@ -435,25 +507,25 @@ struct ChargeView: View {
                         .font(.footnote.weight(.semibold))
                 }
 
-                if let kw = client.chargePowerGuessKW {
-                    keyValue("1177 ÷ 100", String(format: "%.2f kW", kw))
-                    Text("读作「充电功率 ×100 W」时是 \(String(format: "%.2f", kw)) kW，"
-                         + "正好是 7kW 交流桩的典型值。但也可能读作电池电压（736.7 V）。"
-                         + "想确认的话：拔枪后抓一次快照 —— 变 0 就是功率。")
+                if let v = client.packVoltageGuessV {
+                    keyValue("1177", String(format: "%.1f V", v))
+                    Text("★ 之前标成「充电功率 ×100 W」，已被实测推翻："
+                         + "没充电时它是 732.7，而功率在没充电时必须为 0。"
+                         + "充电时 736.7、高出 4 V，符合「充电时母线电压抬升」，"
+                         + "所以它是电压类量。具体是电池包电压还是充电机输出电压仍未定。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                if let a = client.chargeCurrentGuessA {
-                    keyValue("1178（绝对值）", String(format: "%.1f A", a))
-                    Text("原始值是负的（-3.7 ~ -8.4），负号含义未定。"
-                         + "抓包里充电期间一直在小幅抖动，像电流采样。")
+                if let a = client.chargeCurrentA {
+                    keyValue("1178", String(format: "%.2f A", a))
+                    Text("原始值是负的（−8.3 ~ −8.4），负号含义未定；未充电时正好是 0.0。"
+                         + "已在「充电状态判据」里当电流证据用。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
-                Text("这两个是本次分析里唯一没定下来的量。"
-                     + "「设置 → 诊断 → 信号浏览器」里可以抓两次快照做对比，"
-                     + "充电 / 拔枪各抓一次就能定下来。")
+                Text("剩下没定的是 1177 的具体含义。"
+                     + "「设置 → 诊断 → 信号浏览器」可以抓两次快照做对比。")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -465,8 +537,8 @@ struct ChargeView: View {
     private var footnote: some View {
         Text("""
         数据来源：signalMap（车况实时信号）+ /carownerservice/v3/api/vehicleinfo/commonConfig（预约充电配置）。
-        「疑似充电中」是从「剩余充电时间 > 0」推断的 —— 我们没有找到直接的充电状态位信号，
-        所以不敢写成「正在充电」。
+        充电状态由「5 路标志位投票 + 充电电流」判定，证据是「充电中 / 未充电」两张真实快照的逐信号对比。
+        信号 1200 是「预计充到目标电量还要多久」的投影值，与是否在充电无关，不参与状态判定。
         """)
             .font(.caption2)
             .foregroundStyle(.secondary)
