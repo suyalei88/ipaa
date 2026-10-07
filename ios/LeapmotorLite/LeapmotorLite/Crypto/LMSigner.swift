@@ -170,8 +170,18 @@ enum LMSigner {
 
     // MARK: - oppwd
 
-    /// oppwd = base64( AES-128-CBC-PKCS7( 操作密码, key, iv ) )
-    static func encryptOppwd(accessToken: String, password: String) throws -> String {
+    /// oppwd 的中间量，给「诊断页」和「本地回解」用。
+    struct OppwdParts {
+        /// md5(accessToken[0..32])[8..24]，16 个 ASCII 字符
+        let key: String
+        /// md5(accessToken[32..64])[8..24]
+        let iv: String
+        let tokenHead: String
+        let tokenTail: String
+    }
+
+    /// key / iv 只跟 accessToken 有关，跟密码无关。
+    static func oppwdKeyIV(accessToken: String) throws -> OppwdParts {
         guard accessToken.count >= 64 else {
             throw NSError(domain: "LMSigner", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "accessToken 长度需 >= 64"])
@@ -179,8 +189,25 @@ enum LMSigner {
         let t = Array(accessToken)
         let head = String(t[0..<32])
         let tail = String(t[32..<64])
-        let key = LMHash.md5Lower16(head)
-        let iv = LMHash.md5Lower16(tail)
-        return try LMAES.encryptToBase64(plaintext: password, key: key, iv: iv)
+        return OppwdParts(key: LMHash.md5Lower16(head),
+                          iv: LMHash.md5Lower16(tail),
+                          tokenHead: head, tokenTail: tail)
+    }
+
+    /// oppwd = base64( AES-128-CBC-PKCS7( 操作密码, key, iv ) )
+    static func encryptOppwd(accessToken: String, password: String) throws -> String {
+        let p = try oppwdKeyIV(accessToken: accessToken)
+        return try LMAES.encryptToBase64(plaintext: password, key: p.key, iv: p.iv)
+    }
+
+    /// 本地回解：把 oppwd 解回明文，用来证明「加解密链路本身没问题」。
+    /// 解出来 == 用户输入 → 那服务端还报密码错，就只能是密码本身不对。
+    static func decryptOppwd(accessToken: String, oppwd: String) -> String {
+        do {
+            let p = try oppwdKeyIV(accessToken: accessToken)
+            return try LMAES.decryptFromBase64(cipherB64: oppwd, key: p.key, iv: p.iv)
+        } catch {
+            return "<解密失败>"
+        }
     }
 }

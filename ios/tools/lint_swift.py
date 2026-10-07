@@ -59,6 +59,9 @@ RULES = {
     "R3": "foregroundStyle(.自定义色)（泛型 ShapeStyle 推不出成员）",
     "R4": "三元两分支类型不同（Color vs HierarchicalShapeStyle）",
     "R5": "withUnsafe* 闭包内访问外层变量属性（独占访问冲突）",
+    "R6": "括号不平衡（大改之后最容易漏，报 expected '}' / expected ')'）",
+    "R7": "同名 static 成员重复声明（invalid redeclaration）",
+    "R8": "SecureField 挂 .oneTimeCode（短信验证码会被自动填进去）",
 }
 
 
@@ -162,7 +165,65 @@ def check(path: str, src: str):
         for bad in re.finditer(rf"\b{re.escape(var)}\.(\w+)", body):
             add(m.end() + bad.start(), "R5",
                 f"闭包内访问 `{var}.{bad.group(1)}` → 提前用 let 取出来")
+
+    # R6 —— 括号平衡（先按字符扫，字符串/注释已被清空）
+    for open_ch, close_ch in (("{", "}"), ("(", ")"), ("[", "]")):
+        depth = 0
+        for idx, ch in enumerate(code):
+            if ch == open_ch:
+                depth += 1
+            elif ch == close_ch:
+                depth -= 1
+                if depth < 0:
+                    add(idx, "R6", f"多了一个 '{close_ch}'")
+                    depth = 0
+        if depth:
+            add(len(code) - 1, "R6", f"'{open_ch}' 比 '{close_ch}' 多 {depth} 个")
+
+    # R8 —— SecureField 挂 .oneTimeCode
+    # iOS 会把刚收到的短信验证码自动填进标了 oneTimeCode 的输入框。
+    # 操作密码框一旦被这么污染，用户输入的数字被悄悄替换掉，
+    # 服务端就一直回「操作密码错误 / 累计出错 3 次以上」（业务码 70）。
+    for m in re.finditer(r"\.textContentType\(\s*\.oneTimeCode\s*\)", code):
+        head = code[max(0, m.start() - 400):m.start()]
+        last_text = head.rfind("TextField(")
+        last_secure = head.rfind("SecureField(")
+        if last_secure > last_text:
+            add(m.start(), "R8",
+                "SecureField 上挂了 .oneTimeCode → 会被短信验证码自动填充；"
+                "操作密码请用 .password 或不设")
     return hits
+
+
+def collect_members(files: list[str]) -> list[tuple[str, int, str, str]]:
+    """跨文件收集 `extension X { ... static let/var NAME ... }`，找重复声明。
+
+    真实踩过的坑：把 `extension Color { static let lmAccent ... }` 从
+    LeapmotorLiteApp.swift 挪到 Theme.swift 时忘了删旧的 →
+    "invalid redeclaration of 'lmAccent'"，一轮 CI 白跑。
+    """
+    decl = re.compile(
+        r"extension\s+([A-Za-z_][\w.]*)\s*\{(.*?)\n\}", re.S)
+    member = re.compile(r"\bstatic\s+(?:let|var)\s+([A-Za-z_]\w*)")
+    seen: dict[tuple[str, str], tuple[str, int]] = {}
+    dups: list[tuple[str, int, str, str]] = []
+    for f in files:
+        src = open(f, encoding="utf-8").read()
+        code = blank_comments_and_strings(src)
+        for m in decl.finditer(code):
+            type_name, body = m.group(1), m.group(2)
+            for mm in member.finditer(body):
+                name = mm.group(1)
+                key = (type_name, name)
+                pos = m.start(2) + mm.start()
+                ln = lineno(src, pos)
+                if key in seen:
+                    prev_f, prev_ln = seen[key]
+                    dups.append((f, ln, f"{type_name}.{name}",
+                                 f"已在 {os.path.basename(prev_f)}:{prev_ln} 声明过"))
+                else:
+                    seen[key] = (f, ln)
+    return dups
 
 
 def main() -> int:
@@ -194,6 +255,13 @@ def main() -> int:
                     print(f"          {line}")
         elif verbose:
             print(f"  OK  {rel}")
+
+    dups = collect_members(files)
+    if dups:
+        total += len(dups)
+        print("\n重复的 static 成员（跨文件）")
+        for f, ln, name, extra in dups:
+            print(f"  R7  {os.path.basename(f)}:L{ln}  {name} —— {extra}")
 
     print()
     if total:

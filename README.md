@@ -102,7 +102,27 @@ App 自动完成「发码 → 换外层 token → 换 JWT → 派生 signKey」�
 4. 整段复制，粘进 App 的「导入登录态」框 → 点导入。
 
 两条路径都只在本地派生 `signKey`，只把 token + 派生结果存本机 Keychain（不上传）。
-再到 `设置 → 操作密码` 填 6 位车控密码，然后就能在「车控」页点按钮了。
+再到 `设置 → 操作密码` 填**官方 App 车控时输入的那个操作密码**（4~6 位数字），
+然后就能在「车控」页点按钮了。
+
+> 填完密码那一页会立刻显示 `oppwd` 和「本地回解」；回解结果必须等于你输入的密码。
+> 车控出问题先看 `设置 → 诊断 → 车控体检`（token 头尾 / 派生 key/iv / oppwd / 上次请求）。
+> ⚠️ 操作密码填错 3 次，服务端会锁 5 分钟（`业务错误 70`），App 会自动倒计时禁用按钮。
+
+### 4. 车况信号对照（实测反推）
+
+| 信号 | 含义 |
+|---|---|
+| `100003` | 剩余电量 %（BMS 原始值，1 位小数）← **电量显示用这个** |
+| `1204` | 剩余电量 %（整数，= `round(100003)`） |
+| `3257` | 剩余续航 km（主显示） |
+| `3260` | 剩余续航 km（另一标准，与 3257 严格成比例 ≈ 1.245） |
+| `1318` | 总里程 km |
+| `1349` | 车内温度 ℃ |
+| `1298` / `3262` | 车门锁状态 |
+
+判定依据（5 个快照线性回归）见 `IPA_BUILD.md` 的「车况信号对照表」。
+**注意 `3260` 不是百分比** —— 早期把它当电量读，界面上就出现 `239%`。
 
 ---
 
@@ -127,6 +147,7 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 |---|---|
 | 签名（双模式）/ signKey / oppwd | ✅ 完全还原并验证 |
 | 车况 / 车辆列表 / 车控 | ✅ 100% 命中 |
+| 电量 / 续航 / 里程 / 温度 / 锁态 | ✅ 信号 id 已用多快照线性回归确认（见上表） |
 | 短信验证码登录（全 4 步） | ✅ 已实测打通（收到短信 → 换 JWT → signKey → 车控成功） |
 | 手机号 RSA 加密 | ✅ 已还原（SPKI→PKCS#1，1024-bit → 140 字节 DER） |
 | `smDeviceId`（SM4 国密设备指纹） | ⚠️ 复用抓包值；未还原派生算法（不影响自用） |
@@ -147,7 +168,10 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `.github/workflows/build-ipa.yml` — 云端打包流水线
 
 **iOS 交付**
-- `ios/LeapmotorLite/` — SwiftUI 车控 App（15 个 Swift 文件 + Info.plist + Assets.xcassets）
+- `ios/LeapmotorLite/` — SwiftUI 车控 App（17 个 Swift 文件 + Info.plist + Assets.xcassets）
+- `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环）
+- `ios/LeapmotorLite/LeapmotorLite/Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求）
+- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R8，CI 里会跑）
 - `ios/LeapmotorLite/README.md` — 编译 / 使用 / 协议文档
 
 **逆向与分析**

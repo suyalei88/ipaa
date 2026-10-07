@@ -103,11 +103,16 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 
 1. 打开 → **设置 → 诊断 → 算法自检** → 应全部 ✅（说明签名/加密实现与官方 App 逐字节一致）
 2. 首页 → 输手机号 → **获取验证码** → 填 6 位验证码 → **登录**
-3. **设置 → 操作密码** → 填 6 位（官方 App 车控时要求输入的那个）
-4. **车控** 页点按钮
+3. **设置 → 操作密码** → 填**你在官方 App 里车控时输入的那个操作密码**（4~6 位数字）。
+   填完页面下方会立刻显示 `oppwd` 和「本地回解」——
+   回解结果必须等于你输入的密码（说明 App 侧加密链路没问题）。
+   ⚠️ 这里填的不是登录密码，也不是短信验证码。填错 3 次账号会被服务端锁 5 分钟。
+4. **车控** 页点按钮（会先弹一次确认）
 
 > 登录态只存本机 Keychain，不上传任何服务器。
 > JWT 约 2 小时过期，过期后重新短信登录一次。
+> 「设置 → 诊断 → 车控体检」里有 token 头尾、派生 key/iv、oppwd、上次车控请求，
+> 出问题先看那一页。
 
 ---
 
@@ -121,10 +126,34 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 | 手机上 App 图标是白的 | 图标没生成。跑 `python3 ios/tools/make_icon.py`（需要 `pip install pillow`）后重新打包 |
 | 打开就闪退 | 先确认是 iOS 17+；再看 Xcode Devices 里的崩溃日志。大概率是 Sideloadly 签名时 bundle id 冲突，换个 Apple ID 或删掉旧的重装 |
 | 自检里 `signKey 派生` 失败 | 说明代码被改坏了。`git diff` 看 `Crypto/` 目录 |
+| **电量显示 239% / 明显不是百分比** | 读错信号了。`3260` 是**续航 km**（满电约 577 km），不是 SOC。真正的 SOC 是 `100003`（1 位小数）/ `1204`（整数），已修 |
+| **车控报 `业务错误 70：操作密码累计出错3次以上`** | 发出去的明文密码不对。先去「设置 → 诊断 → 车控体检」看「本地回解」是否等于输入；再看 R8（`.oneTimeCode` 污染）。等 5 分钟再试，期间 App 会自动禁用按钮 |
+| **车控报「操作密码错误」** | 同上。若「本地回解」正常，说明密码和账号不匹配 —— 官方 App 抓包里 `oppwd` 反推出来的明文才是真密码 |
+| 车控按钮点了没反应 | 看是否处于「操作密码已锁定」状态（业务码 70 后本地倒计时 5 分钟） |
 | 登录提示 `1019 参数不能为空`（**获取验证码**时报） | `phoneNo` 是 base64 密文，里面的 `+` 必须转义成 `%2B`。**别用 `URLComponents.queryItems`** —— `+` 属于 `CharacterSet.urlQueryAllowed`，它不会转义，服务端按 form 规则把 `+` 解成空格 → 密文损坏。用 `LMClient.makeURL(host:path:params:)`。实测：裸 `+` → 1019，`%2B` → code 200 |
 | 登录提示 `1019 参数不能为空`（**提交验证码**时报） | `check_login_with_phone` 必须发 form-urlencoded（代码里已经是，别改成 JSON） |
 | 登录提示 `302002002 签名信息校验失败` | 登录前签名必须是 **SHA256(valueStr)**，不是 HMAC |
 | 登录提示 `302010202 第三方TOKEN失效` | 短信验证码/外层 token 过期了，重新获取验证码 |
+
+---
+
+## 车况信号对照表（实测反推，不是猜的）
+
+判定方法：真 SOC 必须与所有续航信号严格成正比，且落在 0..100。
+
+| 快照 | 100003 | 1204 | 3257 | 3260 | 1318 | 1349 |
+|---|---|---|---|---|---|---|
+| har_appgw | 32.9 | 33 | 236 | 190 | 1909 | 29.5 |
+| har_refresh | 36.6 | 37 | 262 | 211 | 1909 | 29.5 |
+| 15:30 抓包 | 41.4 | 41 | 298 | 239 | 1909 | 29.5 |
+| 实时（18:0x） | 41.4 | 41 | 298 | 239 | 1909 | 29.5 |
+
+- `3257 / 100003 ≈ 7.16 ~ 7.20` → 满电约 **717 km**（严格线性）
+- `3260 / 100003 ≈ 5.77` → 满电约 **577 km**（严格线性）
+- `1204 == round(100003)` 三组全部吻合
+
+**结论**：`100003` / `1204` 是 SOC(%)，`3257` / `3260` 都是「续航 km」（两套标准），
+`1318` 是总里程，`1349` 是车内温度，`1298` / `3262` 是车锁状态。
 
 ---
 
@@ -135,9 +164,21 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 
 ```bash
 python3 ios/tools/lint_swift.py     # CI 里也会跑，命中直接 fail
+python3 ios/tools/gen_xcodeproj.py --check   # 新增 .swift 后忘了重生成工程会被这里拦下
 ```
 
-它覆盖下面 R1–R5 五条。R6 靠真机跑自检 + 实际请求验证。
+`lint_swift.py` 覆盖 R1–R8：
+
+| 规则 | 内容 |
+|---|---|
+| R1 | `URLComponents` / `queryItems` 拼 URL |
+| R2 | `[CFString: Any]` 字典配 `as String` 键 |
+| R3 | `foregroundStyle(.自定义色)` |
+| R4 | 三元两分支类型不同 |
+| R5 | `withUnsafe*` 闭包内访问外层变量属性 |
+| R6 | 括号不平衡 |
+| R7 | 同名 `static` 成员重复声明 |
+| R8 | `SecureField` 挂 `.textContentType(.oneTimeCode)` |
 
 ### R1（★ 最容易中，会导致线上请求失败）拼 URL 不要用 `URLComponents`
 
@@ -161,7 +202,21 @@ phoneNo=<+ 转成 %2B>      → {"code":200,"success":true,"msg":"操作成功"}
 
 （Python 端的 `requests` 会自动转义，所以同一份逻辑 Python 能跑通、Swift 跑不通。）
 
-### R2 自定义颜色不能写前导点简写
+### R2 Keychain / Security 属性字典的键类型
+
+```swift
+// ✗ error: cannot convert value of type 'String' to expected dictionary key type 'CFString'
+let attrs: [CFString: Any] = [
+    kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+]
+
+// ✓
+let attrs: [String: Any] = [
+    kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+]
+```
+
+### R3 自定义颜色不能写前导点简写
 
 ```swift
 // ✗ error: type 'ShapeStyle' has no member 'lmAccent'
@@ -177,7 +232,7 @@ SwiftUI 只给标准色声明了 `extension ShapeStyle where Self == Color`，�
 
 注意 `.tint(.lmAccent)` 是**可以**的 —— `tint` 收的是具体 `Color`，不是泛型。
 
-### R3 三元运算符两分支必须同类型
+### R4 三元运算符两分支必须同类型
 
 ```swift
 // ✗ .red → Color，.secondary → HierarchicalShapeStyle，两者不同类型
@@ -187,7 +242,7 @@ SwiftUI 只给标准色声明了 `extension ShapeStyle where Self == Color`，�
 .foregroundStyle(isError ? Color.red : Color.secondary)
 ```
 
-### R4 `withUnsafe*` 闭包里别访问外层变量
+### R5 `withUnsafe*` 闭包里别访问外层变量
 
 ```swift
 // ✗ error: overlapping accesses to 'out', but modification requires exclusive access
@@ -208,21 +263,37 @@ out.withUnsafeMutableBytes { outBuf in
 `withUnsafeMutableBytes` 是对变量的**修改**访问，闭包内再读它的属性（哪怕只是 `.count`）
 就会触发 Swift 的独占访问检查。
 
-### R5 Keychain 属性字典的键类型
+### R6 括号平衡
+
+大段重写 View 之后最容易漏一个 `}` 或 `)`，编译器报的却是别处的
+`expected '}' in ...`，翻半天。lint 直接按字符扫（字符串/注释已剔除）报出来。
+
+### R7 同名 `static` 成员重复声明
+
+真实事故：把 `extension Color { static let lmAccent … }` 从
+`LeapmotorLiteApp.swift` 挪到 `Theme.swift` 时忘了删旧的 →
+`invalid redeclaration of 'lmAccent'`，一轮 CI 白跑。
+现在 lint 会跨文件扫 `extension X { static let/var ... }` 并报重复。
+
+### R8 `SecureField` 上挂 `.textContentType(.oneTimeCode)`
 
 ```swift
-// ✗ error: cannot convert value of type 'String' to expected dictionary key type 'CFString'
-let attrs: [CFString: Any] = [
-    kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-]
+// ✗ 操作密码框会被 iOS 自动填进刚收到的短信验证码
+SecureField("操作密码", text: $opPassword)
+    .keyboardType(.numberPad)
+    .textContentType(.oneTimeCode)
 
-// ✓
-let attrs: [String: Any] = [
-    kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-]
+// ✓ 验证码框才用 oneTimeCode；操作密码用 .password
+SecureField("操作密码", text: $opPassword)
+    .keyboardType(.numberPad)
+    .textContentType(.password)
 ```
 
-### R6 `ForEach` 的类型推断级联（只能靠读错误日志判断）
+用户输入的数字被悄悄替换掉，界面上是一排点看不出来，服务端却一直回
+`业务错误 70：操作密码累计出错3次以上，请5分钟后再试`。
+（`.oneTimeCode` 只在**收短信验证码**的 `TextField` 上是正确用法。）
+
+### 附：`ForEach` 的类型推断级联（lint 抓不到，只能靠读错误日志判断）
 
 `ForEach(xs) { ... }` 报出这类**看起来毫不相关**的错误时：
 
@@ -232,7 +303,7 @@ generic parameter 'C' could not be inferred
 initializer 'init(_:)' requires that 'Binding<Subject>' conform to 'StringProtocol'
 ```
 
-八成不是 `ForEach` 本身的问题，而是**闭包体里别处有类型错误**（比如 R2 那种），
+八成不是 `ForEach` 本身的问题，而是**闭包体里别处有类型错误**（比如 R3 那种），
 导致编译器回退去试 `Binding<C>` 重载。先把闭包内的错误修掉；
 想彻底消除歧义就显式给 id：
 

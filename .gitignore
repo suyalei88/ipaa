@@ -40,6 +40,8 @@ Thumbs.db
 # ---------- 敏感信息（登录态！绝对不要提交）----------
 evidence/session.json
 **/session.json
+# 实时车况快照（信号 id → 实时值，属于车辆隐私数据）
+evidence/live_signalmap.json
 *.secrets
 .env
 .env.*

@@ -606,10 +606,26 @@ def main() -> int:
     swift_n = pbx.count("in Sources */ = {isa = PBXBuildFile")
     print(f"pbxproj 自检通过（{len(pbx.splitlines())} 行，{swift_n} 个源文件）")
 
+    proj_file = os.path.join(XCODEPROJ, "project.pbxproj")
+
     if args.check:
+        # ★ 光比对「生成结果自洽」不够：新增了 .swift 却忘了重新生成 pbxproj 的话，
+        #   文件根本不会进 Sources build phase，CI 会「成功」但功能悄悄缺失。
+        #   这里直接跟磁盘上的文件逐字节比，把这类静默漏编译堵死。
+        if not os.path.exists(proj_file):
+            print(f"[x] 缺少 {proj_file}（跑一次不带 --check 的生成）")
+            return 1
+        with open(proj_file, encoding="utf-8") as f:
+            on_disk = f.read()
+        if on_disk != pbx:
+            disk_n = on_disk.count("in Sources */ = {isa = PBXBuildFile")
+            print(f"[x] {os.path.relpath(proj_file)} 与源码目录不一致："
+                  f"磁盘 {disk_n} 个源文件，重新生成应为 {swift_n} 个。")
+            print("    修复：python ios/tools/gen_xcodeproj.py 然后一起提交。")
+            return 1
+        print(f"project.pbxproj 与源码目录一致（{swift_n} 个源文件）")
         return 0
 
-    proj_file = os.path.join(XCODEPROJ, "project.pbxproj")
     scheme_dir = os.path.join(XCODEPROJ, "xcshareddata", "xcschemes")
     os.makedirs(scheme_dir, exist_ok=True)
 

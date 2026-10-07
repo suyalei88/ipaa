@@ -67,6 +67,36 @@ enum LMError: LocalizedError {
     }
 }
 
+// MARK: - 车控诊断记录
+
+/// 一次车控请求的完整「体检单」。
+///
+/// 为什么要留这个：服务端报「操作密码错误 / 累计出错」时，光看 UI 完全没法判断
+/// 到底是①密码输错了、②key/iv 派生错了、③base64 在 URL 里被吃了。
+/// 把派生 key/iv、最终 oppwd、token 头尾都摊在界面上，一眼就能定位。
+struct LMControlTrace: Identifiable {
+    let id = UUID()
+    let time: Date
+    let action: String
+    let cmdid: Int
+    /// 用户输入的操作密码位数（只报位数，不回显明文）
+    let passwordLength: Int
+    /// md5(accessToken[0..32])[8..24]，16 个 ASCII 字符
+    let key: String
+    /// md5(accessToken[32..64])[8..24]
+    let iv: String
+    /// base64(AES-128-CBC-PKCS7(password, key, iv))
+    let oppwd: String
+    /// 用同一组 key/iv 把 oppwd 解回来 —— 应该正好等于输入的密码
+    let roundTrip: String
+    let tokenHead: String
+    let tokenTail: String
+    /// 服务端结论，如 "code 0 请求成功" / "业务错误 70：操作密码累计出错3次以上…"
+    var outcome: String
+
+    var roundTripOK: Bool { !roundTrip.isEmpty && roundTrip != "<解密失败>" }
+}
+
 // MARK: - 客户端
 
 @MainActor
@@ -83,6 +113,24 @@ final class LMClient: ObservableObject {
     @Published private(set) var isBusy = false
     @Published var lastError: String?
 
+    /// 服务端「操作密码累计出错」锁定到什么时候（业务码 70，官方提示等 5 分钟）
+    @Published private(set) var controlLockedUntil: Date?
+    /// 最近一次车控请求的体检单
+    @Published private(set) var lastControlTrace: LMControlTrace?
+
+    var isControlLocked: Bool {
+        guard let t = controlLockedUntil else { return false }
+        return t > Date()
+    }
+
+    /// 还剩几秒解锁（向上取整）
+    var controlLockRemaining: Int {
+        guard let t = controlLockedUntil else { return 0 }
+        return max(0, Int(t.timeIntervalSinceNow.rounded(.up)))
+    }
+
+    func clearControlLock() { controlLockedUntil = nil }
+
     var config = LMConfig()
 
     private let store = LMSessionStore()
@@ -98,9 +146,11 @@ final class LMClient: ObservableObject {
 
     // MARK: - 会话管理
 
-    func adopt(session newSession: LMSession) {
+    /// 写入内存 + Keychain；返回 Keychain 是否真的写成功
+    @discardableResult
+    func adopt(session newSession: LMSession) -> Bool {
         session = newSession
-        store.save(newSession)
+        return store.save(newSession)
     }
 
     func signOut() {
@@ -615,13 +665,18 @@ final class LMClient: ObservableObject {
         }
         guard let s = session else { throw LMError.notLoggedIn }
 
-        // oppwd：优先用明文操作密码现场加密
-        var oppwd = ""
-        if !s.opPassword.isEmpty {
-            oppwd = try LMSigner.encryptOppwd(accessToken: s.accessToken, password: s.opPassword)
-        } else {
-            throw LMError.business(-2, "未设置操作密码（车控需要 6 位操作密码）")
+        // 服务端还在锁定期就别再打 —— 每打一次都在给「累计出错」计数
+        if isControlLocked {
+            throw LMError.business(70, "操作密码累计出错，请 \(controlLockRemaining) 秒后再试")
         }
+
+        guard !s.opPassword.isEmpty else {
+            throw LMError.business(-2, "未设置操作密码（车控需要 4~6 位操作密码）")
+        }
+
+        // oppwd：明文操作密码 → 用 accessToken 派生的 key/iv 现场 AES 加密
+        let parts = try LMSigner.oppwdKeyIV(accessToken: s.accessToken)
+        let oppwd = try LMSigner.encryptOppwd(accessToken: s.accessToken, password: s.opPassword)
 
         let stateJSON = try jsonString(cmd.state)
         let form: [String: String] = [
@@ -631,14 +686,58 @@ final class LMClient: ObservableObject {
             "state": stateJSON,
         ]
 
-        let any = try await request(method: "POST",
-                                    path: LMEndpoints.Path.remoteCtl,
-                                    form: form)
-        let env = try decode(LMEnvelope<String>.self, from: any)
-        guard let msgID = env.data, !msgID.isEmpty else {
-            throw LMError.business(env.code ?? -1, env.message ?? "下发失败")
+        // 记体检单：把「真发出去的东西」原样留下来
+        var trace = LMControlTrace(
+            time: Date(),
+            action: actionKey,
+            cmdid: cmd.cmdid,
+            passwordLength: s.opPassword.count,
+            key: parts.key,
+            iv: parts.iv,
+            oppwd: oppwd,
+            roundTrip: LMSigner.decryptOppwd(accessToken: s.accessToken, oppwd: oppwd),
+            tokenHead: parts.tokenHead,
+            tokenTail: parts.tokenTail,
+            outcome: "已下发，等待结果…")
+        lastControlTrace = trace
+
+        do {
+            let any = try await request(method: "POST",
+                                        path: LMEndpoints.Path.remoteCtl,
+                                        form: form)
+            let env = try decode(LMEnvelope<String>.self, from: any)
+            guard let msgID = env.data, !msgID.isEmpty else {
+                trace.outcome = "业务错误 \(env.code ?? -1)：\(env.message ?? "下发失败")"
+                lastControlTrace = trace
+                throw LMError.business(env.code ?? -1, env.message ?? "下发失败")
+            }
+            trace.outcome = "已受理，msgID \(msgID)"
+            lastControlTrace = trace
+            return msgID
+        } catch let e as LMError {
+            if case .business(let code, let msg) = e {
+                trace.outcome = "业务错误 \(code)：\(msg)"
+                lastControlTrace = trace
+            } else {
+                trace.outcome = "失败：\(e.localizedDescription)"
+                lastControlTrace = trace
+            }
+            noteBusinessError(e)
+            throw e
+        } catch {
+            // 解码失败之类不是 LMError 的异常也记一笔，别让体检单停在「等待结果…」
+            trace.outcome = "异常：\(error.localizedDescription)"
+            lastControlTrace = trace
+            throw error
         }
-        return msgID
+    }
+
+    /// 业务码 70 = 操作密码累计出错 3 次以上，官方要求等 5 分钟。
+    /// 记下来，UI 就能显示倒计时并且不再往枪口上撞。
+    private func noteBusinessError(_ e: LMError) {
+        if case .business(let code, _) = e, code == 70 {
+            controlLockedUntil = Date().addingTimeInterval(300)
+        }
     }
 
     /// 轮询车控结果：true = 成功
@@ -679,14 +778,52 @@ final class LMClient: ObservableObject {
         return String(data: data, encoding: .utf8) ?? "{}"
     }
 
-    // MARK: - 常用车况字段（signalMap 里常用的几个）
+    // MARK: - 常用车况字段
+    //
+    // signalMap 的 id → 含义是靠「多快照线性回归」反推出来的，不是猜的。
+    // 判定依据：真 SOC 必须与所有续航信号严格成正比，且落在 0..100。
+    //
+    //   快照        100003   1204   3257   3260   1318
+    //   har_appgw    32.9     33    236    190   1909
+    //   har_refresh  36.6     37    262    211   1909
+    //   15:30 抓包    41.4     41    298    239   1909
+    //   实时         41.4     41    298    239   1909
+    //
+    //   3257 / 100003 = 7.16 ~ 7.20   → 满电 717 km（严格线性）
+    //   3260 / 100003 = 5.77          → 满电 577 km（严格线性）
+    //   1204 == round(100003) 三组全部吻合 → 1204 就是取整后的 SOC
+    //
+    // 结论：100003 / 1204 是 SOC(%)，3257 / 3260 都是「续航 km」（两套标准）。
+    // ★ 以前 batteryPercent 读 3260，屏幕上才会出现「239%」这种数字。
 
     /// 车门锁状态：true = 已锁
     var isLocked: Bool? { signals["1298"]?.boolValue ?? signals["3262"]?.boolValue }
-    /// 剩余电量 %
-    var batteryPercent: Double? { signals["3260"]?.doubleValue }
-    /// 续航 km
+
+    /// 剩余电量 %（0...100）
+    ///
+    ///   100003 —— BMS 上报的 SOC，带 1 位小数，最准
+    ///   1204   —— 同一个值的整数取整（实测 1204 == round(100003)）
+    ///
+    /// ⚠️ 千万不要再读 3260：那是「续航 km」，不是百分比。
+    var batteryPercent: Double? {
+        guard let raw = signals["100003"]?.doubleValue ?? signals["1204"]?.doubleValue else {
+            return nil
+        }
+        return min(max(raw, 0), 100)
+    }
+
+    /// 剩余续航 km（主显示）
     var rangeKm: Double? { signals["3257"]?.doubleValue }
-    /// 车内温度
+
+    /// 另一套标准下的剩余续航 km（3257 / 3260 严格成比例 ≈ 1.245，
+    /// 一个标称一个动态，具体哪个对应官方 App 首页的「续航」以实测为准：
+    /// 用户截图里官方 App 显示 238 km，同一时刻 3257=236、3260=190 → 主显示取 3257）
+    var rangeAltKm: Double? { signals["3260"]?.doubleValue }
+
+    /// 车内温度 ℃
     var interiorTemp: Double? { signals["1349"]?.doubleValue }
+
+    /// 总里程 km：优先用实时信号 1318（与用户截图 1909 km 完全一致），
+    /// 没有时退回 /drivingrecord/mileage 接口
+    var odometerKm: Double? { signals["1318"]?.doubleValue ?? mileage?.totalmileage }
 }

@@ -58,10 +58,3 @@ struct MainTabView: View {
         }
     }
 }
-
-// MARK: - 配色
-
-extension Color {
-    static let lmAccent = Color(red: 0.11, green: 0.45, blue: 0.94)   // 零跑蓝
-    static let lmCard   = Color(.secondarySystemGroupedBackground)
-}

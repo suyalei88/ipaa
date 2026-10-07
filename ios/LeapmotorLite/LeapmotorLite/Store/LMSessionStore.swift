@@ -12,8 +12,14 @@ final class LMSessionStore {
     private let service = "com.leapmotor.lite.session"
     private let account = "default"
 
-    func save(_ session: LMSession) {
-        guard let data = try? JSONEncoder().encode(session) else { return }
+    /// 写入 Keychain。
+    ///
+    /// 返回是否成功 —— 侧载重签的 App 有可能拿不到 keychain-access-group
+    /// （SecItemAdd 返回 errSecMissingEntitlement -34018），
+    /// 这时必须让界面知道「没存进去」，否则用户会以为存好了。
+    @discardableResult
+    func save(_ session: LMSession) -> Bool {
+        guard let data = try? JSONEncoder().encode(session) else { return false }
         // 先删再写
         clear()
         let query: [String: Any] = [
@@ -23,7 +29,7 @@ final class LMSessionStore {
             kSecValueData as String:   data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
-        SecItemAdd(query as CFDictionary, nil)
+        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
     func load() -> LMSession? {

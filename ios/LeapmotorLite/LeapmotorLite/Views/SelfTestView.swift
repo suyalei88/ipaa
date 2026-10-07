@@ -5,30 +5,42 @@
 //  算法自检页：用真实抓包向量验证 HMAC / XOR3 / AES / MD5 实现
 //
 import SwiftUI
+import Foundation
 
 struct SelfTestView: View {
     @State private var results: [LMSelfTest.Result] = []
 
+    private var passedCount: Int { results.filter(\.passed).count }
+    private var allPassed: Bool { !results.isEmpty && passedCount == results.count }
+
     var body: some View {
         List {
             Section {
-                let passed = results.filter(\.passed).count
-                HStack {
-                    Image(systemName: passed == results.count && !results.isEmpty
-                          ? "checkmark.seal.fill" : "xmark.seal.fill")
-                        .foregroundStyle(passed == results.count && !results.isEmpty ? .green : .red)
-                    Text("\(passed) / \(results.count) 通过")
-                        .font(.headline)
+                VStack(spacing: 10) {
+                    Image(systemName: allPassed ? "checkmark.seal.fill" : "xmark.seal.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(allPassed ? Color.lmGood : Color.lmBad)
+                    Text("\(passedCount) / \(results.count) 通过")
+                        .font(.title3.weight(.bold))
+                    Text(allPassed
+                         ? "签名与加密实现与官方 App 逐字节一致"
+                         : "有不一致项，车控一定不通，先修这个")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
             }
 
             Section("结果") {
                 ForEach(results) { r in
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack {
+                        HStack(spacing: 8) {
                             Image(systemName: r.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(r.passed ? .green : .red)
-                            Text(r.name).font(.footnote.weight(.medium))
+                                .foregroundStyle(r.passed ? Color.lmGood : Color.lmBad)
+                            Text(r.name)
+                                .font(.footnote.weight(.medium))
                         }
                         Text(r.detail)
                             .font(.system(.caption2, design: .monospaced))
@@ -36,6 +48,7 @@ struct SelfTestView: View {
                             .lineLimit(3)
                             .truncationMode(.middle)
                     }
+                    .padding(.vertical, 2)
                 }
             }
 
