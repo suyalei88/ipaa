@@ -49,7 +49,7 @@
 |---|---|
 | **`ios/LeapmotorLite/`** | **最终交付：SwiftUI 干净车控 App（签名/加密全实现 + 内置自检）** |
 | `client/` | Python 参考实现（签名/派生/回归校验）+ Mach-O 逆向工具 |
-| `evidence/` | IPA、抓包 HAR、扫描结果、**FINDINGS_CRYPTO.md 分析报告** |
+| `evidence/` | iOS 原始 IPA、抓包 HAR、扫描结果、**FINDINGS_CRYPTO.md 分析报告**（安卓 APK 与解包产物已于 2026-10-07 清理，结论保留在报告里） |
 | `capture/` | mitmproxy 抓包插件 + **CAPTURE_SOP_IOS.md 抓包 SOP** |
 | `frida/` | `ios_ssl_bypass.js` / `ios_hook_request.js`（越狱机辅助） |
 | `app/` | 早期 FastAPI + 网页版（历史产物，已被 iOS 版取代） |

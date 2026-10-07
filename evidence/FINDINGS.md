@@ -203,10 +203,17 @@ python client/har_analyze.py <har> --sign-key K # 自动验签
 
 ## 9. 证据文件
 
+> **2026-10-07 清理说明**：本仓库最终交付的是 **iOS 版**，安卓侧的原始包与解包产物
+> （`leapmotor.apk` 274M、`unpack/` 47M）已删除以省空间。它们的分析结论全部保留在
+> 本文档与 `FINDINGS_CRYPTO.md` 里，哈希见上文「原始素材」。需要重跑安卓侧扫描时，
+> 自己放一份官方 APK 到 `evidence/leapmotor.apk` 即可（`scan_apk.py` 默认路径就是这个）。
+> `evidence/unpack/` 可用 `unzip` / `apktool` 从该 APK 重新解出。
+
 | 文件 | 说明 |
 |---|---|
-| `evidence/leapmotor.apk` | 原始包（哈希见上） |
+| `evidence/leapmotor.ipa` | iOS 原始包（★ 保留，API 真值来源） |
+| `evidence/leapmotor.apk` | 安卓原始包（**已删**，哈希见上） |
 | `evidence/scan_urls.txt` | 全包 URL/域名/关键词扫描 |
-| `evidence/unpack/classes.dex` | 壳 dex |
-| `evidence/unpack/assets/rn/index.android.bundle` | 明文 JS（签名逻辑） |
-| `evidence/unpack/lib/arm64-v8a/libleapcrypto.so` | 打包 OpenSSL/BoringSSL |
+| `evidence/unpack/classes.dex` | 壳 dex（**已删**，可从 APK 重解） |
+| `evidence/unpack/assets/rn/index.android.bundle` | 明文 JS（签名逻辑）（**已删**，可从 APK 重解） |
+| `evidence/unpack/lib/arm64-v8a/libleapcrypto.so` | 打包 OpenSSL/BoringSSL（**已删**，可从 APK 重解） |

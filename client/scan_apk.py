@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""扫描整个 APK（所有条目）里的 URL / 域名 / 关键词，输出到 evidence/scan_urls.txt"""
+"""扫描整个 APK（所有条目）里的 URL / 域名 / 关键词，输出到 evidence/scan_urls.txt
+
+注：`evidence/leapmotor.apk` 已在 2026-10-07 的清理中删除（安卓侧分析早已完成，
+结论见 evidence/FINDINGS.md）。要重跑这个脚本，自己放一份官方 APK 到默认路径，
+或者直接把路径当第一个参数传进来：
+
+    python client/scan_apk.py /path/to/leapmotor.apk evidence/scan_urls.txt
+"""
 import os
 import re
 import zipfile
@@ -8,6 +15,10 @@ import sys
 
 APK = sys.argv[1] if len(sys.argv) > 1 else "evidence/leapmotor.apk"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "evidence/scan_urls.txt"
+
+if not os.path.exists(APK):
+    sys.exit(f"[x] 找不到 APK：{APK}\n"
+             f"    evidence/leapmotor.apk 已在清理中删除，请自行放入官方包或指定路径。")
 
 URL_RX = re.compile(rb"https?://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]{4,200}")
 DOMAIN_RX = re.compile(rb"\b(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+(?:com|cn|net|org|io|co|vip|top|xyz)\b")
