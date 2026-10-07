@@ -16,8 +16,13 @@
 		67DB4B82330D1C8B287DA291 /* LMEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3373F1032F8959D7495DA76 /* LMEndpoints.swift */; };
 		9A757E750C4A958BF5B13A6C /* LMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111D949AB8906CEF24EB9CBC /* LMModels.swift */; };
 		BE32F72A1F4E6870E58778BC /* LMSignalCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D10A04F6B381CD7B6E54E02 /* LMSignalCatalog.swift */; };
+		3CF7E4E59D8DED306DEE9648 /* LMBLECentral.swift in Sources */ = {isa = PBXBuildFile; fileRef = 178E0F70606542F28376CA72 /* LMBLECentral.swift */; };
+		432C7A34E678509945A4D291 /* LMBLEKeyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C3D44F3461B2BCDFF4F89A6 /* LMBLEKeyModels.swift */; };
+		09E807F1DD178DBF38DE53B9 /* LMBLEProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04DAEF8A0D118509CB6760D3 /* LMBLEProtocol.swift */; };
 		51E128805AA40CB440D6431F /* LMLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64C107729BB80F383CF27593 /* LMLocationProvider.swift */; };
 		B0F08AC632E7AB750BAC9A65 /* LMSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4741E8039A8C004B2345718F /* LMSessionStore.swift */; };
+		7474FDBCFFBCD62E4CD1EC58 /* BLEDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9725D2C241BFDCDE2987B0EA /* BLEDebugView.swift */; };
+		6D966BDB1D1333C743571AB9 /* BLEKeyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 340E31FD60E7EA54F836AEF5 /* BLEKeyView.swift */; };
 		F288E6D7545C2089C17B3017 /* ChargeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56213D6C5F00FE3EBD2AD69D /* ChargeView.swift */; };
 		6451783540D5C3D218B3B9DF /* ControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 326FA4819659E3F08EF88084 /* ControlPanelView.swift */; };
 		B0A122A53DA94A1FD96246DD /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480C6EB9AB5E2F713BC25983 /* DashboardView.swift */; };
@@ -43,8 +48,13 @@
 		D3373F1032F8959D7495DA76 /* LMEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMEndpoints.swift; sourceTree = "<group>"; };
 		111D949AB8906CEF24EB9CBC /* LMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMModels.swift; sourceTree = "<group>"; };
 		8D10A04F6B381CD7B6E54E02 /* LMSignalCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSignalCatalog.swift; sourceTree = "<group>"; };
+		178E0F70606542F28376CA72 /* LMBLECentral.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMBLECentral.swift; sourceTree = "<group>"; };
+		9C3D44F3461B2BCDFF4F89A6 /* LMBLEKeyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMBLEKeyModels.swift; sourceTree = "<group>"; };
+		04DAEF8A0D118509CB6760D3 /* LMBLEProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMBLEProtocol.swift; sourceTree = "<group>"; };
 		64C107729BB80F383CF27593 /* LMLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMLocationProvider.swift; sourceTree = "<group>"; };
 		4741E8039A8C004B2345718F /* LMSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSessionStore.swift; sourceTree = "<group>"; };
+		9725D2C241BFDCDE2987B0EA /* BLEDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEDebugView.swift; sourceTree = "<group>"; };
+		340E31FD60E7EA54F836AEF5 /* BLEKeyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEKeyView.swift; sourceTree = "<group>"; };
 		56213D6C5F00FE3EBD2AD69D /* ChargeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChargeView.swift; sourceTree = "<group>"; };
 		326FA4819659E3F08EF88084 /* ControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelView.swift; sourceTree = "<group>"; };
 		480C6EB9AB5E2F713BC25983 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
@@ -92,6 +102,7 @@
 			children = (
 				4EBB3F0B5061532FFAABC0AF /* Crypto */,
 				AE2A4A41186ED8DD7576F55D /* API */,
+				CD21604D297A5FE8431A6A01 /* BLE */,
 				455A1775BB2985D385F39223 /* Store */,
 				D154BF9AE96ED6D023BE10B6 /* Views */,
 				57237621A0BE1CD5D3D4F0EE /* Support */,
@@ -124,6 +135,16 @@
 			path = API;
 			sourceTree = "<group>";
 		};
+		CD21604D297A5FE8431A6A01 /* BLE */ = {
+			isa = PBXGroup;
+			children = (
+				178E0F70606542F28376CA72 /* LMBLECentral.swift */,
+				9C3D44F3461B2BCDFF4F89A6 /* LMBLEKeyModels.swift */,
+				04DAEF8A0D118509CB6760D3 /* LMBLEProtocol.swift */,
+			);
+			path = BLE;
+			sourceTree = "<group>";
+		};
 		455A1775BB2985D385F39223 /* Store */ = {
 			isa = PBXGroup;
 			children = (
@@ -136,6 +157,8 @@
 		D154BF9AE96ED6D023BE10B6 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				9725D2C241BFDCDE2987B0EA /* BLEDebugView.swift */,
+				340E31FD60E7EA54F836AEF5 /* BLEKeyView.swift */,
 				56213D6C5F00FE3EBD2AD69D /* ChargeView.swift */,
 				326FA4819659E3F08EF88084 /* ControlPanelView.swift */,
 				480C6EB9AB5E2F713BC25983 /* DashboardView.swift */,
@@ -237,8 +260,13 @@
 				67DB4B82330D1C8B287DA291 /* LMEndpoints.swift in Sources */,
 				9A757E750C4A958BF5B13A6C /* LMModels.swift in Sources */,
 				BE32F72A1F4E6870E58778BC /* LMSignalCatalog.swift in Sources */,
+				3CF7E4E59D8DED306DEE9648 /* LMBLECentral.swift in Sources */,
+				432C7A34E678509945A4D291 /* LMBLEKeyModels.swift in Sources */,
+				09E807F1DD178DBF38DE53B9 /* LMBLEProtocol.swift in Sources */,
 				51E128805AA40CB440D6431F /* LMLocationProvider.swift in Sources */,
 				B0F08AC632E7AB750BAC9A65 /* LMSessionStore.swift in Sources */,
+				7474FDBCFFBCD62E4CD1EC58 /* BLEDebugView.swift in Sources */,
+				6D966BDB1D1333C743571AB9 /* BLEKeyView.swift in Sources */,
 				F288E6D7545C2089C17B3017 /* ChargeView.swift in Sources */,
 				6451783540D5C3D218B3B9DF /* ControlPanelView.swift in Sources */,
 				B0A122A53DA94A1FD96246DD /* DashboardView.swift in Sources */,

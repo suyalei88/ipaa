@@ -58,6 +58,55 @@ enum LMEndpoints {
         /// ⚠️ 同样只有字符串表里的 `/v3/geocode/regeo`，**参数与响应都未验证**。
         ///    App 里默认走 Apple 的 CLGeocoder，这个只在「诊断」页做探测用。
         static let regeo         = "/carownerservice/v3/geocode/regeo"
+
+        // MARK: 蓝牙钥匙 / 数字钥匙
+        //
+        // ⚠️⚠️ 下面这一组**全部只有路径、没有抓包样本**。
+        //   来源：官方 IPA 主二进制（`零跑-1.22.68.ipa`，204 MB 未加密 Mach-O）
+        //         的字符串表，`grep -aoE "/v3/api/[a-zA-Z0-9/_.-]+"` 直接命中。
+        //   响应结构、参数、甚至 HTTP 方法都**未知**。
+        //   所以：
+        //     · 一律只做「探测」，把原始响应留给人看，绝不解析成强类型；
+        //     · 前缀不确定 → 用 `pathPrefixes` 逐个试（见下面的说明）；
+        //     · 探测失败是常态，不能污染 lastError，更不能让页面崩。
+
+        /// 取 CCC 配对码。CCC = Car Connectivity Consortium 数字钥匙标准。
+        static let cccPairingCode = "/v3/api/ccc/pairingcode"
+        /// 轮询配对结果（配对码是异步的，官方也是轮询）
+        static let cccPoll        = "/v3/api/ccc/poll"
+        /// 删除已绑定的钥匙
+        static let cccDelKey      = "/v3/api/ccc/delKey"
+
+        /// 同步已绑定的蓝牙钥匙。
+        ///
+        /// ★ 这个是最有价值的探测目标：如果服务端在这里把钥匙材料
+        ///   （`passwordCard`）吐回来，BLE 协议就能自己实现了。
+        static let bleKeySync     = "/v3/api/bluetoothkey/combine/syncBluetoothKeys"
+        /// 感应区锚点参数（「无感」功能的标定数据）
+        static let bleKeyAnchor   = "/v3/api/bluetoothkey/anchor/point/params/simplify"
+        /// 上传蓝牙钥匙使用记录
+        static let bleKeyRecords  = "/v3/api/bluetoothkey/uploadRecords"
+        /// 上传自动标定参数（`LMVBlueToothCalibrationModel` 用）
+        static let bleKeyCalib    = "/v3/api/bluetoothkey/uploadAutonomyCalibrateParams"
+    }
+
+    /// `/v3/api/...` 这几个路径在二进制里**不带服务名前缀**，前缀是运行时拼的。
+    ///
+    /// 已知的反例可以反推：字符串表里是 `/v3/api/vehicleinfo/commonConfig`，
+    /// 而实测全路径是 `/carownerservice/v3/api/vehicleinfo/commonConfig` ——
+    /// 所以 `carownerservice` 是首选前缀。
+    /// 但车控接口用的是 `/app/app-control-service` 前缀，CCC 那三个
+    /// （pairingcode / poll / delKey）语义上更像车控，也可能挂在那里。
+    /// 干脆三个都试，把「哪个前缀 200」这个事实本身当成探测结果。
+    static let pathPrefixes: [String] = [
+        "/carownerservice",
+        "/app/app-control-service",
+        "",
+    ]
+
+    /// 把一个裸路径按候选前缀展开成全路径（诊断页展示用）
+    static func fullPaths(_ bare: String) -> [String] {
+        pathPrefixes.map { $0 + bare }
     }
 
     // MARK: - 车控命令

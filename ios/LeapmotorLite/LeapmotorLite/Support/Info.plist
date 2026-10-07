@@ -51,6 +51,24 @@
 	     只有用户点「获取我的位置」时才请求；拒绝也只是不显示距离，不影响其它功能。 -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>用于在地图上显示你与车辆之间的距离。仅在你点击「获取我的位置」时读取，不会上传、不用于任何其他用途。</string>
+
+	<!-- 蓝牙钥匙 / BLE 调试台。权限只在打开「蓝牙钥匙」或「BLE 调试台」时才请求
+	     （LMBLECentral 是懒初始化的，App 启动不会弹窗）。
+	     官方 App 的用途说明写的是「用于蓝牙钥匙、自动泊车」，我们只做前者。 -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>用于连接车辆的蓝牙模块，读取车况与调试蓝牙钥匙协议。不会连接非本车的设备，不上传任何扫描结果。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>用于连接车辆的蓝牙模块，读取车况与调试蓝牙钥匙协议。</string>
+
+	<!-- bluetooth-central：App 被切到后台后仍能保持/恢复与车的 BLE 连接。
+	     ★ 刻意不加 bluetooth-peripheral —— 官方那条是为了自动泊车把自己做成外设，
+	       我们不需要，加上只会多一份后台能力说明。
+	     注意 iOS 对后台 BLE 有节流，别指望秒级实时。 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
+
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>

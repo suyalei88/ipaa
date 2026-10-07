@@ -187,6 +187,7 @@ final class LMClient: ObservableObject {
         privacyGPS = false
         controlLockedUntil = nil
         lastControlTrace = nil
+        bleProbes = []
         lastError = nil
         store.clear()
     }
@@ -200,6 +201,7 @@ final class LMClient: ObservableObject {
         chargeSchedule = nil
         configBlobs = [:]
         parkingProbe = nil
+        bleProbes = []
         lastUpdate = nil
     }
 
@@ -735,6 +737,79 @@ final class LMClient: ObservableObject {
         // 配置类接口单独兜错：它挂了不该让整个「刷新车况」显示失败
         try? await refreshCommonConfig()
     }
+
+    // MARK: - 蓝牙钥匙
+
+    /// 已绑定的蓝牙钥匙记录（来自 `commonConfig.config["4"]`）。
+    ///
+    /// ⚠️ 只有 `mac` / `version` / `updateTime`，**不含密钥材料**。
+    ///    需要先 `refreshCommonConfig()` 才会有值。
+    var bleKeyRecord: LMBLEKeyRecord? { LMBLEKeyRecord(blob: configBlobs["4"]) }
+
+    /// 蓝牙钥匙相关接口的探测记录（只增不改，方便回看）
+    @Published private(set) var bleProbes: [LMBLEProbeResult] = []
+
+    /// 探测一个蓝牙钥匙接口。
+    ///
+    /// ★ 全部**不抛错**：这些端点的路径前缀、参数、方法都是推的，
+    ///   失败是常态。把失败也变成一条可读记录，才看得出「试了什么、回了什么」。
+    @discardableResult
+    func probeBLEKey(barePath: String,
+                     method: String,
+                     params: [String: String]? = nil,
+                     body: [String: Any]? = nil,
+                     title: String,
+                     host: String = LMEndpoints.gateway) async -> LMBLEProbeResult {
+        let request = [
+            params.map { "?" + $0.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: "&") } ?? "",
+            body.map { "body=" + prettyJSON($0) } ?? "",
+        ].filter { !$0.isEmpty }.joined(separator: "  ")
+
+        var text: String
+        var ok = false
+        do {
+            let any: Any
+            if method == "GET" {
+                any = try await request(method: "GET", path: barePath, host: host, params: params)
+            } else {
+                any = try await request(method: "POST", path: barePath, host: host, body: body ?? [:])
+            }
+            text = prettyJSON(any)
+            ok = true
+        } catch {
+            text = "✗ \(error.localizedDescription)"
+        }
+
+        let r = LMBLEProbeResult(at: Date(), title: title, path: barePath,
+                                 request: request.isEmpty ? "（无参数）" : request,
+                                 response: text, ok: ok)
+        bleProbes.insert(r, at: 0)
+        if bleProbes.count > 40 { bleProbes.removeLast(bleProbes.count - 40) }
+        return r
+    }
+
+    /// 只读探测：把 `syncBluetoothKeys` 在三个候选前缀下各试一次。
+    ///
+    /// ★ 为什么只探这一个：它是唯一「语义上是取数据」的蓝牙钥匙接口。
+    ///   其它几个都会改服务端状态 ——
+    ///     · `ccc/pairingcode` 会在服务端建一个待配对会话
+    ///     · `ccc/delKey` 会删钥匙（破坏性）
+    ///     · `uploadRecords` / `uploadAutonomyCalibrateParams` 是上报
+    ///   这些一律只能手动触发，见 DiagnosticsView 的「蓝牙钥匙接口探针」。
+    @discardableResult
+    func probeBLEKeyReadOnly() async -> [LMBLEProbeResult] {
+        guard let vin = selectedVehicle?.vin else { return [] }
+        var out: [LMBLEProbeResult] = []
+        for prefix in LMEndpoints.pathPrefixes {
+            let full = prefix + LMEndpoints.Path.bleKeySync
+            out.append(await probeBLEKey(barePath: full, method: "GET",
+                                         params: ["vin": vin],
+                                         title: "同步钥匙（前缀 \(prefix.isEmpty ? "无" : prefix)）"))
+        }
+        return out
+    }
+
+    func clearBLEProbes() { bleProbes.removeAll() }
 
     private func prettyJSON(_ any: Any) -> String {
         guard JSONSerialization.isValidJSONObject(any),

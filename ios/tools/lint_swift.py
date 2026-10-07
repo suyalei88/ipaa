@@ -45,6 +45,16 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       报的却是一堆指向别处的类型推断错误。加了 MapKit / CoreLocation 之后
       （Map / Marker / CLLocationCoordinate2D / CLGeocoder）这个坑概率大增。
 
+  R11 CoreBluetooth 的 delegate 回调里直接写 @Published
+      CBCentralManager 的回调**不在主线程**（除非显式传 queue: nil）。
+      在回调里写 @Published 会撞 SwiftUI 的
+      「Publishing changes from background threads is not allowed」——
+      轻则界面不刷新，重则崩溃，而且**编译期完全看不出来**。
+      修法二选一：建 manager 时传 `queue: nil`（= 主队列），
+      或在每个回调里手动跳主线程。
+      触发条件刻意收得很窄：必须同时有 CoreBluetooth delegate 协议
+      + @Published + 没有任何主线程保证，才报 —— 避免误伤。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -83,7 +93,8 @@ RULES = {
     "R7": "同名 static 成员重复声明（invalid redeclaration）",
     "R8": "SecureField 挂 .oneTimeCode（短信验证码会被自动填进去）",
     "R9": "读了依赖当前时间的锁定状态却没挂 .lmClock（倒计时冻住 / 按钮永远禁用）",
-    "R10": "用了系统框架的符号却没 import 那个框架（MapKit / CoreLocation / UIKit）",
+    "R10": "用了系统框架的符号却没 import 那个框架（MapKit / CoreLocation / UIKit / CoreBluetooth）",
+    "R11": "CoreBluetooth delegate 回调里写 @Published 但没保证主线程（编译期无感，运行时崩/不刷新）",
 }
 
 # R10 用：框架 → 该框架里「一眼能认出来」的符号正则
@@ -106,7 +117,32 @@ FRAMEWORK_TYPES = {
         r"\bUIPasteboard\b", r"\bUIApplication\b", r"\bUIImage\b",
         r"\bUIDevice\b", r"\bUIScreen\b", r"\bUIColor\b",
     ],
+    "CoreBluetooth": [
+        r"\bCBCentralManager\b", r"\bCBPeripheral\b", r"\bCBPeripheralManager\b",
+        r"\bCBService\b", r"\bCBCharacteristic\b", r"\bCBUUID\b",
+        r"\bCBManagerState\b", r"\bCBCharacteristicProperties\b",
+        r"\bCBAdvertisementData[A-Za-z]*\b", r"\bCBCentralManagerOption[A-Za-z]*\b",
+        r"\bCBCharacteristicWriteType\b", r"\bCBMutableCharacteristic\b",
+    ],
 }
+
+# R11 用：CoreBluetooth 的 delegate 协议名
+#   CBCentralManager 的回调走它自己的 queue，默认**不是**主队列。
+#   （CBPeripheralManager 同理。）
+CB_DELEGATE_PROTOCOLS = [
+    r"\bCBCentralManagerDelegate\b",
+    r"\bCBPeripheralDelegate\b",
+    r"\bCBPeripheralManagerDelegate\b",
+]
+
+# R11 用：任何一条出现，就说明作者已经处理了线程问题，放行
+CB_MAIN_THREAD_PROOF = [
+    r"queue\s*:\s*nil",          # CBCentralManager(delegate:queue:options:) 传 nil = 主队列
+    r"DispatchQueue\.main",      # 手动跳主线程
+    r"@MainActor",               # 类型/方法整体标主 actor
+    r"MainActor\.assumeIsolated",# 显式断言
+    r"@objc\s+dynamic",          # 少见，但保留
+]
 
 
 def blank_comments_and_strings(src: str) -> str:
@@ -254,6 +290,25 @@ def check(path: str, src: str):
                 "读了 isControlLocked/controlLockRemaining（依赖当前时间）但本文件没有"
                 ".lmClock(until:now:) → 倒计时会冻住，锁定期到期后按钮不会重新启用")
 
+    # R11 —— CoreBluetooth delegate 回调里写 @Published 但没保证主线程
+    #
+    # CBCentralManager 的 delegate 回调**不在主线程**（除非建的时候传 queue: nil）。
+    # 在回调里写 @Published 会撞
+    #     "Publishing changes from background threads is not allowed"
+    # —— 编译期完全看不出来，轻则界面不刷新，重则崩。
+    #
+    # 触发条件刻意收得很窄，三条同时满足才报：
+    #   ① 文件里出现了 CoreBluetooth 的 delegate 协议
+    #   ② 文件里有 @Published
+    #   ③ 文件里没有任何主线程保证（queue: nil / DispatchQueue.main / @MainActor …）
+    # 这样不会误伤「只扫不发布」或者「已经跳了主线程」的写法。
+    if any(re.search(p, code) for p in CB_DELEGATE_PROTOCOLS) and "@Published" in code:
+        if not any(re.search(p, code) for p in CB_MAIN_THREAD_PROOF):
+            idx = code.find("@Published")
+            add(idx, "R11",
+                "CoreBluetooth 的 delegate 回调不在主线程，但本文件有 @Published 且没有任何"
+                "主线程保证 → 建 manager 时传 `queue: nil`，或在回调里 DispatchQueue.main.async")
+
     # R10 —— 用了某个系统框架的类型，却没 import 那个框架
     #
     # 真烧过一轮：Theme.swift 里用了 Color(.secondarySystemGroupedBackground)
@@ -261,8 +316,9 @@ def check(path: str, src: str):
     #   "cannot find 'UIViewController' in scope" / 类型推断失败 之类
     # 一堆指向别处的错误，翻半天才发现少一行 import。
     #
-    # 加了 MapKit / CoreLocation 之后这个坑的概率大幅上升（Map / Marker /
-    # CLLocationCoordinate2D / CLGeocoder 全在别的模块里），所以固化成规则。
+    # 加了 MapKit / CoreLocation / CoreBluetooth 之后这个坑的概率大幅上升
+    # （Map / Marker / CLLocationCoordinate2D / CLGeocoder / CBPeripheral
+    #   全在别的模块里），所以固化成规则。
     for framework, needles in FRAMEWORK_TYPES.items():
         if re.search(rf"^\s*import\s+{framework}\s*$", code, re.M):
             continue

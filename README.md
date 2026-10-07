@@ -189,15 +189,20 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `.github/workflows/build-ipa.yml` — 云端打包流水线
 
 **iOS 交付**
-- `ios/LeapmotorLite/` — SwiftUI 车控 App（22 个 Swift 文件 + Info.plist + Assets.xcassets）
+- `ios/LeapmotorLite/` — SwiftUI 车控 App（27 个 Swift 文件 + Info.plist + Assets.xcassets）
 - `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环 / 秒级时钟）
 - `ios/LeapmotorLite/LeapmotorLite/Views/LocationView.swift` — 车辆定位（MapKit + CLGeocoder + 导航）
 - `ios/LeapmotorLite/LeapmotorLite/Views/ChargeView.swift` — 充电信息（剩余时间 / 预约充电 / 疑似项专区）
 - `ios/LeapmotorLite/LeapmotorLite/Views/SignalExplorerView.swift` — 信号浏览器 + 快照 A/B 对比
+- `ios/LeapmotorLite/LeapmotorLite/Views/BLEKeyView.swift` — ★ 蓝牙钥匙（云端钥匙记录 / 行为开关 / 接口探测 / 协议进度）
+- `ios/LeapmotorLite/LeapmotorLite/Views/BLEDebugView.swift` — ★ BLE 调试台（扫描 / GATT 树 / 订阅抓帧 / 发原始字节）
+- `ios/LeapmotorLite/LeapmotorLite/BLE/LMBLEProtocol.swift` — ★★ BLE 协议知识库（UUID / ECDH 字段 / 帧模板 / 逆向证据全记录）
+- `ios/LeapmotorLite/LeapmotorLite/BLE/LMBLECentral.swift` — CoreBluetooth 封装（queue: nil 保主线程）
+- `ios/LeapmotorLite/LeapmotorLite/BLE/LMBLEKeyModels.swift` — 钥匙记录 / 行为开关 / 探测结果 / 帧自检
 - `ios/LeapmotorLite/LeapmotorLite/API/LMSignalCatalog.swift` — ★ 信号 id → 语义知识库（带置信度与判定依据）
 - `ios/LeapmotorLite/LeapmotorLite/Store/LMLocationProvider.swift` — 本机定位（只用于「距我多远」）
-- `ios/LeapmotorLite/LeapmotorLite/Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求 / 接口探测 / 未验证 cmdid）
-- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R10，CI 里会跑）
+- `ios/LeapmotorLite/LeapmotorLite/Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求 / 接口探测 / 蓝牙钥匙接口 / 未验证 cmdid）
+- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R11，CI 里会跑）
 - `ios/LeapmotorLite/README.md` — 编译 / 使用 / 协议文档
 
 **逆向与分析**

@@ -258,15 +258,28 @@ ios/
         │   ├── LMSigner.swift           # valueStr / 双模式 sign / signKey 派生 / oppwd
         │   └── LMSelfTest.swift         # 内置抓包 + 真实链路测试向量
         ├── API/
-        │   ├── LMEndpoints.swift        # host / path / cmdid 表
+        │   ├── LMEndpoints.swift        # host / path / cmdid 表（含蓝牙钥匙 7 个接口）
         │   ├── LMModels.swift           # 响应模型
+        │   ├── LMSignalCatalog.swift    # 信号 id → 语义知识库（带置信度 + 判定依据）
         │   └── LMClient.swift           # 请求构造 + 签名 + 短信登录 + 全部业务方法
+        ├── BLE/                         # 蓝牙钥匙（见 IPA_BUILD.md「蓝牙钥匙逆向进展」）
+        │   ├── LMBLEProtocol.swift      # ★★ UUID / ECDH 字段 / 分号帧模板 / 逆向证据全记录
+        │   ├── LMBLECentral.swift       # CoreBluetooth 封装（queue: nil 保主线程）
+        │   └── LMBLEKeyModels.swift     # 钥匙记录 / 行为开关 / 探测结果 / 帧自检
         ├── Store/
-        │   └── LMSessionStore.swift     # Keychain 会话持久化
+        │   ├── LMSessionStore.swift     # Keychain 会话持久化
+        │   └── LMLocationProvider.swift # 本机定位（只用于「距我多远」）
         ├── Views/
+        │   ├── Theme.swift              # 配色 + 复用组件（卡片 / 磁贴 / 电量环 / .lmClock）
         │   ├── LoginView.swift          # 短信验证码登录 / 导入登录态
         │   ├── DashboardView.swift      # 车况
+        │   ├── LocationView.swift       # 车辆定位（地图 / 地址 / 导航）
+        │   ├── ChargeView.swift         # 充电信息（剩余时间 / 预约充电）
         │   ├── ControlPanelView.swift   # 车控
+        │   ├── BLEKeyView.swift         # 蓝牙钥匙（钥匙记录 / 开关 / 接口探测 / 协议进度）
+        │   ├── BLEDebugView.swift       # BLE 调试台（扫描 / GATT / 订阅抓帧 / 发字节）
+        │   ├── SignalExplorerView.swift # 信号浏览器 + 快照 A/B 对比
+        │   ├── DiagnosticsView.swift    # 车控体检 + 官方接口探测
         │   ├── SettingsView.swift       # 设置
         │   └── SelfTestView.swift       # 算法自检
         └── Support/
@@ -287,6 +300,7 @@ ios/
 | 账号密码登录（`security` 字段） | ⚠️ 已弃用 —— `security` 实为外层 token，改走短信登录 |
 | 车控二进制响应（`LMVCloudBinaryPacket`） | ⚠️ 未解析（当前接口返回的都是 JSON） |
 | 登录态自动续期（refreshToken） | 未实现；token 过期（约 2h）后重新登录即可 |
+| **蓝牙钥匙（BLE）** | ⚠️ **协议未打通**。已从官方 IPA 静态逆向出 UUID / 握手字段 / 分号帧模板（见 `BLE/LMBLEProtocol.swift`），但缺 `passwordCard`、帧语义、cmdId 表。App 里给的是**调试台 + 协议进度**，不是能解锁的钥匙。补齐办法见 `IPA_BUILD.md` |
 
 ### 客户端固定参数（可直接复用抓包值）
 

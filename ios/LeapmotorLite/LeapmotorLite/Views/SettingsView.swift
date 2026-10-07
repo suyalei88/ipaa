@@ -206,6 +206,11 @@ struct SettingsView: View {
                 Label("车辆充电信息（剩余时间 / 预约充电）", systemImage: "bolt.fill")
             }
             NavigationLink {
+                BLEKeyView()
+            } label: {
+                Label("蓝牙钥匙（钥匙记录 / 协议进度 / 调试台）", systemImage: "key.fill")
+            }
+            NavigationLink {
                 SignalExplorerView()
             } label: {
                 Label("信号浏览器（130 个信号 / 快照对比）", systemImage: "magnifyingglass.circle")

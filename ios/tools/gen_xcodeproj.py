@@ -37,7 +37,7 @@ DEPLOYMENT_TARGET = "17.0"
 SWIFT_VERSION = "5.9"
 
 # 这些目录名排在最前（只是美观，不影响构建）
-DIR_ORDER = ["Crypto", "API", "Store", "Views", "Support"]
+DIR_ORDER = ["Crypto", "API", "BLE", "Store", "Views", "Support"]
 
 
 def uid(key: str) -> str:

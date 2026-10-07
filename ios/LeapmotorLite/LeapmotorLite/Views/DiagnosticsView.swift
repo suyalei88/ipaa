@@ -34,6 +34,61 @@ struct DiagnosticsView: View {
     ///   按钮也永远不会重新启用 —— R9 规则就是专门拦这个的（这一版真被拦下来了）。
     @State private var now = Date()
 
+    // 蓝牙钥匙接口探测
+    @State private var bleBusy = false
+    /// 待确认的「会改服务端状态」的蓝牙钥匙操作
+    @State private var bleDanger: BLEAction?
+
+    /// 会改服务端状态的蓝牙钥匙接口 —— 必须二次确认才能打。
+    ///
+    /// ★ 为什么单独列出来：`/v3/api/ccc/*` 和 `/v3/api/bluetoothkey/upload*` 都是
+    ///   **写**操作（建配对会话 / 删钥匙 / 上报数据），路径还只是从二进制字符串表
+    ///   挖出来的、没验证过。手滑点一下可能把用户已经绑好的蓝牙钥匙删掉。
+    ///   所以它们跟「只读探测」在 UI 上必须是两种东西，不能混在一排按钮里。
+    private enum BLEAction: String, CaseIterable, Identifiable {
+        case pairing
+        case delKey
+        case calibrate
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .pairing:   return "取配对码 ccc/pairingcode"
+            case .delKey:    return "删除钥匙 ccc/delKey"
+            case .calibrate: return "上报标定参数 bluetoothkey/uploadAutonomyCalibrateParams"
+            }
+        }
+
+        /// 裸路径（前缀由 probeBLEKey 的调用方拼）
+        var path: String {
+            switch self {
+            case .pairing:   return LMEndpoints.Path.cccPairingCode
+            case .delKey:    return LMEndpoints.Path.cccDelKey
+            case .calibrate: return LMEndpoints.Path.bleKeyCalib
+            }
+        }
+
+        var method: String {
+            switch self {
+            case .pairing:   return "GET"
+            case .delKey:    return "GET"
+            case .calibrate: return "POST"
+            }
+        }
+
+        var warning: String {
+            switch self {
+            case .pairing:
+                return "会在服务端建一个「待配对」会话。如果你正在用官方 App 配对，可能会互相干扰。"
+            case .delKey:
+                return "⚠️ 会删掉已绑定的蓝牙钥匙。删了之后官方 App 的蓝牙钥匙也会失效，需要重新配对。"
+            case .calibrate:
+                return "会上报一组标定参数，可能覆盖服务端已有的感应区数据，影响官方 App 的「无感」行为。"
+            }
+        }
+    }
+
     /// ⚠️ 不能用元组数组 + `id: \.id` —— Swift 不支持指向元组成员的 key path。
     /// 老老实实定义个 struct。
     private struct SignalRef: Identifiable {
@@ -48,6 +103,7 @@ struct DiagnosticsView: View {
             sessionSection
             signalMapSection
             endpointProbeSection
+            bleKeyProbeSection
             rawCmdSection
             copySection
         }
@@ -55,6 +111,18 @@ struct DiagnosticsView: View {
         .onAppear { copied = false }
         // ★ 驱动锁定期倒计时。没有它，「下发」按钮会永久禁用（见上面 now 的注释）。
         .lmClock(until: client.controlLockedUntil, now: $now)
+        .confirmationDialog(bleDanger?.title ?? "确认？",
+                            isPresented: bleDangerBinding,
+                            titleVisibility: .visible) {
+            Button("确认执行", role: .destructive) {
+                let a = bleDanger
+                bleDanger = nil
+                if let a = a { Task { await runBLEAction(a) } }
+            }
+            Button("取消", role: .cancel) { bleDanger = nil }
+        } message: {
+            Text((bleDanger?.warning ?? "") + "\n\n这个接口的响应结构没有样本，结果会原样列出来。")
+        }
         .confirmationDialog("确认下发未验证指令？",
                             isPresented: $rawConfirm,
                             titleVisibility: .visible) {
@@ -253,6 +321,142 @@ struct DiagnosticsView: View {
             可以把它接成定位页的地址来源，比 Apple 的 CLGeocoder 更贴官方。
             """)
         }
+    }
+
+    // MARK: - 蓝牙钥匙接口
+    //
+    // 这 7 个接口全部是「只有路径、没有样本」（见 LMEndpoints.Path 的注释）。
+    // 分成两排：
+    //   · 只读探测 —— 随便点，失败是常态
+    //   · 改状态   —— 必须二次确认（BLEAction）
+    // 目的就一个：把响应结构试出来，尤其是 syncBluetoothKeys 会不会吐钥匙材料。
+
+    private var bleKeyProbeSection: some View {
+        Section {
+            Button {
+                Task {
+                    bleBusy = true
+                    await client.probeBLEKeyReadOnly()
+                    bleBusy = false
+                }
+            } label: {
+                Label("同步钥匙（只读，3 个前缀各试一次）", systemImage: "key.horizontal")
+            }
+            .disabled(bleBusy || client.selectedVehicle == nil)
+
+            Button {
+                Task { await probeBleOne(LMEndpoints.Path.bleKeyAnchor, "GET", "感应区锚点参数") }
+            } label: {
+                Label("感应区锚点参数（只读）", systemImage: "scope")
+            }
+            .disabled(bleBusy || client.selectedVehicle == nil)
+
+            Button {
+                Task { await probeBleOne(LMEndpoints.Path.cccPoll, "GET", "轮询配对结果") }
+            } label: {
+                Label("轮询配对结果 ccc/poll", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(bleBusy || client.selectedVehicle == nil)
+
+            ForEach(BLEAction.allCases) { a in
+                Button(role: .destructive) {
+                    bleDanger = a
+                } label: {
+                    Label(a.title, systemImage: "exclamationmark.triangle.fill")
+                }
+                .disabled(bleBusy || client.selectedVehicle == nil)
+            }
+
+            if bleBusy {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.7)
+                    Text("探测中…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            ForEach(client.bleProbes.prefix(6)) { p in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(p.ok ? "✅" : "❌")
+                        Text(p.title).font(.caption.weight(.semibold))
+                        Spacer(minLength: 4)
+                        Text(p.timeText).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text(p.path)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary).lineLimit(2)
+                    Text(p.request)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary).lineLimit(2)
+                    Text(p.response)
+                        .font(.system(size: 10, design: .monospaced))
+                        .lineLimit(12)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if !client.bleProbes.isEmpty {
+                Button {
+                    UIPasteboard.general.string = bleReport
+                } label: {
+                    Label("复制全部探测结果", systemImage: "doc.on.doc")
+                }
+                Button(role: .destructive) {
+                    client.clearBLEProbes()
+                } label: {
+                    Text("清空探测记录")
+                }
+            }
+        } header: {
+            Text("蓝牙钥匙接口探测（路径从二进制挖的，无样本）")
+        } footer: {
+            Text("""
+            这 7 个路径来自官方 IPA 主二进制的字符串表，**没有抓包样本** ——
+            前缀（/carownerservice？/app/app-control-service？）、参数、HTTP 方法全是推的。
+            所以这里把「试了什么、回了什么」原样留下，失败本身也是有效信息。
+
+            ★ 最值得看的是 syncBluetoothKeys：如果它把 passwordCard（钥匙材料）吐回来，
+            整套 BLE 协议就能自己实现，不用再动态 hook 官方 App。
+            """)
+        }
+    }
+
+    private var bleDangerBinding: Binding<Bool> {
+        Binding(get: { bleDanger != nil },
+                set: { if !$0 { bleDanger = nil } })
+    }
+
+    /// 单个蓝牙钥匙接口探测：逐个候选前缀试一遍，结果都留在 client.bleProbes
+    private func probeBleOne(_ barePath: String, _ method: String, _ title: String) async {
+        guard let vin = client.selectedVehicle?.vin else { return }
+        bleBusy = true
+        defer { bleBusy = false }
+        for prefix in LMEndpoints.pathPrefixes {
+            let tag = prefix.isEmpty ? "无前缀" : prefix
+            await client.probeBLEKey(barePath: prefix + barePath,
+                                     method: method,
+                                     params: ["vin": vin],
+                                     body: method == "POST" ? ["vin": vin] : nil,
+                                     title: "\(title)（\(tag)）")
+        }
+    }
+
+    /// 执行一个「会改服务端状态」的蓝牙钥匙操作
+    private func runBLEAction(_ a: BLEAction) async {
+        await probeBleOne(a.path, a.method, a.title)
+    }
+
+    private var bleReport: String {
+        var out = "# 蓝牙钥匙接口探测记录\n"
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm:ss"
+        for p in client.bleProbes {
+            out += "\n[\(f.string(from: p.at))] \(p.ok ? "OK" : "FAIL")  \(p.title)\n"
+            out += "  path : \(p.path)\n"
+            out += "  req  : \(p.request)\n"
+            out += "  resp : \(p.response)\n"
+        }
+        return out
     }
 
     // MARK: - 未验证 cmdid

@@ -30,6 +30,7 @@ struct ControlPanelView: View {
                 }
                 statusBanners
                 actionGrid
+                bleCard
                 footnote
             }
             .padding(.horizontal, 16)
@@ -196,6 +197,53 @@ struct ControlPanelView: View {
         default:           return Color.lmBad
         }
     }
+
+    // MARK: - 蓝牙钥匙入口
+    //
+    // 放在动作网格之后：蓝牙钥匙跟「云端下发指令」是两条完全独立的链路
+    // （前者是手机直连车端 BLE 模组，后者走 HTTPS 网关），
+    // 但它同属「控制车」这件事，所以入口放车控页比塞进设置里合理。
+    //
+    // ⚠️ 这里**只**给入口，绝不放「一键解锁」之类的按钮 ——
+    //    BLE 协议还没打通（见 LMBLEProtocol.swift 文件头），
+    //    没有可用的钥匙材料，也没有 cmdId 表。
+
+    private var bleCard: some View {
+        NavigationLink {
+            BLEKeyView()
+        } label: {
+            LMCard(padding: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: "key.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.lmPurple)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("蓝牙钥匙")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(bleSubtitle)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var bleSubtitle: String {
+        if let r = client.bleKeyRecord {
+            return "云端已绑定 \(r.macPretty)（协议 \(r.versionText)）· 查看进度与调试台"
+        }
+        return "云端暂无绑定记录 · 查看协议进度与 BLE 调试台"
+    }
+
+    // MARK: - 脚注
 
     private var footnote: some View {
         Text("指令下发后会轮询结果。部分功能需要车辆处于对应状态（例如上电前要先解锁）。"

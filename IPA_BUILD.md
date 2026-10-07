@@ -215,6 +215,85 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 
 ---
 
+## 蓝牙钥匙（BLE）逆向进展
+
+官方 App 的「蓝牙钥匙」走的是**手机直连车端 BLE 模组**，跟车控走的 HTTPS 是
+两条完全独立的链路 —— 所以抓 HTTP 包一个字节都拿不到。
+
+### 证据来源
+
+样本 `零跑-1.22.68.ipa`，主二进制
+`Payload/leapmotorCarOwner.app/leapmotorCarOwner`（204,405,920 bytes，未加密 Mach-O）。
+
+官方 Info.plist 自己就写明了：
+
+```
+NSBluetoothAlwaysUsageDescription      = 用于蓝牙钥匙、自动泊车
+NSBluetoothPeripheralUsageDescription  = 用于蓝牙钥匙、自动泊车
+UIBackgroundModes = [audio, bluetooth-central, bluetooth-peripheral, location]
+```
+
+### 已确认（静态逆向，✅）
+
+| 项 | 值 | 位置 |
+|---|---|---|
+| 服务 / 特征 UUID | `FFED0000-0000-1000-8000-00805F9B34FB`、`FFED1234-0000-1000-8000-00805F9B34FB` | 字符串池 `@0xaa3039f` / `@0xaa303c4` |
+| 短 id | `FFF2`、`FAFA`、`FAFB`、`FFFE` | 同一池 |
+| 握手字段 | `tempPublicKey` / `tempPrivateKey` / `myPublicData` / `ecdhPublicKey` / `passwordCard` / `keyType` / `verifyTime` / `actionTime` / `useGM` / `eccHandle` | 同上 |
+| 加密 | ECDH 临时密钥协商 + 对称加密（AES，且有 `useGM` 国密分支） | 同上 |
+| 曲线候选 | `secp256r1` / `prime256v1` / `P-256`（另有 secp256k1 / secp384r1 / secp521r1 / curve25519） | 同上 |
+| **帧格式** | **分号分隔文本**：`%@;%@;`、`%@;%@;%@;%ld;%ld;`、`%@;%@;%@;%ld;%ld;%ld;%ld;` | 三个 printf 模板 |
+| 指令字段 | `cmdId` / `dataContent` / `resultCode` / `controllerReplyContent` / `RKEResponse` / `currentCarStatus` / `error1` / `error2` / `sendAllYet` / `canBeSkippedLength` | 同上 |
+| 开关 | `isAutoLock` / `isAutoUnLock` / `isDoorUnLock` | 同上 |
+| 类栈 | `LMVBLEConnectManager` / `LMVBLERemoteControl` / `LMVBLEInsensibility` / `LMVBLEConfigManager` / `LMVBLEPeripheralInteractor` / `LMVBluetoothDataManager` / `LMVBlueToothBuffer` / `LMVInsensibilityBluetoothService` / `LMVBLEKeyModule*`（整套 MVVM）/ `LMVBleAutoPark*` | 符号表 |
+| 车端模组 | `_SupconBlueToothConnection` —— Supcon = **中控**，车端 BLE 模组的供应商 | 符号表 |
+| 队列 / 持久化 | `com.leapmotor.blekey_queue`、`com.lmv.bluetooth.buffer.serial` | 字符串池 |
+
+### 云端接口（只有路径，❌ 无抓包样本）
+
+```
+/v3/api/ccc/pairingcode                          取 CCC 配对码
+/v3/api/ccc/poll                                 轮询配对结果
+/v3/api/ccc/delKey                               删除钥匙
+/v3/api/bluetoothkey/combine/syncBluetoothKeys   同步已绑定的钥匙
+/v3/api/bluetoothkey/anchor/point/params/simplify
+/v3/api/bluetoothkey/uploadRecords
+/v3/api/bluetoothkey/uploadAutonomyCalibrateParams
+```
+
+CCC = Car Connectivity Consortium 数字钥匙标准。
+
+⚠️ 这些路径在二进制里**不带服务名前缀**，前缀是运行时拼的。
+已知 `commonConfig` 的真实全路径是 `/carownerservice/v3/api/vehicleinfo/commonConfig`，
+所以候选前缀按 `/carownerservice` → `/app/app-control-service` → 空前缀 逐个试
+（见 `LMEndpoints.pathPrefixes`）。
+
+### 还没拿到的（挡住「真能解锁」的四件事）
+
+| # | 缺什么 | 怎么补 |
+|---|---|---|
+| ① | `passwordCard`（钥匙材料）。`commonConfig.config["4"]` 里只有 `{mac, version, updateTime}`，**没有密钥材料** | 走一遍 `ccc/pairingcode` + `ccc/poll`，或看 `syncBluetoothKeys` 返回什么 |
+| ② | 帧里三段 `%@` 和数字的语义 | BLE 调试台订阅通知 + 官方 App 操作一次 → 抓真实帧 |
+| ③ | cmdId 表（解锁 / 闭锁 / 寻车 / 上电各是哪个数字） | 同上，需要至少 2 组「操作 ↔ 帧」样本比对 |
+| ④ | ECDH 用哪条曲线、共享密钥怎么 KDF、要不要走 `useGM` 分支 | 继续反汇编那几个 `LMVBLE*` 类，或 Frida hook 打印中间值 |
+
+### 这一版交付了什么
+
+**不是**「能解锁的车钥匙」，而是**把「还差什么」变成可观测的仪表**：
+
+- `BLEKeyView` — 云端钥匙记录（真实数据）、三个行为开关（本机记录，明确标注不影响官方 App）、
+  只读接口探测、协议进度清单
+- `BLEDebugView` — 扫描（按官方 UUID 过滤）→ 连接 → GATT 树 → 自动订阅通知 → 记录每一帧
+  （同时按 hex / ASCII / **分号切分**三种形式展示）→ 发任意字节
+- `DiagnosticsView` — 蓝牙钥匙接口探针，**只读的**和**会改状态的**在 UI 上是两排，
+  后者要二次确认（`ccc/delKey` 真会删掉你已绑的钥匙）
+
+**抓帧正确姿势（一次就能把 ②③ 定下来）：**
+站到车旁边 → 调试台扫描 → 连接 → 确认可通知的特征已订阅 → **切到官方 App 解一次锁** →
+回调试台看日志 → 再闭一次锁 → 两帧一比，cmdId 和字段语义就出来了。
+
+---
+
 ## 改 Swift 代码前必看：已踩过的坑
 
 这些是首次真机编译（Xcode 15.4 / iPhoneOS 17.5 SDK）+ 首次真机运行暴露出来的，
@@ -225,7 +304,7 @@ python3 ios/tools/lint_swift.py     # CI 里也会跑，命中直接 fail
 python3 ios/tools/gen_xcodeproj.py --check   # 新增 .swift 后忘了重生成工程会被这里拦下
 ```
 
-`lint_swift.py` 覆盖 R1–R10：
+`lint_swift.py` 覆盖 R1–R11：
 
 | 规则 | 内容 |
 |---|---|
@@ -238,7 +317,8 @@ python3 ios/tools/gen_xcodeproj.py --check   # 新增 .swift 后忘了重生成�
 | R7 | 同名 `static` 成员重复声明 |
 | R8 | `SecureField` 挂 `.textContentType(.oneTimeCode)` |
 | R9 | 读了依赖当前时间的锁定状态，却没挂 `.lmClock(until:now:)` |
-| R10 | 用了系统框架的符号（MapKit / CoreLocation / UIKit）却没 `import` 那个框架 |
+| R10 | 用了系统框架的符号（MapKit / CoreLocation / UIKit / CoreBluetooth）却没 `import` 那个框架 |
+| R11 | CoreBluetooth delegate 回调里写 `@Published` 但没保证主线程 |
 
 > R9 是**真的会抓到 bug 的**：加定位/充电页那一版，`DiagnosticsView` 里
 > 「未验证 cmdid 下发」按钮的 `disabled` 依赖 `isControlLocked()`，R9 当场报了出来，
@@ -248,6 +328,15 @@ python3 ios/tools/gen_xcodeproj.py --check   # 新增 .swift 后忘了重生成�
 > 忘了 `import UIKit`，编译器报的却是一堆指向别处的类型推断错误。
 > 加了 MapKit / CoreLocation 之后（`Map` / `Marker` / `CLLocationCoordinate2D` / `CLGeocoder`）
 > 这个坑的概率大幅上升。
+
+> R11 的由来：`CBCentralManager` 的 delegate 回调**不在主线程**（除非建的时候传 `queue: nil`），
+> 在回调里写 `@Published` 会撞 SwiftUI 的
+> `Publishing changes from background threads is not allowed` ——
+> 编译期完全看不出来，轻则界面不刷新重则崩。
+> 触发条件刻意收得很窄：必须**同时**有 CoreBluetooth delegate 协议 + `@Published`
+> + 没有任何主线程保证（`queue: nil` / `DispatchQueue.main` / `@MainActor`）才报。
+> 本仓库的 `LMBLECentral` 用的是 `queue: nil`，所以不会被误报。
+> 规则本身用正反样本验过（坏样本报警、三种正确写法放行）。
 
 `gen_xcodeproj.py --check` 另外覆盖 G1（见下）。
 
