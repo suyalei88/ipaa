@@ -293,16 +293,47 @@ struct LocationView: View {
 
                 Divider()
 
+                // ★ 两个「时间」必须分开显示，别混成一个：
+                //   · 车况采集时间 = 信号 `1`，车机每次上报都会变（精确到秒）
+                //   · 坐标未变化   = 这个坐标值最后一次**变化**到现在有多久
+                //   车机可能一直在实时上报（前者一直是「刚刚」），但坐标好几天没动
+                //   （后者很大）。只看前者会以为定位是实时的 —— 2026-10-08 就是这么误导的。
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                    Text("采集时间")
+                    Text("车况采集时间")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Text(collectedText)
                         .font(.system(.caption, design: .monospaced))
+                }
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: client.coordinateLooksStale
+                          ? "exclamationmark.triangle.fill" : "location.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(client.coordinateLooksStale ? Color.lmWarn : Color.secondary)
+                    Text("坐标未变化")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text(coordUnchangedText)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(client.coordinateLooksStale ? Color.lmWarn : Color.primary)
+                        .multilineTextAlignment(.trailing)
+                }
+
+                if client.coordinateLooksStale {
+                    Text("""
+                    车机一直在上报车况（上面的采集时间会一直刷新），但「这个坐标」已经很久没变过了。
+                    所以图钉很可能不是车现在的位置 —— 常见原因：车停在地库/没信号、
+                    车机没上传新定位、或定位功能未开启。请以官方 App 或实车为准。
+                    """)
+                        .font(.caption2)
+                        .foregroundStyle(Color.lmWarn)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -503,6 +534,11 @@ struct LocationView: View {
     private var sourceNote: some View {
         Text("""
         位置来自车机上报的信号 2190/2191（另一组 3725/3724 做交叉校验），不是实时 GPS 跟踪。
+
+        ★ 注意：车机「在实时上报」不等于「坐标是新的」。实测发现车况采集时间每秒都在刷新
+        （SOC 也在变），但同一个坐标可以连续几十次上报完全不变 —— 所以上面单独标了
+        「坐标未变化」多久。那个数才是判断定位新不新的依据。
+
         车熄火后位置可能长时间不更新；地库里通常没有定位。
         车机坐标属于哪一系（WGS-84 / GCJ-02）无法从协议静态判定，所以给了「坐标校正」三个选项：
         国内两系相差约 500~600 米，选对了才落得准。
@@ -544,6 +580,20 @@ struct LocationView: View {
         let f = DateFormatter()
         f.dateFormat = "MM-dd HH:mm:ss"
         return "\(f.string(from: d))（\(ageText)）"
+    }
+
+    /// 「坐标未变化」的展示文本：从什么时候开始没变、已经多久。
+    private var coordUnchangedText: String {
+        guard let since = client.coordinateUnchangedSince,
+              let secs = client.coordinateUnchangedFor else { return "--" }
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        let dur: String
+        if secs < 60 { dur = "刚刚" }
+        else if secs < 3600 { dur = "\(Int(secs / 60)) 分钟" }
+        else if secs < 86400 { dur = String(format: "%.1f 小时", secs / 3600) }
+        else { dur = String(format: "%.1f 天", secs / 86400) }
+        return "\(f.string(from: since)) 起（\(dur)）"
     }
 
     private var amapURL: URL? {

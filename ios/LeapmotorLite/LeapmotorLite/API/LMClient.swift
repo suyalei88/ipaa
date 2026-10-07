@@ -231,6 +231,12 @@ final class LMClient: ObservableObject {
         lastControlTrace = nil
         bleProbes = []
         lastError = nil
+        // 坐标「未变化起点」是按值持久化的，退出登录必须一起清 ——
+        // 否则换个账号登进来，会把上一台车的坐标当成「一直没变」的基准。
+        let d = UserDefaults.standard
+        d.removeObject(forKey: LMClient.coordValueKey)
+        d.removeObject(forKey: LMClient.coordSinceKey)
+        coordinateUnchangedSince = nil
         store.clear()
     }
 
@@ -245,6 +251,11 @@ final class LMClient: ObservableObject {
         parkingProbe = nil
         bleProbes = []
         lastUpdate = nil
+        // 换车同理：坐标基准要重置（新车的坐标当然「刚变过」）
+        let d = UserDefaults.standard
+        d.removeObject(forKey: LMClient.coordValueKey)
+        d.removeObject(forKey: LMClient.coordSinceKey)
+        coordinateUnchangedSince = nil
     }
 
     // MARK: - 请求头
@@ -713,6 +724,7 @@ final class LMClient: ObservableObject {
                                     body: body)
         let env = try decode(LMEnvelope<LMSignalData>.self, from: any)
         signals = env.data?.signalMap ?? [:]
+        noteCoordinate(coordinateKey)
         lastUpdate = Date()
     }
 
@@ -763,6 +775,33 @@ final class LMClient: ObservableObject {
         } catch {
             // 探测失败是预期内的事（路径/参数都是猜的），不要污染 lastError
             parkingProbe = nil
+            return nil
+        }
+    }
+
+    /// 车辆状态接口探测（`/v3/api/chassis/query`）。
+    ///
+    /// ★ 2026-10-08 加的：用户报「车在淮南、App 显示合肥」，而 signalMap 的 2190/2191
+    ///    在连续 51 个样本里一个数字都没变（车况其它信号却在实时刷新）——
+    ///    说明**那个坐标不是实时的**。
+    ///    而官方二进制里 `/v3/api/chassis/query` 紧挨着 `/v3/api/vehicleinfo/parking/query`
+    ///    出现，旁边就是 `LMVParkInfoModel`（含 `Street` / `FormattedAddressLines`，
+    ///    后者是 Apple `CLPlacemark` 的属性名）和整套地图模块的符号 ——
+    ///    官方「车辆位置」页很可能用的是这个接口，而不是 signalMap 里的裸坐标。
+    ///
+    /// ⚠️ 同样没有抓包样本。探测失败是预期内的，不要污染 lastError。
+    @discardableResult
+    func probeChassis() async -> LMParkingProbe? {
+        guard let vin = selectedVehicle?.vin else { return nil }
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.chassis,
+                                        params: ["vin": vin])
+            return LMParkingProbe(
+                rawText: prettyJSON(any),
+                latitude: LMParkingProbe.pick(any, keys: LMParkingProbe.latKeys),
+                longitude: LMParkingProbe.pick(any, keys: LMParkingProbe.lngKeys))
+        } catch {
             return nil
         }
     }
@@ -1115,6 +1154,67 @@ final class LMClient: ObservableObject {
     var collectedAt: Date? {
         guard let ms = signals["1"]?.doubleValue, ms > 1_000_000_000_000 else { return nil }
         return Date(timeIntervalSince1970: ms / 1000)
+    }
+
+    // MARK: - ★ 坐标「变没变」的追踪
+    //
+    // ★★ 2026-10-08 踩的坑（用户报「车在淮南、显示合肥」）：
+    //
+    //   车机是**实时上报**的 —— `collectTime` 和信号 `1` 每次都在变（精确到秒），
+    //   SOC 也从 32.9 一路涨到 36.7。但是 **`2190/2191` 在连续 51 个样本、
+    //   40 分钟里一个数字都没动过**。
+    //
+    //   而页面上原来那句「刚刚采集」用的是信号 `1` —— 那是**整包车况**的采集时刻，
+    //   不是**这个坐标**的采集时刻。于是出现最坏的情况：
+    //   坐标是好几天前的，页面却说「刚刚采集」，用户以为定位是实时的。
+    //
+    //   所以这里单独记住「当前这个坐标值第一次被看到的时刻」，页面据此显示
+    //   「坐标自 XX 起未变化（N 小时）」。**这才是判断定位新不新的正确依据。**
+    //
+    //   存 UserDefaults 是为了跨启动也能算 —— 否则用户重启一次 App 就丢了。
+    private static let coordValueKey = "lm3rd.loc.lastCoordValue"
+    private static let coordSinceKey = "lm3rd.loc.lastCoordChangedAt"
+
+    /// 当前坐标值首次被看到的时刻（跨启动持久化）。nil = 还没有坐标。
+    @Published private(set) var coordinateUnchangedSince: Date?
+
+    /// 坐标值的字符串形式，用来判断「变没变」。
+    var coordinateKey: String? {
+        guard let c = coordinate else { return nil }
+        return String(format: "%.6f,%.6f", c.latitude, c.longitude)
+    }
+
+    /// 记录本次看到的坐标。返回值 = 是否发生了变化。
+    @discardableResult
+    func noteCoordinate(_ key: String?) -> Bool {
+        let d = UserDefaults.standard
+        guard let key else {
+            coordinateUnchangedSince = nil
+            return false
+        }
+        if d.string(forKey: LMClient.coordValueKey) != key {
+            let now = Date()
+            d.set(key, forKey: LMClient.coordValueKey)
+            d.set(now.timeIntervalSince1970, forKey: LMClient.coordSinceKey)
+            coordinateUnchangedSince = now
+            return true
+        }
+        let t = d.double(forKey: LMClient.coordSinceKey)
+        coordinateUnchangedSince = t > 0 ? Date(timeIntervalSince1970: t) : nil
+        return false
+    }
+
+    /// 这个坐标已经多少秒没变过了。没坐标时为 nil。
+    var coordinateUnchangedFor: TimeInterval? {
+        guard let d = coordinateUnchangedSince else { return nil }
+        return Date().timeIntervalSince(d)
+    }
+
+    /// 坐标是否「久未变化」—— 超过 6 小时没动就值得提醒用户。
+    /// （车正常停放时坐标本来就不会变，所以这不是错误，只是「别当成实时定位」。）
+    var coordinateLooksStale: Bool {
+        guard let s = coordinateUnchangedFor else { return false }
+        return s > 6 * 3600
     }
 
     /// 定位时间距今多久（秒）。取不到采集时间时为 nil。

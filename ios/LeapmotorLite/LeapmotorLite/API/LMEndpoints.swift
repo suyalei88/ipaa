@@ -53,6 +53,21 @@ enum LMEndpoints {
         ///    所以调用方必须容忍失败：坐标优先用 signalMap 的 2190/2191。
         static let parking        = "/carownerservice/v3/api/vehicleinfo/parking/query"
 
+        /// 车辆状态查询（官方「车辆位置」页疑似用它拿停车位置）。
+        ///
+        /// ★ 2026-10-08 逆向补充：官方二进制里 `/v3/api/chassis/query` 和
+        ///    `/v3/api/vehicleinfo/parking/query` 是**紧挨着出现的**，而且旁边就是
+        ///    整套地图模块的符号：
+        ///      `LMVParkInfoModel`（字段含 `AppLogo` / `Street` / `FormattedAddressLines`）
+        ///      `LMVMapLocationModel` / `LMVMapParkingSnapView` / `LMVMapSearchObject`
+        ///      以及「导航 / 定位 / 车辆 / 分享」这几个按钮的图标名
+        ///    `FormattedAddressLines` 是 Apple `CLPlacemark` 的属性名 —— 说明官方拿到的
+        ///    是一个**带地址的停车位置模型**，而 signalMap 的 2190/2191 只是个裸坐标。
+        ///
+        /// ⚠️ 仍然**没有抓包样本**，响应结构未知。所以只用于「诊断页探测」，
+        ///    不拿它当主数据源（主源仍是 signalMap 的 2190/2191）。
+        static let chassis        = "/carownerservice/v3/api/chassis/query"
+
         /// 官方逆地理编码（经纬度 → 地址）。
         ///
         /// ⚠️ 同样只有字符串表里的 `/v3/geocode/regeo`，**参数与响应都未验证**。

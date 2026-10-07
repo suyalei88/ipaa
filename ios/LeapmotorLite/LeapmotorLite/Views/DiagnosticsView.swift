@@ -288,6 +288,15 @@ struct DiagnosticsView: View {
                 Label("探测 停车位置接口（POST + vin）", systemImage: "parkingsign.circle")
             }
 
+            // ★ 2026-10-08 加：官方「车辆位置」页疑似用的就是这个接口。
+            //   背景：用户报「车在淮南、显示合肥」，而 signalMap 的 2190/2191
+            //   连续 51 个样本没变过（其它车况信号却在实时刷新）—— 那个坐标不是实时的。
+            Button {
+                Task { await probeChassis() }
+            } label: {
+                Label("探测 车辆状态接口（GET chassis/query）", systemImage: "car.circle")
+            }
+
             Button {
                 Task { await probeRegeo() }
             } label: {
@@ -573,6 +582,29 @@ struct DiagnosticsView: View {
         defer { probeBusy = false }
         let r = await client.probePOST(path: LMEndpoints.Path.parking, body: ["vin": vin])
         probeResult = "POST \(LMEndpoints.Path.parking) {\"vin\":...}\n\(r)"
+    }
+
+    /// 探测 `/v3/api/chassis/query` —— 官方「车辆位置」页的疑似数据源。
+    private func probeChassis() async {
+        guard client.selectedVehicle?.vin != nil else {
+            probeResult = "✗ 还没选车"
+            return
+        }
+        probeBusy = true
+        defer { probeBusy = false }
+        let head = "GET \(LMEndpoints.Path.chassis)?vin=<vin>"
+        guard let p = await client.probeChassis() else {
+            probeResult = head + "\n✗ 没拿到响应（路径或参数不对，属于预期内）"
+            return
+        }
+        var extra = ""
+        if let lat = p.latitude, let lng = p.longitude {
+            extra = "\n→ 掏到坐标：\(lat), \(lng)"
+                + "\n→ 跟 signalMap 的 2190/2191 对一下：不一样就说明这才是实时位置"
+        } else {
+            extra = "\n→ 响应里没找到候选 key 的经纬度"
+        }
+        probeResult = head + extra + "\n" + p.rawText
     }
 
     /// regeo 的参数形状完全未知，把常见的三种都试一遍，哪个通了就知道该用哪个
