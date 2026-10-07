@@ -129,8 +129,8 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 显示形如：
 
 ```
-1.0.2 (3) · 2026-10-08.1 · 定位：坐标非实时 + 来源诊断
-41d7801 @ 2026-10-07 16:36Z
+1.0.3 (4) · 2026-10-08.2 · 车辆档案页 + 空调档位 + 抓包审计补齐
+d3590cd @ 2026-10-07 16:58Z
 ```
 
 第二行是 **git 提交号 + 构建时刻**，由 `ios/build_ipa.sh` 在打包时注进 Info.plist
@@ -143,19 +143,23 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 
 **③ 界面文案对暗号**（不需要任何工具，看一句话就够）
 
-| 文案 | 1.0.0 (1) 旧包 | 1.0.1 (2) | **1.0.2 (3)** |
-|---|---|---|---|
-| 「疑似充电」/「疑似充电中」 | **有** | 无 | 无 |
-| 「剩余充电时间」 | **有** | 无 | 无 |
-| 「距目标电量」 | 无 | **有** | **有** |
-| 「插上充电枪」 | 无 | **有** | **有** |
-| 「充电状态待确认」 | 无 | **有** | **有** |
-| 定位页的「坐标校正」卡 | 无 | **有** | **有** |
-| 定位页的**「坐标未变化」**行 | 无 | 无 | **有** |
-| 诊断页的**「底盘图接口」**按钮 | 无 | 无 | **有** |
+| 文案 | 1.0.0 (1) | 1.0.1 (2) | 1.0.2 (3) | **1.0.3 (4)** |
+|---|---|---|---|---|
+| 「疑似充电」/「疑似充电中」 | **有** | 无 | 无 | 无 |
+| 「剩余充电时间」 | **有** | 无 | 无 | 无 |
+| 「距目标电量」 | 无 | **有** | **有** | **有** |
+| 「插上充电枪」 | 无 | **有** | **有** | **有** |
+| 「充电状态待确认」 | 无 | **有** | **有** | **有** |
+| 定位页的「坐标校正」卡 | 无 | **有** | **有** | **有** |
+| 定位页的**「坐标未变化」**行 | 无 | 无 | **有** | **有** |
+| 诊断页的**「底盘图接口」**按钮 | 无 | 无 | **有** | **有** |
+| 设置 → 功能里的**「车辆档案」**入口 | 无 | 无 | 无 | **有** |
+| 车控页的**「空调风量档位（未验证）」**卡 | 无 | 无 | 无 | **有** |
+| 诊断页的**「手机侧 IP 归属地」**按钮 | 无 | 无 | 无 | **有** |
 
 **只要还看得到「疑似充电」四个字，装的就一定是 1.0.0 那个旧包。**
 要区分 1.0.1 和 1.0.2，看定位页有没有**「坐标未变化：… 起（N 小时）」**那一行。
+要确认是 1.0.3，看**设置 → 功能**里有没有**「车辆档案」**这一条。
 
 **版本历史**
 
@@ -164,6 +168,7 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 | 1.0.0 (1) | — | 首个可装包（无构建标识，踩了「分不清版本」的坑） |
 | 1.0.1 (2) | `2026-10-07.2 · 修假充电误报 + 坐标校正` | `1200` 语义纠正 + 5 位投票判充电；坐标系三选一校正 |
 | 1.0.2 (3) | `2026-10-08.1 · 定位：坐标非实时 + 来源诊断` | 查清 `2190/2191` 非实时、页面改「坐标未变化」；诊断页加底盘图探测；R7 lint 升级 |
+| 1.0.3 (4) | `2026-10-08.2 · 车辆档案页 + 空调档位 + 抓包审计补齐` | 审计 5 份 HAR，补上「车辆档案」页（精确版型 / 固件 + OTA 日志 / 功能开关表 / 分享记录 + 29 个 cmdid 全集 / 模块图 / 3D 车模 / 消息未读）；★ 发现空调是 **1~9 档**不是三档，车控页加档位卡；诊断页加 3 个只读探测（`getappointment` / `queryPushState` / 手机 IP 归属地） |
 
 > CI 里有一道闸门专门守这个：`build` job 构建完会读产物 Info.plist，
 > 确认 `LMGitSHA` **真的被替换了**（没替换会留着字面量 `$(LM_GIT_SHA)`，直接 fail）。
@@ -465,6 +470,72 @@ CCC = Car Connectivity Consortium 数字钥匙标准。
 **抓帧正确姿势（一次就能把 ②③ 定下来）：**
 站到车旁边 → 调试台扫描 → 连接 → 确认可通知的特征已订阅 → **切到官方 App 解一次锁** →
 回调试台看日志 → 再闭一次锁 → 两帧一比，cmdId 和字段语义就出来了。
+
+---
+
+## 抓包审计（2026-10-08）：5 份 HAR 全量过了一遍
+
+把手上 5 份 HAR（`appgateway…13_25_47` / `…14_05_58` / `…15_30_32` / `Stream-…13_30_45` /
+`sniffmaster-proxy-…`）全部解出来，按 `(host, path, method)` 去重得到 **175 个唯一组合、34 个 host**。
+下面这些是「**有真实样本、但一直没接**」的，v1.0.3 全部接上了：
+
+| 接口 | 实测响应要点 | 用在哪 |
+|---|---|---|
+| `vehicle/list` 的 `funcConfig` | `HVAC.fan {min:1,max:9,unit:gear}`、`temperature {min:16,max:32,unit:celsius}`、`valid:true` | ★ 证明空调是 **1~9 档**（不是抓包里那三个值） |
+| `vehicle/list` 的其它字段 | `allocationCode:14`、`roofColor:"0"`、`carConfigEdition:""`（空串）、`cccVehicleId:null`、`abilities`（66 个） | 车辆档案页 |
+| `carpicture/3d/key` | `modelParam.carTypeCode:"720智尊版 六座"`、`shareBindUrl`（官方 3D 分享页） | 精确版型 |
+| `fota/getCurrentVersion` | `versionNo:"4.2614.020"`、`updateTime:"2026.08.10"`、`logContent`（完整中文 OTA 日志，11 条） | 固件 / OTA 卡 |
+| `commoninfo/getBgConf` | `ble_restoreWakeup` / `isSupportRadars` / `preWakeupByBle` / `threeDTheme` / … 共 11 个开关 | 功能开关卡（只读） |
+| `sharecar/getShareVehicleListByVin` | `rightList` = **29 个 cmdid**、`moduleRights:"100,200,400"`、`shareMaxCount:"8"` | cmdid 路线图 |
+| `appImage/getAppImage` | 3 个模块（胎压 / 直进直出 / 辅助泊车）各带一张 OSS 图 | 模块示意图 |
+| `healthyCharging/queryPushState` | POST form `carvin`+`deviceId` → `{"data":{"isPush":false}}` | 诊断探测 |
+| `appremotectl/getappointment` | GET `?carvin=…&cmdid=161` → `{"result":0,"code":0,"data":""}` | 诊断探测（只读） |
+| `msgcenter.leapmotor.cn` `selectmsgcount` | `{total, unread, alreadyread, usertotal, devicetotal}`；⚠️ **只有 `result` 没有 `code`** | 消息未读角标 |
+| `apptec.leapmotor.cn` `ipAnalysis/getAddressByIp` | `{"data":{"country":"中国","province":"安徽","city":"淮南"}}`；⚠️ 字段是 `errorCode` | 诊断探测（手机侧 IP 归属地） |
+
+**已知但故意没接的：**
+
+- `mqtt-center.leapmotor.cn` `GET /mqtt/token/applyToken` → 返回 MQTT token（`expireTimeConfig: 86400000`）。
+  要用得先实现 MQTT 客户端，属「推送通道」不是「车控功能」，本轮不做（车况刷新仍走 HTTP 轮询）。
+- `iov-api.leapmotor.com` `POST /file/1.0/vehicle/pointData?dataName=…` → 这是**官方 App 自己**
+  往上报遥测日志（protobuf → base64），不是读接口，无法反向当数据源。
+  （顺带一提：它里面泄露了 MQTT 凭据 `MQTTPasswordKey` / `AccountIDKey`，每次会话轮换。）
+
+**关于 `rightList` 的 29 个 cmdid：**
+`110,120,130,131,150,160,161,170,171,190,192,193,220,230,240,301,320,340,360,361,370,410,420,421,430,440,470,480,500`
+本 App 已实现 5 个：`110`（门锁）`120`（后备箱）`170`（大灯）`230`（空调）`400`（上电）。
+⚠️ 注意 **`400` 不在 `rightList` 里** —— 它走响应里的另一个字段 `moduleRights:"100,200,400"`（模块级权限）。
+其余 24 个只有编号、**没有 payload 样本**，所以**故意不做**。
+
+**⚠️ `cmdid 161` 的特殊之处：** 整份抓包里它**只以查询形式**出现过一次
+（`appremotectl/getappointment`，而且 `data` 是空串），**从来没有以「下发」出现过**。
+所以它只接了只读探测，**不进**未验证下发列表 —— 我们不会发一个连方法都没见过的指令。
+
+---
+
+## 推送踩坑：`POST /git/blobs` 在沙箱里恒返 500
+
+沙箱代理挡了 `github.com` 的 git 通道，所以推送走 GitHub REST API（`_push.py`）。
+2026-10-08 这次发现：**`POST /repos/{o}/{r}/git/blobs` 带合法 token 会稳定返回 HTTP 500（空 body）**，
+重试 5 次全挂。但同一时刻：
+
+| 请求 | 结果 |
+|---|---|
+| `POST /git/blobs`（**带** token） | **500** ❌ |
+| `POST /git/blobs`（**不带** token） | 401 `Requires authentication` ← 说明接口本身可达，是代理/网关弄坏的 |
+| `POST /markdown`（带 token） | 200 ✅ |
+| `GET /git/blobs/{sha}` | 200 ✅ |
+| `POST /git/trees`（带 token） | 201 ✅ |
+| `GET /repos/{o}/{r}`（权限查询） | `admin/push: true` ← token 权限没问题 |
+
+**解决办法：改用 `POST /git/trees` 的内联 `content`**（GitHub 服务端自己落盘建 blob），
+完全绕开那个坏掉的端点。`_push.py` 已按这个重写。
+
+⚠️ 两个约束：
+1. 内联 `content` 必须是 **UTF-8 文本** —— 二进制文件走不了这条路（脚本会明确报错退出，不会静默写坏）。
+2. 内容要从 **git 自己的 blob** 里读（`git cat-file blob <sha>:<path>`），
+   **不能**读工作区文件 —— `.gitattributes` 可能做行尾规范化，读工作区会让建出来的 tree
+   和本地 tree 不一致。脚本末尾会打印 `local tree` vs `new tree` 做自证，一致才算成功。
 
 ---
 
