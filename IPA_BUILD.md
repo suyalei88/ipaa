@@ -127,6 +127,116 @@ DEVELOPMENT_TEAM=你的TeamID bash ios/build_ipa.sh
 
 ---
 
+## 改 Swift 代码前必看：5 个已经踩过的编译坑
+
+这些是首次真机编译（Xcode 15.4 / iPhoneOS 17.5 SDK）时暴露出来的，
+静态审查几乎看不出来。**改完代码先自查这五条，能省好几轮 CI（每轮约 2.5 分钟）。**
+
+### 1. 自定义颜色不能写前导点简写
+
+```swift
+// ✗ error: type 'ShapeStyle' has no member 'lmAccent'
+Image(systemName: "car.fill").foregroundStyle(.lmAccent)
+
+// ✓
+Image(systemName: "car.fill").foregroundStyle(Color.lmAccent)
+```
+
+`foregroundStyle` 收的是泛型 `ShapeStyle`，前导点简写推不出**自定义** Color 成员。
+SwiftUI 只给标准色声明了 `extension ShapeStyle where Self == Color`，所以 `.green` / `.red`
+这类能用，`.lmAccent` 不行。
+
+注意 `.tint(.lmAccent)` 是**可以**的 —— `tint` 收的是具体 `Color`，不是泛型。
+
+### 2. 三元运算符两分支必须同类型
+
+```swift
+// ✗ .red → Color，.secondary → HierarchicalShapeStyle，两者不同类型
+.foregroundStyle(isError ? .red : .secondary)
+
+// ✓
+.foregroundStyle(isError ? Color.red : Color.secondary)
+```
+
+### 3. `withUnsafe*` 闭包里别访问外层变量
+
+```swift
+// ✗ error: overlapping accesses to 'out', but modification requires exclusive access
+out.withUnsafeMutableBytes { outBuf in
+    CCCrypt(..., inBuf.baseAddress, data.count,
+            outBuf.baseAddress, out.count, &moved)
+}
+
+// ✓ 容量先在闭包外取好
+let outCapacity = out.count
+let inLength = data.count
+out.withUnsafeMutableBytes { outBuf in
+    CCCrypt(..., inBuf.baseAddress, inLength,
+            outBuf.baseAddress, outCapacity, &moved)
+}
+```
+
+`withUnsafeMutableBytes` 是对变量的**修改**访问，闭包内再读它的属性（哪怕只是 `.count`）
+就会触发 Swift 的独占访问检查。
+
+### 4. Keychain 属性字典的键类型
+
+```swift
+// ✗ error: cannot convert value of type 'String' to expected dictionary key type 'CFString'
+let attrs: [CFString: Any] = [
+    kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+]
+
+// ✓
+let attrs: [String: Any] = [
+    kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+]
+```
+
+### 5. `ForEach` 的类型推断级联
+
+`ForEach(xs) { ... }` 报出这类**看起来毫不相关**的错误时：
+
+```
+cannot convert value of type '[LMVehicle]' to expected argument type 'Binding<C>'
+generic parameter 'C' could not be inferred
+initializer 'init(_:)' requires that 'Binding<Subject>' conform to 'StringProtocol'
+```
+
+八成不是 `ForEach` 本身的问题，而是**闭包体里别处有类型错误**（比如第 1 条那种），
+导致编译器回退去试 `Binding<C>` 重载。先把闭包内的错误修掉；
+想彻底消除歧义就显式给 id：
+
+```swift
+ForEach(client.vehicles, id: \.vin) { v in ... }
+```
+
+---
+
+## CI 依赖相关的坑
+
+### `build` 和 `vectors` 是两个独立 runner
+
+`vectors` job 里 `pip install` 的东西**不会**带到 `build` job。
+所以 `build` job 里不要调用任何需要第三方库的 Python 脚本 ——
+图标是随仓库提交的，`build` 只需 `test -f` 确认存在即可。
+
+### 本地能跑 ≠ CI 能跑
+
+本地 Python 环境通常装了一堆包，会**掩盖**依赖缺失。
+CI 只装 `requirements.txt` 里的东西。想本地复刻 CI 环境：
+
+```bash
+python -m venv /tmp/ci_venv
+/tmp/ci_venv/bin/pip install -r requirements.txt
+/tmp/ci_venv/bin/python client/test_swift_vectors.py
+```
+
+**不要**把 `requirements-recon.txt`（capstone / lief / numpy / gmssl）装进 CI ——
+那些只给逆向侦察脚本用，CI 不跑。
+
+---
+
 ## 仓库结构（和打包相关的部分）
 
 ```
