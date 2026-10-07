@@ -2,9 +2,14 @@
 //  DashboardView.swift
 //  LeapmotorLite
 //
-//  车况总览：电量环 + 指标磁贴 + 可折叠的原始信号表
+//  首页「车况」。信息架构参考了主流车企 App 的首页：
+//    车辆卡 → 电量/续航主卡 → 状态芯片 → 定位卡 → 充电卡 → 指标网格 → 快捷车控
+//
+//  ★ 每个数字都带「信号 id」出处，方便用户对着「信号浏览器」自己核对。
+//    这个 App 的定位是「功能 + 可验证」，不是把数字糊在屏幕上让你信。
 //
 import SwiftUI
+import CoreLocation
 import Foundation
 
 struct DashboardView: View {
@@ -23,11 +28,15 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 if let v = client.selectedVehicle {
-                    hero(v)
-                    tilesGrid
-                    quickLinks
+                    vehicleHeader(v)
+                    heroCard
+                    statusChips
+                    locationCard
+                    chargeCard
+                    metricsGrid
+                    quickActions
                     rawSignals
                 } else {
                     emptyState
@@ -59,36 +68,58 @@ struct DashboardView: View {
         .overlay(alignment: .bottom) { toastView }
         .onChange(of: client.lastError) { _, newValue in
             guard let e = newValue else { return }
-            toastIsError = true
-            toast = e
-            Task {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                if toast == e { toast = nil }
-            }
+            showToast(e, isError: true)
         }
     }
 
-    // MARK: - 顶部主卡
+    // MARK: - 车辆卡
 
-    private func hero(_ v: LMVehicle) -> some View {
-        VStack(spacing: 16) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
+    private func vehicleHeader(_ v: LMVehicle) -> some View {
+        LMCard(padding: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "car.side.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(Color.lmAccent)
+                    .frame(width: 44, height: 44)
+                    .background(Color.lmAccent.opacity(0.10),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
                     Text(v.displayName)
-                        .font(.title3.weight(.bold))
-                    Text(v.vin)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    if let plate = v.plateNumber, !plate.isEmpty, plate != v.vin {
-                        Text(plate)
-                            .font(.caption2)
+                        .font(.headline)
+                    HStack(spacing: 6) {
+                        if let plate = v.plateNumber, !plate.isEmpty, plate != v.vin {
+                            Text(plate).font(.caption)
+                        }
+                        Text(v.vin)
+                            .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
                 Spacer(minLength: 8)
                 lockPill
             }
+        }
+    }
 
+    private var lockPill: some View {
+        Group {
+            if let locked = client.isLocked {
+                StatusPill(text: locked ? "已上锁" : "未上锁",
+                           icon: locked ? "lock.fill" : "lock.open.fill",
+                           tint: locked ? Color.lmGood : Color.lmWarn)
+            } else {
+                StatusPill(text: "锁态未知", icon: "questionmark.circle", tint: Color.secondary)
+            }
+        }
+    }
+
+    // MARK: - 电量 / 续航主卡
+
+    private var heroCard: some View {
+        VStack(spacing: 16) {
             HStack(alignment: .center, spacing: 18) {
                 BatteryRing(percent: client.batteryPercent)
 
@@ -105,7 +136,7 @@ struct DashboardView: View {
                     .font(.system(size: 10))
                 Text(updateText)
                     .font(.caption2)
-                Spacer()
+                Spacer(minLength: 0)
                 if client.isBusy {
                     Text("刷新中…").font(.caption2)
                 }
@@ -140,21 +171,168 @@ struct DashboardView: View {
         }
     }
 
-    private var lockPill: some View {
-        Group {
-            if let locked = client.isLocked {
-                StatusPill(text: locked ? "已上锁" : "未上锁",
-                           icon: locked ? "lock.fill" : "lock.open.fill",
-                           tint: locked ? Color.lmGood : Color.lmWarn)
-            } else {
-                StatusPill(text: "锁态未知", icon: "questionmark.circle", tint: Color.secondary)
+    // MARK: - 状态芯片
+
+    private var statusChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                StatusPill(text: client.isChargingLikely ? "疑似充电中" : "未充电",
+                           icon: client.isChargingLikely ? "bolt.fill" : "bolt.slash",
+                           tint: client.isChargingLikely ? Color.lmGood : Color.secondary)
+
+                StatusPill(text: client.coordinate == nil ? "无定位" : "已定位",
+                           icon: client.coordinate == nil ? "location.slash" : "location.fill",
+                           tint: client.coordinate == nil ? Color.lmWarn : Color.lmTeal)
+
+                if let age = client.locationAge {
+                    StatusPill(text: ageText(age), icon: "clock",
+                               tint: age < 900 ? Color.lmGood : Color.lmWarn)
+                }
+
+                if let locked = client.isLocked {
+                    StatusPill(text: locked ? "车门已锁" : "车门未锁",
+                               icon: locked ? "lock.fill" : "lock.open.fill",
+                               tint: locked ? Color.lmGood : Color.lmBad)
+                }
+
+                if client.locationMayBeHidden {
+                    StatusPill(text: "位置隐私已开", icon: "eye.slash.fill", tint: Color.lmWarn)
+                }
             }
+            .padding(.horizontal, 2)
+            .padding(.vertical, 2)
         }
     }
 
-    // MARK: - 磁贴
+    // MARK: - 定位卡
 
-    private var tilesGrid: some View {
+    private var locationCard: some View {
+        NavigationLink {
+            LocationView()
+        } label: {
+            LMCard(padding: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 17))
+                        .foregroundStyle(Color.lmTeal)
+                        .frame(width: 38, height: 38)
+                        .background(Color.lmTeal.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("车辆定位")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        if let c = client.coordinate {
+                            Text(String(format: "%.5f, %.5f", c.latitude, c.longitude))
+                                .font(.system(.callout, design: .monospaced).weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        } else {
+                            Text("暂无坐标")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let age = client.locationAge {
+                            Text(ageText(age))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 充电卡
+
+    private var chargeCard: some View {
+        NavigationLink {
+            ChargeView()
+        } label: {
+            LMCard(padding: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 17))
+                            .foregroundStyle(Color.lmGood)
+                            .frame(width: 38, height: 38)
+                            .background(Color.lmGood.opacity(0.12),
+                                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("车辆充电")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(chargeHeadline)
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    if client.batteryPercent != nil || client.chargeTargetPercent != nil {
+                        HStack(spacing: 8) {
+                            if let soc = client.batteryPercent {
+                                miniStat("当前", "\(Int(soc.rounded())) %")
+                            }
+                            if let t = client.chargeTargetPercent {
+                                miniStat("目标", "\(t) %")
+                            }
+                            if let m = client.chargingRemainingMinutes {
+                                miniStat("剩余", shortMinutes(m))
+                            }
+                            if let s = client.chargeSchedule {
+                                miniStat("预约", s.isEnabled ? "\(s.beginTime)–\(s.endTime)" : "关")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func miniStat(_ k: String, _ v: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(k).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(v)
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var chargeHeadline: String {
+        if let m = client.chargingRemainingMinutes {
+            return "疑似充电中 · 还需 \(shortMinutes(m))"
+        }
+        if let soc = client.batteryPercent, let t = client.chargeTargetPercent, soc >= Double(t) {
+            return "已达到目标电量 \(t)%"
+        }
+        if client.chargeSchedule?.isEnabled == true {
+            return "未在充电 · 已设预约充电"
+        }
+        return "未在充电"
+    }
+
+    private func shortMinutes(_ m: Int) -> String {
+        m >= 60 ? "\(m / 60)h\(m % 60)m" : "\(m)m"
+    }
+
+    // MARK: - 指标网格
+
+    private var metricsGrid: some View {
         LazyVGrid(columns: tiles, spacing: 12) {
             MetricTile(title: "剩余电量",
                        value: client.batteryPercent.map { "\(Int($0.rounded())) %" } ?? "--",
@@ -168,6 +346,12 @@ struct DashboardView: View {
                        tint: Color.lmAccent,
                        sub: client.rangeAltKm.map { "另一标准 \(Int($0.rounded())) km" } ?? "信号 3257")
 
+            MetricTile(title: "满电估算",
+                       value: client.fullRangeEstimateKm.map { "\(Int($0.rounded())) km" } ?? "--",
+                       icon: "battery.100.bolt",
+                       tint: Color.lmPurple,
+                       sub: "3257 ÷ SOC 反推")
+
             MetricTile(title: "车锁",
                        value: client.isLocked == nil ? "--" : (client.isLocked == true ? "已上锁" : "未上锁"),
                        icon: client.isLocked == true ? "lock.fill" : "lock.open.fill",
@@ -180,58 +364,114 @@ struct DashboardView: View {
                        tint: Color.lmTeal,
                        sub: "信号 1349")
 
+            MetricTile(title: "电池温度",
+                       value: client.batteryTemp.map { String(format: "%.1f ℃", $0) } ?? "--",
+                       icon: "thermometer.snowflake",
+                       tint: Color.lmIndigo,
+                       sub: "信号 2183")
+
             MetricTile(title: "总里程",
                        value: client.odometerKm.map { "\(Int($0.rounded())) km" } ?? "--",
                        icon: "gauge.with.dots.needle.67percent",
                        tint: Color.lmPurple,
                        sub: "信号 1318")
+
+            MetricTile(title: "充电剩余",
+                       value: client.chargingRemainingMinutes.map { shortMinutes($0) } ?? "--",
+                       icon: "hourglass",
+                       tint: Color.lmGood,
+                       sub: "信号 1200")
         }
     }
 
-    // MARK: - 快捷入口
+    // MARK: - 快捷车控
 
-    private var quickLinks: some View {
+    private var quickActions: some View {
         VStack(spacing: 10) {
-            SectionHeader(text: "快捷操作")
+            HStack {
+                SectionHeader(text: "快捷操作")
+                Spacer()
+                NavigationLink {
+                    ControlPanelView()
+                } label: {
+                    Text("全部")
+                        .font(.caption.weight(.medium))
+                }
+            }
+
             LMCard(padding: 12) {
                 HStack(spacing: 10) {
-                    quickButton("锁车", "lock.fill", Color.lmGood, "lock")
-                    quickButton("解锁", "lock.open.fill", Color.lmWarn, "unlock")
-                    quickButton("上电", "power", Color.lmAccent, "hello")
+                    ForEach(LMEndpoints.primaryActions, id: \.self) { key in
+                        if let cmd = LMEndpoints.commands[key] {
+                            quickButton(cmd)
+                        }
+                    }
                 }
             }
         }
     }
 
-    private func quickButton(_ title: String, _ icon: String, _ tint: Color, _ key: String) -> some View {
-        Button {
-            Task { await runQuick(key: key, title: title) }
+    private func quickButton(_ cmd: LMEndpoints.Command) -> some View {
+        let accent = quickTint(cmd)
+        return Button {
+            Task { await runQuick(cmd) }
         } label: {
             VStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 20, weight: .semibold))
-                Text(title).font(.caption.weight(.medium))
+                Image(systemName: cmd.systemImage).font(.system(size: 20, weight: .semibold))
+                Text(cmd.title).font(.caption.weight(.medium))
             }
-            .foregroundStyle(tint)
+            .foregroundStyle(accent)
             .frame(maxWidth: .infinity, minHeight: 66)
-            .background(tint.opacity(0.10),
+            .background(accent.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(client.isBusy || client.isControlLocked(at: now))
     }
 
+    private func quickTint(_ cmd: LMEndpoints.Command) -> Color {
+        switch cmd.cmdid {
+        case 110: return cmd.state["value"] as? String == "lock" ? Color.lmGood : Color.lmWarn
+        case 120: return Color.lmTeal
+        case 230: return Color.lmAccent
+        case 170: return Color.lmIndigo
+        default:  return Color.lmAccent
+        }
+    }
+
     /// 快捷操作：和车控页走同一条链路（含业务码 70 锁定提示）
-    private func runQuick(key: String, title: String) async {
+    private func runQuick(_ cmd: LMEndpoints.Command) async {
         if client.isControlLocked(at: now) {
-            toastIsError = true
-            toast = "操作密码被锁定，请 \(client.controlLockRemaining(at: now)) 秒后再试"
+            showToast("操作密码被锁定，请 \(client.controlLockRemaining(at: now)) 秒后再试", isError: true)
             return
         }
-        let ok = await client.control(key)
-        toastIsError = !ok
-        toast = ok ? "\(title) 成功" : (client.lastError ?? "\(title) 失败")
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
-        toast = nil
+        // 会动物理世界的动作（车门/后备箱）在首页也拦一道
+        if cmd.risk == .physical {
+            showToast("「\(cmd.title)」会真的动车，请到「车控」页确认后执行", isError: true)
+            return
+        }
+        let ok = await client.control(keyFor(cmd))
+        showToast(ok ? "\(cmd.title) 成功" : (client.lastError ?? "\(cmd.title) 失败"), isError: !ok)
+        if ok { try? await client.refreshStatus() }
+    }
+
+    /// 从 cmdid + state 反查 actionKey（首页只放 low risk 的，都能反查出来）
+    private func keyFor(_ cmd: LMEndpoints.Command) -> String {
+        for key in LMEndpoints.quickActions {
+            if let c = LMEndpoints.commands[key], c.cmdid == cmd.cmdid, c.title == cmd.title {
+                return key
+            }
+        }
+        return LMEndpoints.quickActions.first ?? ""
+    }
+
+    private func showToast(_ text: String, isError: Bool) {
+        toastIsError = isError
+        toast = text
+        Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if toast == text { toast = nil }
+        }
     }
 
     // MARK: - 原始信号
@@ -258,8 +498,14 @@ struct DashboardView: View {
                                 Text(k)
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
+                                if let r = LMSignalCatalog.ref(k) {
+                                    Text(r.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
                                 Spacer(minLength: 8)
-                                Text(client.signals[k]?.displayText ?? "--")
+                                Text(client.signalText(k))
                                     .font(.system(.caption, design: .monospaced))
                                     .lineLimit(1)
                             }
@@ -272,18 +518,20 @@ struct DashboardView: View {
                         }
                     }
                 }
+
+                NavigationLink {
+                    SignalExplorerView()
+                } label: {
+                    Label("打开信号浏览器（搜索 / 快照对比）", systemImage: "magnifyingglass.circle")
+                        .font(.caption)
+                }
             }
         }
     }
 
     private var sortedSignalKeys: [String] {
         client.signals.keys.sorted { a, b in
-            switch (Int(a), Int(b)) {
-            case let (x?, y?): return x < y
-            case (nil, _?):    return false
-            case (_?, nil):    return true
-            default:           return a < b
-            }
+            LMSignalCatalog.numeric(a) < LMSignalCatalog.numeric(b)
         }
     }
 
@@ -317,9 +565,11 @@ struct DashboardView: View {
             Text(toast)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(toastIsError ? Color.lmBad : Color.lmGood, in: Capsule())
+                .padding(.horizontal, 24)
                 .padding(.bottom, 24)
                 .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -348,5 +598,12 @@ struct DashboardView: View {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         return "更新于 \(f.string(from: d))"
+    }
+
+    private func ageText(_ age: TimeInterval) -> String {
+        if age < 60 { return "刚刚采集" }
+        if age < 3600 { return "\(Int(age / 60)) 分钟前采集" }
+        if age < 86400 { return "\(Int(age / 3600)) 小时前采集" }
+        return "\(Int(age / 86400)) 天前采集"
     }
 }

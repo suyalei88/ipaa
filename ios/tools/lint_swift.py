@@ -40,6 +40,11 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       SwiftUI 不会因为 Date() 变了就重绘 → 倒计时冻在第一帧，
       而且锁定期到期后按钮永远不会重新启用，用户被永久卡死。
 
+  R10 用了系统框架的符号却没 import 那个框架
+      Theme.swift 里用 Color(.secondarySystemGroupedBackground) 忘了 import UIKit，
+      报的却是一堆指向别处的类型推断错误。加了 MapKit / CoreLocation 之后
+      （Map / Marker / CLLocationCoordinate2D / CLGeocoder）这个坑概率大增。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -78,6 +83,29 @@ RULES = {
     "R7": "同名 static 成员重复声明（invalid redeclaration）",
     "R8": "SecureField 挂 .oneTimeCode（短信验证码会被自动填进去）",
     "R9": "读了依赖当前时间的锁定状态却没挂 .lmClock（倒计时冻住 / 按钮永远禁用）",
+    "R10": "用了系统框架的符号却没 import 那个框架（MapKit / CoreLocation / UIKit）",
+}
+
+# R10 用：框架 → 该框架里「一眼能认出来」的符号正则
+#
+# 只放**独属于**该框架的符号。像 `Color` 这种跨 SwiftUI/UIKit 的不要放，
+# 否则会满屏误报。
+FRAMEWORK_TYPES = {
+    "MapKit": [
+        r"\bMKCoordinateRegion\b", r"\bMKCoordinateSpan\b", r"\bMKMapView\b",
+        r"\bMapCameraPosition\b", r"\bMapInteractionModes\b",
+        r"(?<![\w.])Map\s*\(", r"(?<![\w.])Marker\s*\(",
+        r"\.mapStyle\s*\(",
+    ],
+    "CoreLocation": [
+        r"\bCLLocationCoordinate2D\b", r"\bCLLocationManager\b",
+        r"\bCLGeocoder\b", r"\bCLPlacemark\b", r"\bCLLocation\b",
+        r"\bCLAuthorizationStatus\b", r"\bCLGeocodeCompletionHandler\b",
+    ],
+    "UIKit": [
+        r"\bUIPasteboard\b", r"\bUIApplication\b", r"\bUIImage\b",
+        r"\bUIDevice\b", r"\bUIScreen\b", r"\bUIColor\b",
+    ],
 }
 
 
@@ -225,6 +253,25 @@ def check(path: str, src: str):
             add(idx, "R9",
                 "读了 isControlLocked/controlLockRemaining（依赖当前时间）但本文件没有"
                 ".lmClock(until:now:) → 倒计时会冻住，锁定期到期后按钮不会重新启用")
+
+    # R10 —— 用了某个系统框架的类型，却没 import 那个框架
+    #
+    # 真烧过一轮：Theme.swift 里用了 Color(.secondarySystemGroupedBackground)
+    # 这类 UIKit 桥接 API，忘了 `import UIKit`，报的却是
+    #   "cannot find 'UIViewController' in scope" / 类型推断失败 之类
+    # 一堆指向别处的错误，翻半天才发现少一行 import。
+    #
+    # 加了 MapKit / CoreLocation 之后这个坑的概率大幅上升（Map / Marker /
+    # CLLocationCoordinate2D / CLGeocoder 全在别的模块里），所以固化成规则。
+    for framework, needles in FRAMEWORK_TYPES.items():
+        if re.search(rf"^\s*import\s+{framework}\s*$", code, re.M):
+            continue
+        for needle in needles:
+            m = re.search(needle, code)
+            if m:
+                add(m.start(), "R10",
+                    f"用了 {framework} 的符号（{m.group(0)}）但本文件没有 `import {framework}`")
+                break
     return hits
 
 

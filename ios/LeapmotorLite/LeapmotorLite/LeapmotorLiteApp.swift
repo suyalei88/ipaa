@@ -47,6 +47,12 @@ struct MainTabView: View {
             NavigationStack { DashboardView() }
                 .tabItem { Label("车况", systemImage: "car.fill") }
 
+            NavigationStack { LocationView() }
+                .tabItem { Label("定位", systemImage: "location.fill") }
+
+            NavigationStack { ChargeView() }
+                .tabItem { Label("充电", systemImage: "bolt.fill") }
+
             NavigationStack { ControlPanelView() }
                 .tabItem { Label("车控", systemImage: "slider.horizontal.3") }
 

@@ -47,6 +47,10 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 	</dict>
+	<!-- 「车辆定位」页里算「距我多远」要读本机位置。
+	     只有用户点「获取我的位置」时才请求；拒绝也只是不显示距离，不影响其它功能。 -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>用于在地图上显示你与车辆之间的距离。仅在你点击「获取我的位置」时读取，不会上传、不用于任何其他用途。</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>

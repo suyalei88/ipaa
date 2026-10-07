@@ -43,6 +43,21 @@ enum LMEndpoints {
         static let commonConfig   = "/carownerservice/v3/api/vehicleinfo/commonConfig"
         static let mileage        = "/carownerservice/v3/api/drivingrecord/mileage/energy/detail"
         static let chassis        = "/carownerservice/v3/api/chassis/query"
+
+        /// 停车位置查询。
+        ///
+        /// ⚠️ 从 IPA 字符串表挖出来的（`evidence/ios_endpoints.txt:258`），
+        ///    路径前缀 `/carownerservice` 是照 `commonConfig` 的实测全路径推的
+        ///    （字符串表里只有 `/v3/api/vehicleinfo/parking/query`，
+        ///      服务名前缀是运行时拼的）。**没有抓包样本，响应结构未知。**
+        ///    所以调用方必须容忍失败：坐标优先用 signalMap 的 2190/2191。
+        static let parking        = "/carownerservice/v3/api/vehicleinfo/parking/query"
+
+        /// 官方逆地理编码（经纬度 → 地址）。
+        ///
+        /// ⚠️ 同样只有字符串表里的 `/v3/geocode/regeo`，**参数与响应都未验证**。
+        ///    App 里默认走 Apple 的 CLGeocoder，这个只在「诊断」页做探测用。
+        static let regeo         = "/carownerservice/v3/geocode/regeo"
     }
 
     // MARK: - 车控命令
@@ -53,29 +68,88 @@ enum LMEndpoints {
         let state: [String: Any]
         let title: String
         let systemImage: String
+        /// 分组（UI 用）
+        let group: Group
+        /// 危险等级：动车门/后备箱的属于「会动物理世界」，UI 里给更强的二次确认文案
+        let risk: Risk
+
+        enum Group: String, CaseIterable {
+            case lock    = "门锁 / 后备箱"
+            case climate = "空调"
+            case light   = "灯光"
+            case power   = "电源"
+        }
+
+        enum Risk: Equatable {
+            /// 只改状态，不会夹到人
+            case low
+            /// 会开合车门/后备箱/启动上电 —— 必须提示「周围安全」
+            case physical
+        }
     }
 
     /// cmdid 表（实测）
-    ///   110 车门锁   {"value":"lock"|"unlock"}
-    ///   120 后备箱   {"value":"true"}
-    ///   170 大灯     {"operate":"off"|"auto"}
-    ///   230 空调     {"value":"0"|"2"|"5"}
-    ///   400 上电     {"operation":"on"}
+    ///   110 车门锁   {"value":"lock"|"unlock"}     ✅ 确认
+    ///   120 后备箱   {"value":"true"}              🟡 观察（早期抓包注释里也写过「寻车」）
+    ///   170 大灯     {"operate":"off"|"auto"}      🟡 观察
+    ///   230 空调     {"value":"0"|"2"|"5"}         🟡 观察
+    ///   400 上电     {"operation":"on"}            ✅ 确认
+    ///
+    /// ⚠️ 已知但**故意不放进 UI** 的：`130 {"value":"true"|"false"}`。
+    ///    它在抓包里出现过，但没有任何证据说明它开关的是什么 ——
+    ///    对一台真车下发「不知道干什么」的指令是不负责任的。
+    ///    要试的话去「设置 → 诊断 → 未验证 cmdid 探测」，那里有手输 + 二次确认。
     static let commands: [String: Command] = [
-        "lock":      Command(cmdid: 110, state: ["value": "lock"],        title: "锁车",     systemImage: "lock.fill"),
-        "unlock":    Command(cmdid: 110, state: ["value": "unlock"],      title: "解锁",     systemImage: "lock.open.fill"),
-        "trunk":     Command(cmdid: 120, state: ["value": "true"],        title: "后备箱",   systemImage: "car.rear.and.tire.marks"),
-        "light_off": Command(cmdid: 170, state: ["operate": "off"],       title: "大灯关",   systemImage: "lightbulb.slash"),
-        "light_auto":Command(cmdid: 170, state: ["operate": "auto"],      title: "大灯自动", systemImage: "lightbulb"),
-        "hvac_off":  Command(cmdid: 230, state: ["value": "0"],           title: "空调关",   systemImage: "fanblades.slash"),
-        "hvac_low":  Command(cmdid: 230, state: ["value": "2"],           title: "空调低",   systemImage: "fanblades"),
-        "hvac_high": Command(cmdid: 230, state: ["value": "5"],           title: "空调高",   systemImage: "fanblades.fill"),
-        "hello":     Command(cmdid: 400, state: ["operation": "on"],      title: "上电",     systemImage: "power"),
+        "lock":       Command(cmdid: 110, state: ["value": "lock"],   title: "锁车",
+                              systemImage: "lock.fill",               group: .lock, risk: .physical),
+        "unlock":     Command(cmdid: 110, state: ["value": "unlock"], title: "解锁",
+                              systemImage: "lock.open.fill",          group: .lock, risk: .physical),
+        "trunk":      Command(cmdid: 120, state: ["value": "true"],   title: "后备箱",
+                              systemImage: "car.rear.and.tire.marks", group: .lock, risk: .physical),
+        "light_off":  Command(cmdid: 170, state: ["operate": "off"],  title: "大灯关",
+                              systemImage: "lightbulb.slash",         group: .light, risk: .low),
+        "light_auto": Command(cmdid: 170, state: ["operate": "auto"], title: "大灯自动",
+                              systemImage: "lightbulb",               group: .light, risk: .low),
+        "hvac_off":   Command(cmdid: 230, state: ["value": "0"],      title: "空调关",
+                              systemImage: "fanblades.slash",         group: .climate, risk: .low),
+        "hvac_low":   Command(cmdid: 230, state: ["value": "2"],      title: "空调低",
+                              systemImage: "fanblades",               group: .climate, risk: .low),
+        "hvac_high":  Command(cmdid: 230, state: ["value": "5"],      title: "空调高",
+                              systemImage: "fanblades.fill",          group: .climate, risk: .low),
+        "hello":      Command(cmdid: 400, state: ["operation": "on"], title: "上电",
+                              systemImage: "power",                   group: .power, risk: .physical),
     ]
 
     /// 首页展示的动作（顺序即 UI 顺序）
     static let quickActions: [String] = [
         "lock", "unlock", "trunk", "hvac_off", "hvac_low", "hvac_high",
         "light_off", "light_auto", "hello",
+    ]
+
+    /// 首页「常用」那一排（只放最高频的四个）
+    static let primaryActions: [String] = ["lock", "unlock", "trunk", "hvac_low"]
+
+    /// 按分组返回动作 key（保持 commands 的声明顺序）
+    static func actions(in group: Command.Group) -> [String] {
+        quickActions.filter { commands[$0]?.group == group }
+    }
+
+    /// 记录在案但语义未确认的 cmdid —— **只给诊断页的探测工具用**
+    ///
+    /// ★ 用结构体而不是元组数组：`ForEach(_, id:)` 需要 key path，
+    ///   而 Swift 的 key path 不能指向元组成员（`\.cmdid` 直接编译不过）。
+    ///   同一个 cmdid 可能有多条 state，所以 id 用 "cmdid-state" 拼。
+    struct UnverifiedCmd: Identifiable {
+        let cmdid: Int
+        let state: String
+        let note: String
+        var id: String { "\(cmdid)-\(state)" }
+    }
+
+    static let unverifiedCmds: [UnverifiedCmd] = [
+        UnverifiedCmd(cmdid: 130, state: #"{"value":"true"}"#,
+                      note: "开关类，但开关的是什么完全未知"),
+        UnverifiedCmd(cmdid: 130, state: #"{"value":"false"}"#,
+                      note: "同上，反向"),
     ]
 }

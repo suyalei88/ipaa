@@ -42,7 +42,7 @@ struct ControlPanelView: View {
         // ★ 必须有这个：不然倒计时冻在 "300 秒"，而且到期后按钮不会重新启用
         .lmClock(until: client.controlLockedUntil, now: $now)
         .overlay(alignment: .bottom) { toastView }
-        .confirmationDialog("确认下发车控指令？",
+        .confirmationDialog(confirmTitle,
                             isPresented: confirmBinding,
                             titleVisibility: .visible) {
             Button("确认执行") {
@@ -52,7 +52,7 @@ struct ControlPanelView: View {
             }
             Button("取消", role: .cancel) { confirmKey = nil }
         } message: {
-            Text("将向车辆下发一次真实指令，请确认车辆周围安全、车门附近无人。")
+            Text(confirmMessage)
         }
     }
 
@@ -117,13 +117,22 @@ struct ControlPanelView: View {
 
     // MARK: - 动作网格
 
+    /// 按功能分组显示（门锁/后备箱、空调、灯光、电源）。
+    /// 分组只是排版 —— 所有动作走的都是同一条 sendControl 链路。
     private var actionGrid: some View {
-        VStack(spacing: 10) {
-            SectionHeader(text: "车控指令")
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(LMEndpoints.quickActions, id: \.self) { key in
-                    if let cmd = LMEndpoints.commands[key] {
-                        actionTile(key: key, cmd: cmd)
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(LMEndpoints.Command.Group.allCases, id: \.self) { group in
+                let keys = LMEndpoints.actions(in: group)
+                if !keys.isEmpty {
+                    VStack(spacing: 10) {
+                        SectionHeader(text: group.rawValue)
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(keys, id: \.self) { key in
+                                if let cmd = LMEndpoints.commands[key] {
+                                    actionTile(key: key, cmd: cmd)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -160,6 +169,15 @@ struct ControlPanelView: View {
                 RoundedRectangle(cornerRadius: LMRadius.tile, style: .continuous)
                     .stroke(accent.opacity(pendingAction == key ? 0.65 : 0.20), lineWidth: 1)
             )
+            .overlay(alignment: .topTrailing) {
+                // 会动物理世界的动作（车门 / 后备箱 / 上电）打个标，别误触
+                if cmd.risk == .physical {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.lmWarn)
+                        .padding(6)
+                }
+            }
         }
         .buttonStyle(.plain)
         .disabled(pendingAction != nil || client.isControlLocked(at: now))
@@ -188,6 +206,26 @@ struct ControlPanelView: View {
     }
 
     // MARK: - 执行
+
+    /// 待确认动作的标题
+    private var confirmTitle: String {
+        guard let k = confirmKey, let cmd = LMEndpoints.commands[k] else {
+            return "确认下发车控指令？"
+        }
+        return "确认执行「\(cmd.title)」？"
+    }
+
+    /// 会动物理世界的动作给更重的提示
+    private var confirmMessage: String {
+        guard let k = confirmKey, let cmd = LMEndpoints.commands[k] else {
+            return "将向车辆下发一次真实指令。"
+        }
+        if cmd.risk == .physical {
+            return "cmdid \(cmd.cmdid) 会真的动车门 / 后备箱 / 上电。"
+                + "请确认车辆周围安全、车门和后备箱附近没有人，再执行。"
+        }
+        return "cmdid \(cmd.cmdid)，只改状态（空调 / 灯光），不会夹到人。"
+    }
 
     private var confirmBinding: Binding<Bool> {
         Binding(get: { confirmKey != nil },

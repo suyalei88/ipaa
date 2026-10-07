@@ -46,13 +46,14 @@ jobs:
         run: pip install --quiet -r requirements.txt
 
       - name: Swift 陷阱静态检查
-        # 拦截「只能靠真机编译/运行才发现」的坑（R1~R9）：
+        # 拦截「只能靠真机编译/运行才发现」的坑（R1~R10）：
         #   R1 URLComponents 拼 URL（'+' 不转义 → 1019）
         #   R2 [CFString: Any]     R3 foregroundStyle(.自定义色)
         #   R4 三元两分支类型不同   R5 withUnsafe 闭包独占访问
         #   R6 括号不平衡          R7 同名 static 重复声明
         #   R8 SecureField 挂 .oneTimeCode（短信验证码会被自动填进去）
         #   R9 读依赖当前时间的锁定状态却没挂 .lmClock（倒计时冻住/按钮永远禁用）
+        #   R10 用了 MapKit / CoreLocation / UIKit 的符号却没 import 那个框架
         run: python3 ios/tools/lint_swift.py
 
       - name: 生成 App 图标（校验脚本可跑）

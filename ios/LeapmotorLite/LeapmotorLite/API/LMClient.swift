@@ -6,6 +6,7 @@
 //  端点、请求体格式、cmdid 均来自真实抓包 + iOS 主二进制逆向
 //
 import Foundation
+import CoreLocation
 
 // MARK: - 配置
 
@@ -118,6 +119,15 @@ final class LMClient: ObservableObject {
     /// 最近一次车控请求的体检单
     @Published private(set) var lastControlTrace: LMControlTrace?
 
+    /// 预约充电等车辆配置（commonConfig）
+    @Published private(set) var chargeSchedule: LMChargeSchedule?
+    /// commonConfig 里 config["4"]（蓝牙/数字钥匙）等原始内容，按编号展示
+    @Published private(set) var configBlobs: [String: LMConfigBlob] = [:]
+    /// 停车位置接口的探测结果（响应结构未定，可能一直为 nil）
+    @Published private(set) var parkingProbe: LMParkingProbe?
+    /// 车况配置里的隐私开关（privacyGPS = 1 时官方会隐藏位置）
+    @Published private(set) var privacyGPS = false
+
     // ★ 为什么是「带默认参数的方法」而不是「无参计算属性」：
     //   SwiftUI 不会因为 `Date()` 变了就重绘。如果写成无参计算属性，它只在
     //   `controlLockedUntil` 变化时重新求值 —— 倒计时会永远停在 "300 秒"，
@@ -171,11 +181,26 @@ final class LMClient: ObservableObject {
         selectedVehicle = nil
         signals = [:]
         mileage = nil
+        chargeSchedule = nil
+        configBlobs = [:]
+        parkingProbe = nil
+        privacyGPS = false
+        controlLockedUntil = nil
+        lastControlTrace = nil
+        lastError = nil
         store.clear()
     }
 
     func select(vehicle: LMVehicle) {
+        guard selectedVehicle?.vin != vehicle.vin else { return }
         selectedVehicle = vehicle
+        // 换车必须清掉上一台的实时数据，否则新车的页面会先显示旧车的电量/坐标
+        signals = [:]
+        mileage = nil
+        chargeSchedule = nil
+        configBlobs = [:]
+        parkingProbe = nil
+        lastUpdate = nil
     }
 
     // MARK: - 请求头
@@ -656,6 +681,48 @@ final class LMClient: ObservableObject {
         mileage = env.data
     }
 
+    /// 车辆配置：预约充电（config["3"]）、蓝牙钥匙（config["4"]）、隐私开关。
+    ///
+    /// 这个接口是「充电信息」页的数据源 —— 剩余充电时间在 signalMap(1200)，
+    /// 但「几点开始充、充到多少停、哪几天充」只有这里才有。
+    func refreshCommonConfig() async throws {
+        guard let vin = selectedVehicle?.vin else { throw LMError.notLoggedIn }
+        let any = try await request(method: "GET",
+                                    path: LMEndpoints.Path.commonConfig,
+                                    params: ["vin": vin])
+        let env = try decode(LMEnvelope<LMCommonConfigData>.self, from: any)
+        let d = env.data
+        privacyGPS = (d?.privacyGPS ?? 0) == 1
+        configBlobs = d?.config ?? [:]
+        chargeSchedule = LMChargeSchedule(blob: d?.config?["3"])
+    }
+
+    /// 停车位置接口探测。
+    ///
+    /// ⚠️ 这个端点的响应结构**没有样本**（见 LMEndpoints.Path.parking 的注释），
+    ///    所以这里只做三件事：把原始 JSON 留下、用候选 key 掏经纬度、失败不抛错。
+    ///    坐标的正规来源始终是 signalMap 的 2190/2191。
+    @discardableResult
+    func probeParking() async -> LMParkingProbe? {
+        guard let vin = selectedVehicle?.vin else { return nil }
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.parking,
+                                        params: ["vin": vin])
+            let text = prettyJSON(any)
+            let probe = LMParkingProbe(
+                rawText: text,
+                latitude: LMParkingProbe.pick(any, keys: LMParkingProbe.latKeys),
+                longitude: LMParkingProbe.pick(any, keys: LMParkingProbe.lngKeys))
+            parkingProbe = probe
+            return probe
+        } catch {
+            // 探测失败是预期内的事（路径/参数都是猜的），不要污染 lastError
+            parkingProbe = nil
+            return nil
+        }
+    }
+
     func refreshAll() async {
         do {
             if vehicles.isEmpty { _ = try await loadVehicles() }
@@ -665,16 +732,64 @@ final class LMClient: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+        // 配置类接口单独兜错：它挂了不该让整个「刷新车况」显示失败
+        try? await refreshCommonConfig()
+    }
+
+    private func prettyJSON(_ any: Any) -> String {
+        guard JSONSerialization.isValidJSONObject(any),
+              let d = try? JSONSerialization.data(withJSONObject: any,
+                                                  options: [.prettyPrinted, .sortedKeys]),
+              let s = String(data: d, encoding: .utf8)
+        else { return String(describing: any) }
+        return s
+    }
+
+    // MARK: - 诊断探测
+    //
+    // 只给「设置 → 诊断」用。特点：**永不抛错**，把失败也变成一段可读文本。
+    // 因为探的都是「路径/参数靠猜」的接口（parking / regeo），失败是常态，
+    // 抛错会让诊断页变成一堆红字，反而看不出「到底返回了什么」。
+
+    /// 裸 GET，返回格式化后的响应文本（或失败原因）
+    func probeGET(path: String,
+                  host: String = LMEndpoints.gateway,
+                  params: [String: String]? = nil) async -> String {
+        do {
+            let any = try await request(method: "GET", path: path, host: host, params: params)
+            return prettyJSON(any)
+        } catch {
+            return "✗ \(error.localizedDescription)"
+        }
+    }
+
+    /// 裸 POST（JSON body）
+    func probePOST(path: String,
+                   host: String = LMEndpoints.gateway,
+                   body: [String: Any]) async -> String {
+        do {
+            let any = try await request(method: "POST", path: path, host: host, body: body)
+            return prettyJSON(any)
+        } catch {
+            return "✗ \(error.localizedDescription)"
+        }
     }
 
     // MARK: - 车控
 
     /// 发送一条车控指令，返回 msgID
     func sendControl(_ actionKey: String) async throws -> String {
-        guard let vin = selectedVehicle?.vin else { throw LMError.notLoggedIn }
         guard let cmd = LMEndpoints.commands[actionKey] else {
             throw LMError.business(-1, "未知动作：\(actionKey)")
         }
+        return try await sendControlRaw(cmdid: cmd.cmdid, state: cmd.state, label: actionKey)
+    }
+
+    /// 直接给 cmdid + state 的下发通道（诊断页的「未验证 cmdid 探测」用）。
+    ///
+    /// 和 `sendControl` 走完全同一条链路、同样记体检单，只是绕开 commands 表。
+    func sendControlRaw(cmdid: Int, state: [String: Any], label: String) async throws -> String {
+        guard let vin = selectedVehicle?.vin else { throw LMError.notLoggedIn }
         guard let s = session else { throw LMError.notLoggedIn }
 
         // 服务端还在锁定期就别再打 —— 每打一次都在给「累计出错」计数
@@ -690,10 +805,10 @@ final class LMClient: ObservableObject {
         let parts = try LMSigner.oppwdKeyIV(accessToken: s.accessToken)
         let oppwd = try LMSigner.encryptOppwd(accessToken: s.accessToken, password: s.opPassword)
 
-        let stateJSON = try jsonString(cmd.state)
+        let stateJSON = try jsonString(state)
         let form: [String: String] = [
             "carvin": vin,
-            "cmdid": String(cmd.cmdid),
+            "cmdid": String(cmdid),
             "oppwd": oppwd,
             "state": stateJSON,
         ]
@@ -701,8 +816,8 @@ final class LMClient: ObservableObject {
         // 记体检单：把「真发出去的东西」原样留下来
         var trace = LMControlTrace(
             time: Date(),
-            action: actionKey,
-            cmdid: cmd.cmdid,
+            action: label,
+            cmdid: cmdid,
             passwordLength: s.opPassword.count,
             key: parts.key,
             iv: parts.iv,
@@ -785,6 +900,21 @@ final class LMClient: ObservableObject {
         }
     }
 
+    /// 一步到位（原始 cmdid 版），给诊断页的探测工具用
+    func controlRaw(cmdid: Int, state: [String: Any], label: String) async -> Bool {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let msgID = try await sendControlRaw(cmdid: cmdid, state: state, label: label)
+            let ok = await waitControl(msgID: msgID)
+            if ok { lastError = nil } else { lastError = "指令已下发，但未在超时内确认成功" }
+            return ok
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
     private func jsonString(_ obj: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
         return String(data: data, encoding: .utf8) ?? "{}"
@@ -838,4 +968,156 @@ final class LMClient: ObservableObject {
     /// 总里程 km：优先用实时信号 1318（与用户截图 1909 km 完全一致），
     /// 没有时退回 /drivingrecord/mileage 接口
     var odometerKm: Double? { signals["1318"]?.doubleValue ?? mileage?.totalmileage }
+
+    // MARK: - 定位
+    //
+    // 两组坐标都来自 signalMap，互为校验（同一位置、末位小数不同）：
+    //     2190 = 31.801201   2191 = 117.342718
+    //     3725 = 31.801307   3724 = 117.342719
+    // ★ 3724/3725 的 id 顺序是「经度在前」，跟 2190/2191 相反，别记混。
+
+    /// 车况数据的采集时刻（信号 `1`，13 位毫秒时间戳）。
+    /// 用它才能说清「这个位置是几分钟前的」—— 车停在地库里时定位可能很久不更新。
+    var collectedAt: Date? {
+        guard let ms = signals["1"]?.doubleValue, ms > 1_000_000_000_000 else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000)
+    }
+
+    /// 定位时间距今多久（秒）。取不到采集时间时为 nil。
+    var locationAge: TimeInterval? {
+        guard let d = collectedAt else { return nil }
+        return Date().timeIntervalSince(d)
+    }
+
+    /// 车辆坐标（主用 2190/2191，缺失时退回 3725/3724）
+    var coordinate: CLLocationCoordinate2D? {
+        if let c = LMClient.makeCoordinate(lat: signals["2190"]?.doubleValue,
+                                           lng: signals["2191"]?.doubleValue) {
+            return c
+        }
+        return LMClient.makeCoordinate(lat: signals["3725"]?.doubleValue,
+                                       lng: signals["3724"]?.doubleValue)
+    }
+
+    /// 另一组坐标（做「两组是否一致」的交叉校验用）
+    var coordinateAlt: CLLocationCoordinate2D? {
+        LMClient.makeCoordinate(lat: signals["3725"]?.doubleValue,
+                                lng: signals["3724"]?.doubleValue)
+    }
+
+    /// 两组坐标的距离（米）。差得远说明有一组是缓存/漂移，UI 里要提示。
+    var coordinateDisagreementMeters: Double? {
+        guard let a = coordinate, let b = coordinateAlt else { return nil }
+        return CLLocation(latitude: a.latitude, longitude: a.longitude)
+            .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
+    }
+
+    /// 经纬度是否「像真的」。
+    ///
+    /// 三条都过才算有效：
+    ///   1. 在合法区间内（纬度 ±90、经度 ±180）
+    ///   2. 不是 (0,0) —— 那是「没定位」的典型占位值，不是几内亚湾
+    ///   3. 不在中国境外太远（车辆是中国牌照；这条只是防止把 0.0 / 空值当坐标）
+    static func makeCoordinate(lat: Double?, lng: Double?) -> CLLocationCoordinate2D? {
+        guard let lat = lat, let lng = lng else { return nil }
+        guard lat.isFinite, lng.isFinite else { return nil }
+        guard abs(lat) <= 90, abs(lng) <= 180 else { return nil }
+        if lat == 0 && lng == 0 { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+    }
+
+    /// 官方隐私开关（`privacyGPS = 1` 时官方会隐藏位置，我们这边可能读到 0/0）
+    var locationMayBeHidden: Bool { privacyGPS }
+
+    // MARK: - 充电
+    //
+    // 证据见 LMSignalCatalog 顶部注释。这里只放「确认过」和「明确标注为疑似」的。
+
+    /// 剩余充电时间（分钟）。信号 `1200`。
+    ///
+    /// 实测：SOC 33.1% 时 645 min、36.6% 时 605 min，
+    ///       两次独立推算 578.5 / 572.6 min/% —— 误差 1%，确认是剩余充电时间。
+    /// 值为 0 时返回 nil（未在充电 / 没有该数据）。
+    var chargingRemainingMinutes: Int? {
+        guard let m = signals["1200"]?.doubleValue, m > 0 else { return nil }
+        return Int(m.rounded())
+    }
+
+    /// 是否（很可能）正在充电。
+    ///
+    /// ⚠️ 这是**推断**，不是直接读到的状态位：判据是 `1200 > 0`。
+    ///    我们没有找到确切的「充电枪已连接 / 充电中」布尔信号
+    ///    （候选 1255 / 1480 / 3638 都只有停车期的单一取值，无法区分）。
+    ///    所以 UI 里用「疑似充电中」这种措辞，别写死。
+    var isChargingLikely: Bool { chargingRemainingMinutes != nil }
+
+    /// 电池温度 ℃（信号 2183）。实测 23.0，与车内温度 1349(29.5) 区分得开。
+    var batteryTemp: Double? { signals["2183"]?.doubleValue }
+
+    /// 预约充电的目标电量 %（来自 commonConfig.config["3"].percent）
+    var chargeTargetPercent: Int? { chargeSchedule?.targetPercent }
+
+    /// 疑似充电功率 kW（信号 1177 ÷ 100）。
+    ///
+    /// ⚠️ **未确认**。1177 停车充电期在 736.1~737.0 之间缓变，
+    ///    读作 ×100 W 就是 7.37 kW（7kW 交流桩的典型值），
+    ///    读作电池电压则是 736.7 V（但 +3.7% SOC 只涨 0.3 V，与 CC 充电不符）。
+    ///    倾向功率。UI 必须带「疑似」字样。
+    var chargePowerGuessKW: Double? {
+        guard let v = signals["1177"]?.doubleValue, v > 0 else { return nil }
+        return v / 100.0
+    }
+
+    /// 疑似充电电流 A（信号 1178）。未确认，负号含义未知。
+    var chargeCurrentGuessA: Double? {
+        guard let v = signals["1178"]?.doubleValue else { return nil }
+        return abs(v)
+    }
+
+    /// 用「当前 SOC + 当前续航」反推满电续航 km（主标准 3257）。
+    ///
+    /// 判定依据就是这条严格线性关系：
+    ///     3257 / 100003 = 7.17  （4 个快照全部吻合）
+    /// 满电约 717 km。SOC 太低（<5%）时反推误差会放大，此时返回 nil。
+    var fullRangeEstimateKm: Double? {
+        guard let soc = batteryPercent, soc >= 5,
+              let km = rangeKm, km > 0 else { return nil }
+        return km / soc * 100.0
+    }
+
+    /// 同上，另一套标准（3260，满电约 577 km）
+    var fullRangeAltEstimateKm: Double? {
+        guard let soc = batteryPercent, soc >= 5,
+              let km = rangeAltKm, km > 0 else { return nil }
+        return km / soc * 100.0
+    }
+
+    /// 剩余续航换算成「还能开多久」（按 60 km/h 城市均速粗估）。
+    /// 只是一个给用户量感的数字，不是官方数据，UI 里要标「估算」。
+    var rangeHoursAt60: Double? {
+        guard let km = rangeKm, km > 0 else { return nil }
+        return km / 60.0
+    }
+
+    // MARK: - 信号取值小工具
+    /// 读任意 signalId 的展示文本（"--" 表示没有）
+    func signalText(_ id: String) -> String {
+        signals[id]?.displayText ?? "--"
+    }
+
+    /// 读任意 signalId 的数值
+    func signalNumber(_ id: String) -> Double? {
+        signals[id]?.doubleValue
+    }
+
+    /// 带单位的展示文本，例如 `"298 km"`；没有单位就返回原值。
+    func signalText(_ id: String, unit: String) -> String {
+        guard let v = signals[id] else { return "--" }
+        guard let d = v.doubleValue, !unit.isEmpty else { return v.displayText }
+        // 整数就不显示小数点，避免 "298.0 km"
+        let s = d == d.rounded() && abs(d) < 1e15
+            ? String(Int64(d))
+            : String(format: "%.1f", d)
+        return "\(s) \(unit)"
+    }
 }

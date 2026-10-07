@@ -26,6 +26,7 @@ struct SettingsView: View {
             sessionSection
             opPasswordSection
             vehicleSection
+            featureSection
             diagnosticsSection
             deviceSection
             signOutSection
@@ -186,6 +187,28 @@ struct SettingsView: View {
             }
             Button("刷新车辆列表") {
                 Task { _ = try? await client.loadVehicles() }
+            }
+        }
+    }
+
+    // MARK: - 功能
+
+    private var featureSection: some View {
+        Section("功能") {
+            NavigationLink {
+                LocationView()
+            } label: {
+                Label("车辆定位（地图 / 地址 / 导航）", systemImage: "location.fill")
+            }
+            NavigationLink {
+                ChargeView()
+            } label: {
+                Label("车辆充电信息（剩余时间 / 预约充电）", systemImage: "bolt.fill")
+            }
+            NavigationLink {
+                SignalExplorerView()
+            } label: {
+                Label("信号浏览器（130 个信号 / 快照对比）", systemImage: "magnifyingglass.circle")
             }
         }
     }

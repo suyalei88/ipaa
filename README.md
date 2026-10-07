@@ -148,12 +148,33 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 | 签名（双模式）/ signKey / oppwd | ✅ 完全还原并验证 |
 | 车况 / 车辆列表 / 车控 | ✅ 100% 命中 |
 | 电量 / 续航 / 里程 / 温度 / 锁态 | ✅ 信号 id 已用多快照线性回归确认（见上表） |
+| 车辆定位（经纬度 + 地图 + 导航） | ✅ `2190/2191`，`3725/3724` 做交叉校验 |
+| 充电信息（剩余充电时间） | ✅ `1200`，两次独立推算 578.5 / 572.6 min/%（误差 1%） |
+| 预约充电配置（时段 / 目标电量 / 重复） | ✅ `commonConfig.config["3"]`（只读，不改车） |
+| 电池温度 | ✅ `2183` |
+| 充电功率 / 电流（`1177` / `1178`） | ⚠️ 未定 —— 界面上明确标「疑似」，靠快照对比自行确认 |
+| 是否正在充电（布尔状态位） | ⚠️ 未找到 —— 从 `1200 > 0` 推断，文案写「疑似充电中」 |
+| `parking/query` / `geocode/regeo` 两个端点 | ⚠️ 只有 IPA 字符串表里的路径，参数与响应未验证（诊断页可探测） |
 | 短信验证码登录（全 4 步） | ✅ 已实测打通（收到短信 → 换 JWT → signKey → 车控成功） |
 | 手机号 RSA 加密 | ✅ 已还原（SPKI→PKCS#1，1024-bit → 140 字节 DER） |
 | `smDeviceId`（SM4 国密设备指纹） | ⚠️ 复用抓包值；未还原派生算法（不影响自用） |
 | 账号密码登录（`security` 字段） | ⚠️ 已弃用 —— `security` 实为外层 token，改走短信登录 |
 | 车控二进制响应（`LMVCloudBinaryPacket`） | ⚠️ 未解析（当前接口都返回 JSON） |
+| `cmdid 130`（开关类，语义未知） | ⚠️ 故意不进 UI；只在「设置 → 诊断」里手输下发 |
 | 登录态自动续期（refreshToken） | 未实现；token 约 2h 过期，重新登录即可 |
+
+### 五个页面
+
+| Tab | 内容 |
+|---|---|
+| 车况 | 车辆卡 / 电量环 / 续航·车内温度·总里程 / 状态芯片 / 定位卡 / 充电卡 / 8 个指标磁贴 / 快捷车控 / 全部信号 |
+| 定位 | MapKit 地图打点 / CLGeocoder 中文地址 / 坐标（含两组交叉校验）/ 一键跳高德与 Apple 地图 / 距我多远 |
+| 充电 | 电量环 + 目标电量 / 剩余充电时间 + 预计充满时刻 / 预约充电配置 / 电池温度 / 两套续航与满电估算 / 疑似项专区 |
+| 车控 | 按「门锁·后备箱 / 空调 / 灯光 / 电源」分组，会动物理世界的动作带警示标 + 更重的确认文案 |
+| 设置 | 会话 / 操作密码（含 oppwd 现场预览）/ 车辆 / 功能入口 / 诊断 |
+
+**信号浏览器**（设置 → 诊断，或车况页底部）：130 个 signalId 可搜索、带置信度标注与判定依据；
+内置**快照 A/B 对比** —— 做动作前后各抓一次，只列出变了的 id。这是识别剩余未知信号的唯一办法。
 
 ---
 
@@ -168,10 +189,15 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `.github/workflows/build-ipa.yml` — 云端打包流水线
 
 **iOS 交付**
-- `ios/LeapmotorLite/` — SwiftUI 车控 App（17 个 Swift 文件 + Info.plist + Assets.xcassets）
-- `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环）
-- `ios/LeapmotorLite/LeapmotorLite/Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求）
-- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R9，CI 里会跑）
+- `ios/LeapmotorLite/` — SwiftUI 车控 App（22 个 Swift 文件 + Info.plist + Assets.xcassets）
+- `ios/LeapmotorLite/LeapmotorLite/Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环 / 秒级时钟）
+- `ios/LeapmotorLite/LeapmotorLite/Views/LocationView.swift` — 车辆定位（MapKit + CLGeocoder + 导航）
+- `ios/LeapmotorLite/LeapmotorLite/Views/ChargeView.swift` — 充电信息（剩余时间 / 预约充电 / 疑似项专区）
+- `ios/LeapmotorLite/LeapmotorLite/Views/SignalExplorerView.swift` — 信号浏览器 + 快照 A/B 对比
+- `ios/LeapmotorLite/LeapmotorLite/API/LMSignalCatalog.swift` — ★ 信号 id → 语义知识库（带置信度与判定依据）
+- `ios/LeapmotorLite/LeapmotorLite/Store/LMLocationProvider.swift` — 本机定位（只用于「距我多远」）
+- `ios/LeapmotorLite/LeapmotorLite/Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求 / 接口探测 / 未验证 cmdid）
+- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R10，CI 里会跑）
 - `ios/LeapmotorLite/README.md` — 编译 / 使用 / 协议文档
 
 **逆向与分析**

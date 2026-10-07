@@ -18,6 +18,22 @@ struct DiagnosticsView: View {
 
     @State private var copied = false
 
+    // 接口探测
+    @State private var probeResult: String = ""
+    @State private var probeBusy = false
+
+    // 未验证 cmdid 手输下发
+    @State private var rawCmdId = "130"
+    @State private var rawState = #"{"value":"true"}"#
+    @State private var rawConfirm = false
+    @State private var rawBusy = false
+    @State private var rawResult = ""
+    /// 由 .lmClock 每 0.5 秒推一次。
+    /// ★ 这个必须有：下面那个「下发」按钮的 disabled 依赖 isControlLocked，
+    ///   而它跟当前时间有关。不挂时钟的话倒计时会冻住、锁定期到期后
+    ///   按钮也永远不会重新启用 —— R9 规则就是专门拦这个的（这一版真被拦下来了）。
+    @State private var now = Date()
+
     /// ⚠️ 不能用元组数组 + `id: \.id` —— Swift 不支持指向元组成员的 key path。
     /// 老老实实定义个 struct。
     private struct SignalRef: Identifiable {
@@ -31,10 +47,25 @@ struct DiagnosticsView: View {
             lastControlSection
             sessionSection
             signalMapSection
+            endpointProbeSection
+            rawCmdSection
             copySection
         }
         .navigationTitle("车控体检")
         .onAppear { copied = false }
+        // ★ 驱动锁定期倒计时。没有它，「下发」按钮会永久禁用（见上面 now 的注释）。
+        .lmClock(until: client.controlLockedUntil, now: $now)
+        .confirmationDialog("确认下发未验证指令？",
+                            isPresented: $rawConfirm,
+                            titleVisibility: .visible) {
+            Button("确认下发", role: .destructive) {
+                Task { await sendRaw() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("cmdid \(rawCmdId) 的语义**没有确认过**。这条指令会真的发到车上，"
+                 + "可能开关某个你不知道的功能。请确保车在安全位置、你能看到车。")
+        }
     }
 
     // MARK: - 操作密码
@@ -129,13 +160,8 @@ struct DiagnosticsView: View {
 
     // MARK: - 信号对照表
 
-    /// 这张表是用「多快照线性回归」推出来的，不是抄的：
-    ///   快照        100003   1204   3257   3260   1318
-    ///   har_appgw    32.9     33    236    190   1909
-    ///   har_refresh  36.6     37    262    211   1909
-    ///   15:30        41.4     41    298    239   1909
-    ///   3257/100003 ≈ 7.16~7.20（满电 717 km），3260/100003 ≈ 5.77（满电 577 km），
-    ///   1204 == round(100003) 三组全中 → 100003/1204 才是 SOC。
+    /// 表内容来自 LMSignalCatalog（有证据、带置信度），不是这里硬编码的。
+    /// 完整版（含未命名信号、搜索、快照对比）在 SignalExplorerView。
     private var signalMapSection: some View {
         Section {
             ForEach(Self.signalTable) { row in
@@ -151,26 +177,239 @@ struct DiagnosticsView: View {
                         .foregroundStyle(Color.lmAccent)
                 }
             }
+            NavigationLink {
+                SignalExplorerView()
+            } label: {
+                Label("打开信号浏览器（全部 \(client.signals.count) 个 / 快照对比）",
+                      systemImage: "magnifyingglass.circle")
+            }
         } header: {
             Text("已确认的信号映射")
         } footer: {
-            Text("右侧是该信号此刻的实时值。")
+            Text("右侧是该信号此刻的实时值。带 🟡 的是观察级、❓ 是还没定下来的，"
+                 + "都在信号浏览器里能看到完整说明。")
         }
     }
 
-    private static let signalTable: [SignalRef] = [
-        SignalRef(id: "100003", name: "剩余电量 %（BMS 原始值，1 位小数）"),
-        SignalRef(id: "1204",   name: "剩余电量 %（整数取整）"),
-        SignalRef(id: "3257",   name: "剩余续航 km（主显示）"),
-        SignalRef(id: "3260",   name: "剩余续航 km（另一标准）"),
-        SignalRef(id: "1318",   name: "总里程 km"),
-        SignalRef(id: "1349",   name: "车内温度 ℃"),
-        SignalRef(id: "1298",   name: "车门锁状态"),
-        SignalRef(id: "3262",   name: "车门锁状态（备用）"),
-        SignalRef(id: "2190",   name: "纬度"),
-        SignalRef(id: "2191",   name: "经度"),
-        SignalRef(id: "1200",   name: "剩余充电时间（分钟）"),
-    ]
+    /// 只列 ✅ 已确认的，按 id 排序
+    private static var signalTable: [SignalRef] {
+        LMSignalCatalog.refs
+            .filter { $0.confidence == .confirmed }
+            .sorted { LMSignalCatalog.numeric($0.id) < LMSignalCatalog.numeric($1.id) }
+            .map { SignalRef(id: $0.id,
+                             name: $0.name + ($0.unit.isEmpty ? "" : "（\($0.unit)）")) }
+    }
+
+    // MARK: - 官方接口探测
+    //
+    // parking/query 与 geocode/regeo 都是从 IPA 字符串表里挖出来的，
+    // **路径前缀和参数都是推的**，没有抓包样本。这里做成手动探测，
+    // 让用户（或者以后的我）能在真机上把响应结构试出来。
+
+    private var endpointProbeSection: some View {
+        Section {
+            Button {
+                Task { await probeParking() }
+            } label: {
+                Label("探测 停车位置接口（GET parking/query）", systemImage: "parkingsign.circle")
+            }
+
+            Button {
+                Task { await probeParkingPost() }
+            } label: {
+                Label("探测 停车位置接口（POST + vin）", systemImage: "parkingsign.circle")
+            }
+
+            Button {
+                Task { await probeRegeo() }
+            } label: {
+                Label("探测 官方逆地理编码（3 种参数各试一次）", systemImage: "map.circle")
+            }
+
+            if probeBusy {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.7)
+                    Text("探测中…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if !probeResult.isEmpty {
+                Text(probeResult)
+                    .font(.system(size: 10, design: .monospaced))
+                    .lineLimit(40)
+                    .textSelection(.enabled)
+                Button {
+                    UIPasteboard.general.string = probeResult
+                } label: {
+                    Label("复制探测结果", systemImage: "doc.on.doc")
+                }
+            }
+        } header: {
+            Text("官方接口探测（结构未知，试出来的）")
+        } footer: {
+            Text("""
+            这两个端点的路径是从 IPA 字符串表挖的，参数靠推测，没有抓包样本。
+            探测结果有意义的话（返回了地址或坐标），就把这段发出来，
+            可以把它接成定位页的地址来源，比 Apple 的 CLGeocoder 更贴官方。
+            """)
+        }
+    }
+
+    // MARK: - 未验证 cmdid
+
+    private var rawCmdSection: some View {
+        Section {
+            HStack {
+                Text("cmdid").font(.caption).foregroundStyle(.secondary)
+                TextField("130", text: $rawCmdId)
+                    .keyboardType(.numberPad)
+                    .font(.system(.callout, design: .monospaced))
+                    .multilineTextAlignment(.trailing)
+            }
+            HStack(alignment: .top) {
+                Text("state").font(.caption).foregroundStyle(.secondary)
+                TextField(#"{"value":"true"}"#, text: $rawState)
+                    .font(.system(.caption, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+            }
+
+            ForEach(LMEndpoints.unverifiedCmds) { item in
+                Button {
+                    rawCmdId = String(item.cmdid)
+                    rawState = item.state
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("cmdid \(item.cmdid)")
+                            .font(.system(.caption, design: .monospaced))
+                        Text(item.state)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Text("填入").font(.caption2).foregroundStyle(Color.lmAccent)
+                    }
+                }
+            }
+
+            Button(role: .destructive) {
+                rawConfirm = true
+            } label: {
+                Label("下发这条指令（会真的发到车上）", systemImage: "exclamationmark.triangle.fill")
+            }
+            .disabled(rawBusy
+                      || client.isControlLocked(at: now)
+                      || (client.session?.opPassword.isEmpty ?? true))
+
+            if client.isControlLocked(at: now) {
+                Label("操作密码被服务端锁定，还要 \(client.controlLockRemaining(at: now)) 秒",
+                      systemImage: "lock.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.lmBad)
+            }
+
+            if rawBusy {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.7)
+                    Text("下发中…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if !rawResult.isEmpty {
+                Text(rawResult)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.lmAccent)
+            }
+        } header: {
+            Text("未验证 cmdid 探测")
+        } footer: {
+            Text("""
+            cmdid 130 {"value":"true"|"false"} 在抓包里出现过，但没有任何证据说明它开关的是什么 ——
+            所以它**没有**出现在车控页。想确认它是干什么的，只能自己发一次看车有什么反应。
+
+            发之前请确保：车停在安全位置、你能直接看到车、周围没人。
+            另：这一页的请求同样算「操作密码」的尝试次数，密码错 3 次会被服务端锁 5 分钟。
+            """)
+        }
+    }
+
+    private func probeParking() async {
+        guard client.selectedVehicle?.vin != nil else {
+            probeResult = "✗ 还没选车"
+            return
+        }
+        probeBusy = true
+        defer { probeBusy = false }
+        // 走 LMClient.probeParking()：它除了打接口，还会用候选 key 名试着掏经纬度，
+        // 结果同时留在 client.parkingProbe 里（定位页以后可以直接用）
+        let probe = await client.probeParking()
+        let head = "GET \(LMEndpoints.Path.parking)?vin=<vin>"
+        guard let p = probe else {
+            probeResult = head + "\n✗ 没拿到响应（路径或参数不对，属于预期内）"
+            return
+        }
+        var extra = ""
+        if let lat = p.latitude, let lng = p.longitude {
+            extra = "\n→ 掏到坐标：\(lat), \(lng)（和 signalMap 的 2190/2191 对一下）"
+        } else {
+            extra = "\n→ 响应里没找到候选 key 的经纬度"
+        }
+        probeResult = head + extra + "\n" + p.rawText
+    }
+
+    private func probeParkingPost() async {
+        guard let vin = client.selectedVehicle?.vin else {
+            probeResult = "✗ 还没选车"
+            return
+        }
+        probeBusy = true
+        defer { probeBusy = false }
+        let r = await client.probePOST(path: LMEndpoints.Path.parking, body: ["vin": vin])
+        probeResult = "POST \(LMEndpoints.Path.parking) {\"vin\":...}\n\(r)"
+    }
+
+    /// regeo 的参数形状完全未知，把常见的三种都试一遍，哪个通了就知道该用哪个
+    private func probeRegeo() async {
+        guard let c = client.coordinate else {
+            probeResult = "✗ 当前没有车辆坐标，先去「定位」页刷新"
+            return
+        }
+        probeBusy = true
+        defer { probeBusy = false }
+        let lng = String(format: "%.6f", c.longitude)
+        let lat = String(format: "%.6f", c.latitude)
+
+        var out: [String] = []
+        let attempts: [(String, [String: String])] = [
+            ("location=lng,lat", ["location": "\(lng),\(lat)"]),
+            ("lat,lng 分开", ["latitude": lat, "longitude": lng]),
+            ("lat/lng 短名", ["lat": lat, "lng": lng]),
+        ]
+        for (label, params) in attempts {
+            let r = await client.probeGET(path: LMEndpoints.Path.regeo, params: params)
+            out.append("— \(label)\n\(r)")
+        }
+        probeResult = "GET \(LMEndpoints.Path.regeo)\n" + out.joined(separator: "\n\n")
+    }
+
+    private func sendRaw() async {
+        guard let id = Int(rawCmdId.trimmingCharacters(in: .whitespaces)) else {
+            rawResult = "✗ cmdid 必须是数字"
+            return
+        }
+        guard let data = rawState.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data),
+              let dict = obj as? [String: Any]
+        else {
+            rawResult = "✗ state 不是合法 JSON 对象"
+            return
+        }
+        rawBusy = true
+        defer { rawBusy = false }
+        let ok = await client.controlRaw(cmdid: id, state: dict, label: "raw-\(id)")
+        rawResult = ok
+            ? "✓ cmdid \(id) 已受理并确认成功 —— 看看车有什么反应，再去「信号浏览器」抓快照对比"
+            : "✗ cmdid \(id)：\(client.lastError ?? "未知失败")"
+    }
 
     // MARK: - 复制
 
