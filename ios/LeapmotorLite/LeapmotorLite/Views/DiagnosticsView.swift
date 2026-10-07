@@ -294,7 +294,7 @@ struct DiagnosticsView: View {
             Button {
                 Task { await probeChassis() }
             } label: {
-                Label("探测 车辆状态接口（GET chassis/query）", systemImage: "car.circle")
+                Label("探测 底盘图接口（GET chassis/query）", systemImage: "car.circle")
             }
 
             Button {
@@ -584,7 +584,7 @@ struct DiagnosticsView: View {
         probeResult = "POST \(LMEndpoints.Path.parking) {\"vin\":...}\n\(r)"
     }
 
-    /// 探测 `/v3/api/chassis/query` —— 官方「车辆位置」页的疑似数据源。
+    /// 探测 `/v3/api/chassis/query` —— ★ 已证实返回的是**底盘图片**，不是定位。
     private func probeChassis() async {
         guard client.selectedVehicle?.vin != nil else {
             probeResult = "✗ 还没选车"
@@ -597,14 +597,8 @@ struct DiagnosticsView: View {
             probeResult = head + "\n✗ 没拿到响应（路径或参数不对，属于预期内）"
             return
         }
-        var extra = ""
-        if let lat = p.latitude, let lng = p.longitude {
-            extra = "\n→ 掏到坐标：\(lat), \(lng)"
-                + "\n→ 跟 signalMap 的 2190/2191 对一下：不一样就说明这才是实时位置"
-        } else {
-            extra = "\n→ 响应里没找到候选 key 的经纬度"
-        }
-        probeResult = head + extra + "\n" + p.rawText
+        let note = "\n→ 抓包已证实：它返回的是 OSS 上的底盘图片（ChassisPicture/prod/<VIN>），不是定位。"
+        probeResult = head + note + "\n" + p.rawText
     }
 
     /// regeo 的参数形状完全未知，把常见的三种都试一遍，哪个通了就知道该用哪个

@@ -779,17 +779,20 @@ final class LMClient: ObservableObject {
         }
     }
 
-    /// 车辆状态接口探测（`/v3/api/chassis/query`）。
+    /// 底盘图接口探测（`/v3/api/chassis/query`）。
     ///
     /// ★ 2026-10-08 加的：用户报「车在淮南、App 显示合肥」，而 signalMap 的 2190/2191
-    ///    在连续 51 个样本里一个数字都没变（车况其它信号却在实时刷新）——
+    ///    在连续 63 个样本里一个数字都没变（车况其它信号却在实时刷新）——
     ///    说明**那个坐标不是实时的**。
-    ///    而官方二进制里 `/v3/api/chassis/query` 紧挨着 `/v3/api/vehicleinfo/parking/query`
-    ///    出现，旁边就是 `LMVParkInfoModel`（含 `Street` / `FormattedAddressLines`，
-    ///    后者是 Apple `CLPlacemark` 的属性名）和整套地图模块的符号 ——
-    ///    官方「车辆位置」页很可能用的是这个接口，而不是 signalMap 里的裸坐标。
+    ///    当时怀疑官方「车辆位置」页走的是另一个接口（`chassis/query`）。
     ///
-    /// ⚠️ 同样没有抓包样本。探测失败是预期内的，不要污染 lastError。
+    /// ★★ 同一天**已用真实抓包证伪**：`chassis/query` 返回的是 OSS 上的
+    ///    `ChassisPicture/prod/<VIN>` —— 一张**底盘图片**，跟定位无关。
+    ///    而且把主二进制里所有 `/v3/api/` 路径 + 所有 signalMap 样本都扫了一遍：
+    ///    官方**没有**别的定位接口，坐标只可能来自 signalMap 的 2190/2191。
+    ///
+    /// 所以这个探测现在只用于「留个证据 / 万一车型不同」。
+    /// 探测失败是预期内的，不要污染 lastError。
     @discardableResult
     func probeChassis() async -> LMParkingProbe? {
         guard let vin = selectedVehicle?.vin else { return nil }

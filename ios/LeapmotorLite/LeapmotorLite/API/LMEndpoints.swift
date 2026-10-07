@@ -42,7 +42,6 @@ enum LMEndpoints {
         // 杂项
         static let commonConfig   = "/carownerservice/v3/api/vehicleinfo/commonConfig"
         static let mileage        = "/carownerservice/v3/api/drivingrecord/mileage/energy/detail"
-        static let chassis        = "/carownerservice/v3/api/chassis/query"
 
         /// 停车位置查询。
         ///
@@ -53,19 +52,16 @@ enum LMEndpoints {
         ///    所以调用方必须容忍失败：坐标优先用 signalMap 的 2190/2191。
         static let parking        = "/carownerservice/v3/api/vehicleinfo/parking/query"
 
-        /// 车辆状态查询（官方「车辆位置」页疑似用它拿停车位置）。
+        /// 车辆底盘图（3D 车图 / 底盘照片）。
         ///
-        /// ★ 2026-10-08 逆向补充：官方二进制里 `/v3/api/chassis/query` 和
-        ///    `/v3/api/vehicleinfo/parking/query` 是**紧挨着出现的**，而且旁边就是
-        ///    整套地图模块的符号：
-        ///      `LMVParkInfoModel`（字段含 `AppLogo` / `Street` / `FormattedAddressLines`）
-        ///      `LMVMapLocationModel` / `LMVMapParkingSnapView` / `LMVMapSearchObject`
-        ///      以及「导航 / 定位 / 车辆 / 分享」这几个按钮的图标名
-        ///    `FormattedAddressLines` 是 Apple `CLPlacemark` 的属性名 —— 说明官方拿到的
-        ///    是一个**带地址的停车位置模型**，而 signalMap 的 2190/2191 只是个裸坐标。
-        ///
-        /// ⚠️ 仍然**没有抓包样本**，响应结构未知。所以只用于「诊断页探测」，
-        ///    不拿它当主数据源（主源仍是 signalMap 的 2190/2191）。
+        /// ★★ 2026-10-08 **已用真实抓包证实，它不是定位接口**：
+        ///    `appgateway.leapmotor.com_2026_10_07_13_25_47.har` 里有一次真实调用 ——
+        ///      GET /carownerservice/v3/api/chassis/query?vin=LFZ63AA15TH035113
+        ///    响应只有：
+        ///      {"code":0,"result":0,"message":"请求成功","data":{
+        ///         "fileUrl":"http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/<VIN>?...",
+        ///         "uploadTime":1791344811823}}
+        ///    即返回一张 OSS 上的**底盘图片**。之前「官方『车辆位置』页疑似用它」的猜测**被证伪**。
         static let chassis        = "/carownerservice/v3/api/chassis/query"
 
         /// 官方逆地理编码（经纬度 → 地址）。

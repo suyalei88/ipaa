@@ -456,30 +456,70 @@ def check(path: str, src: str):
 
 
 def collect_members(files: list[str]) -> list[tuple[str, int, str, str]]:
-    """跨文件收集 `extension X { ... static let/var NAME ... }`，找重复声明。
+    """收集各**类型体**内的 `static let/var NAME`，找同名重复声明。
 
-    真实踩过的坑：把 `extension Color { static let lmAccent ... }` 从
-    LeapmotorLiteApp.swift 挪到 Theme.swift 时忘了删旧的 →
-    "invalid redeclaration of 'lmAccent'"，一轮 CI 白跑。
+    真实踩过的两个坑：
+    ① 把 `extension Color { static let lmAccent ... }` 从 LeapmotorLiteApp.swift
+       挪到 Theme.swift 时忘了删旧的 → "invalid redeclaration of 'lmAccent'"。
+    ② ★ 2026-10-08：给 `LMEndpoints.Path` 加 `static let chassis` 时，
+       在「杂项」分组和带注释的正式位置**各加了一遍** →
+       "invalid redeclaration of 'chassis'" + "ambiguous use of 'chassis'"，
+       本地文本闸门全绿、CI 编译才炸，白跑一轮。
+
+    旧版只认 `extension X { ... }`，所以 ② 那种写在 `enum` 里的漏了。
+    新版改成**按括号深度跟踪类型栈**，enum / struct / class / actor / extension
+    一律覆盖。
     """
-    decl = re.compile(
-        r"extension\s+([A-Za-z_][\w.]*)\s*\{(.*?)\n\}", re.S)
+    typedecl = re.compile(r"\b(extension|enum|struct|class|actor)\s+([A-Za-z_][\w.]*)")
     member = re.compile(r"\bstatic\s+(?:let|var)\s+([A-Za-z_]\w*)")
+    brace = re.compile(r"[{}]")
+    # 类型声明与它那个 `{` 之间隔太远就不认（避免把没配对的声明粘到后面的闭包上）
+    MAX_GAP = 300
+
     seen: dict[tuple[str, str], tuple[str, int]] = {}
     dups: list[tuple[str, int, str, str]] = []
+
     for f in files:
         src = open(f, encoding="utf-8").read()
         code = blank_comments_and_strings(src)
-        for m in decl.finditer(code):
-            type_name, body = m.group(1), m.group(2)
-            for mm in member.finditer(body):
-                name = mm.group(1)
-                key = (type_name, name)
-                pos = m.start(2) + mm.start()
+
+        events: list[tuple[int, str, str]] = []
+        for m in brace.finditer(code):
+            events.append((m.start(), "brace", m.group(0)))
+        for m in typedecl.finditer(code):
+            events.append((m.start(), "type", m.group(2)))
+        for m in member.finditer(code):
+            events.append((m.start(), "member", m.group(1)))
+        events.sort(key=lambda x: x[0])
+
+        depth = 0
+        # [(depth, 类型名)]，类型名可能是 None（普通代码块）
+        stack: list[tuple[int, str | None]] = []
+        pending: tuple[str, int] | None = None   # (类型名, 声明结束位置)
+
+        for pos, kind, val in events:
+            if kind == "type":
+                pending = (val, pos + len(val))
+            elif kind == "brace" and val == "{":
+                name = None
+                if pending and pos - pending[1] <= MAX_GAP:
+                    name = pending[0]
+                pending = None
+                depth += 1
+                stack.append((depth, name))
+            elif kind == "brace" and val == "}":
+                while stack and stack[-1][0] >= depth:
+                    stack.pop()
+                depth = max(0, depth - 1)
+            else:  # member
+                enclosing = next((n for _, n in reversed(stack) if n), None)
+                if enclosing is None:
+                    continue
+                key = (enclosing, val)
                 ln = lineno(src, pos)
                 if key in seen:
                     prev_f, prev_ln = seen[key]
-                    dups.append((f, ln, f"{type_name}.{name}",
+                    dups.append((f, ln, f"{enclosing}.{val}",
                                  f"已在 {os.path.basename(prev_f)}:{prev_ln} 声明过"))
                 else:
                     seen[key] = (f, ln)
