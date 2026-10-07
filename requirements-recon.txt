@@ -1,0 +1,18 @@
+# ============================================================
+#  可选：逆向侦察脚本的依赖
+#
+#  CI 不跑这些（太重，且产物已经在仓库里了）。只有本地重新做
+#  一次静态分析时才需要：
+#    client/ios_dis.py  client/ios_sym.py  client/ios_scan*.py
+#    client/ios_cfref.py  client/ios_xref.py  client/ios_objc.py
+#    client/macho_util.py  client/objc_parse.py
+#    client/brute_sign2.py  client/brute_sign3.py  client/brute_sign4.py
+#
+#  安装：pip install -r requirements-recon.txt
+# ============================================================
+-r requirements.txt
+
+capstone>=5      # ios_dis.py / ios_sym.py —— ARM64 反汇编
+lief>=0.14       # macho_util.py / ios_objc.py / objc_parse.py —— Mach-O 与 ObjC 元数据
+numpy>=1.26      # ios_scan*.py / ios_cfref.py / ios_xref.py —— 地址扫描与交叉引用
+gmssl>=3.2       # brute_sign2/3/4.py —— SM2/SM3/SM4 国密尝试

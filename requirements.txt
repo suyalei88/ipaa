@@ -1,0 +1,16 @@
+# ============================================================
+#  LeapmotorLite —— Python 客户端与回归测试的最小依赖
+#
+#  覆盖这些脚本（也就是 CI 的 vectors job 实际会跑的东西）：
+#    client/test_swift_vectors.py    校验 Swift 自测向量（11 项）
+#    client/test_sign_regression.py  HAR 签名回归（期望 101/105）
+#    ios/tools/make_icon.py          生成 1024 AppIcon
+#    ios/tools/gen_xcodeproj.py      纯标准库，无依赖
+#
+#  安装：pip install -r requirements.txt
+# ============================================================
+
+cryptography>=42      # test_swift_vectors.py —— RSA SPKI→PKCS#1 拆解与校验
+pycryptodome>=3.20    # leapmotor_client.encrypt_oppwd() —— AES-CBC / PKCS#7
+requests>=2.31        # leapmotor_client.LeapmotorClient —— HTTP 会话（惰性导入）
+pillow>=10            # ios/tools/make_icon.py —— 画 1024x1024 AppIcon
