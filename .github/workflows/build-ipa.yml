@@ -63,6 +63,16 @@ jobs:
       - name: HAR 签名回归（期望 101/105）
         run: python client/test_sign_regression.py || true
 
+      # gen_xcodeproj.py --check 做三件事：
+      #   1. 结构自检（括号平衡 + UUID 闭合）
+      #   2. 跨平台确定性自测（UUID 金标，抓 rel 分隔符 / md5 前缀被改）
+      #   3. 与磁盘 project.pbxproj 逐字节比对
+      # 第 3 条是防「新增 .swift 却忘了重新生成工程」——那种情况下
+      # build 会「成功」，但新文件根本没进 Sources phase，功能静默缺失。
+      #
+      # ⚠️ 这个 job 跑在 ubuntu 上，而 pbxproj 通常在 Windows 上生成。
+      #    生成器里 rel 必须用 '/' 不能用 os.path.join，否则两边 UUID 不一致，
+      #    这里会红。金标自测就是专门钉这一点的。
       - name: Xcode 工程生成自检
         run: python ios/tools/gen_xcodeproj.py --check
 

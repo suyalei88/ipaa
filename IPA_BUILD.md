@@ -180,6 +180,36 @@ python3 ios/tools/gen_xcodeproj.py --check   # 新增 .swift 后忘了重生成�
 | R7 | 同名 `static` 成员重复声明 |
 | R8 | `SecureField` 挂 `.textContentType(.oneTimeCode)` |
 
+`gen_xcodeproj.py --check` 另外覆盖 G1（见下）。
+
+### G1 `project.pbxproj` 跨平台生成漂移（★ Windows 生成 / Linux 校验必踩）
+
+`uid(key) = md5("lm:" + key)[:24].upper()`，而 `key` 里含**文件相对路径**。
+路径分隔符如果跟平台走，同一个文件在 Windows 和 Linux 上会算出两个不同的 UUID：
+
+```python
+# ✗ 相对路径被拼成 'Crypto\LMAES.swift'（Windows） / 'Crypto/LMAES.swift'（Linux）
+r = os.path.join(rel, name)
+
+# ✓ 永远用 '/'，跟平台无关
+r = f"{rel}/{name}" if rel else name
+```
+
+症状很迷惑：CI 日志说
+
+```
+pbxproj 自检通过（379 行，17 个源文件）
+[x] project.pbxproj 与源码目录不一致：磁盘 17 个源文件，重新生成应为 17 个。
+```
+
+**源文件数明明相等**，因为差异不在数量而在 UUID。现在 `--check` 会直接打出第一处差异行。
+
+`gen_xcodeproj.py` 里内置了 UUID 金标自测（`GOLDEN_UID`，值取自 Linux runner），
+改 `uid()` 或 `scan()` 会立刻报错，不会再等到 CI。
+
+> 经验：**任何进版本库的生成物，生成逻辑都不能依赖平台。**
+> 这里 `Node.rel` 还加了 `assert "\\" not in rel` 兜底。
+
 ### R1（★ 最容易中，会导致线上请求失败）拼 URL 不要用 `URLComponents`
 
 ```swift

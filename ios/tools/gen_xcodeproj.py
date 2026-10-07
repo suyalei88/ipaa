@@ -63,7 +63,14 @@ class Node:
 
     def __init__(self, name, rel, is_dir):
         self.name = name
-        self.rel = rel            # 相对 SRC_DIR
+        # ★★ rel 必须用 '/' 作分隔符，跟操作系统无关。
+        #    因为 uid('fr/' + rel) 是拿 rel 做 md5 的：如果 Windows 上拼成
+        #    'Views\Theme.swift'、Linux 上拼成 'Views/Theme.swift'，
+        #    同一个文件在两端会算出两个完全不同的 UUID，
+        #    CI 的 `--check` 字节比对就会误报「工程文件和源码不一致」。
+        #    （这个坑真踩过：本地绿、CI 红，日志里源文件数还是 17 == 17。）
+        assert "\\" not in rel, f"rel 不能含反斜杠: {rel!r}"
+        self.rel = rel
         self.is_dir = is_dir
         self.children: list[Node] = []
         self.kind = ""
@@ -71,12 +78,15 @@ class Node:
 
 def scan(root: str, rel: str = "") -> list[Node]:
     out: list[Node] = []
-    base = os.path.join(root, rel) if rel else root
+    # ★ rel 里的分隔符一律用 '/'，不要用 os.path.join —— 见下面 Node.rel 的注释。
+    #   但拼文件系统路径时要按当前平台的 sep 还原，否则 Windows 上 mixed sep 也能跑，
+    #   只是不干净。
+    base = os.path.join(root, *rel.split("/")) if rel else root
     for name in sorted(os.listdir(base)):
         if name.startswith("."):
             continue
         full = os.path.join(base, name)
-        r = os.path.join(rel, name) if rel else name
+        r = f"{rel}/{name}" if rel else name
         if os.path.isdir(full):
             if name.endswith(".xcassets"):
                 n = Node(name, r, False)
@@ -586,6 +596,39 @@ def check(pbx: str) -> list[str]:
     return errs
 
 
+# 金标：这几个值是在 Linux（GitHub Actions ubuntu runner）上跑出来的。
+# 任何平台都必须算出同样的结果，否则 pbxproj 会随生成机器漂移，
+# CI 的 `--check` 就会报「工程文件和源码不一致」。
+# ★ 真踩过：rel 用 os.path.join 拼，Windows 出 'Crypto\LMAES.swift'、
+#   Linux 出 'Crypto/LMAES.swift'，同一个文件两个 UUID。
+GOLDEN_UID = {
+    "project":                   "82A94B4421FD82FF334E2209",
+    "target/app":                "B2F65123D784A7AC5A2356A1",
+    "fr/Crypto/LMAES.swift":     "4EC379FB7D7EFFC185646B9C",
+    "grp/Views":                 "D154BF9AE96ED6D023BE10B6",
+}
+
+
+def selftest() -> list[str]:
+    """跨平台确定性自测：UUID 派生 + rel 分隔符。"""
+    errs: list[str] = []
+    for key, want in GOLDEN_UID.items():
+        got = uid(key)
+        if got != want:
+            errs.append(f"uid({key!r}) = {got}，期望 {want}"
+                        f"（rel 分隔符或 md5 前缀被改过？）")
+
+    # scan() 产出的 rel 必须是 '/' 分隔（Node.__init__ 里还有 assert 兜底）
+    try:
+        rels = [n.rel for n in walk(scan(SRC_DIR))]
+    except AssertionError as e:
+        return errs + [f"scan() 产出非法 rel：{e}"]
+    bad = [r for r in rels if "\\" in r]
+    if bad:
+        errs.append(f"rel 含反斜杠：{bad[:3]}")
+    return errs
+
+
 # ============================================================
 # main
 # ============================================================
@@ -603,8 +646,16 @@ def main() -> int:
             print("  -", e)
         return 1
 
+    golden = selftest()
+    if golden:
+        print("跨平台确定性自测失败：")
+        for e in golden:
+            print("  -", e)
+        return 1
+
     swift_n = pbx.count("in Sources */ = {isa = PBXBuildFile")
-    print(f"pbxproj 自检通过（{len(pbx.splitlines())} 行，{swift_n} 个源文件）")
+    print(f"pbxproj 自检通过（{len(pbx.splitlines())} 行，{swift_n} 个源文件，"
+          f"UUID 金标 {len(GOLDEN_UID)}/{len(GOLDEN_UID)}）")
 
     proj_file = os.path.join(XCODEPROJ, "project.pbxproj")
 
@@ -621,6 +672,16 @@ def main() -> int:
             disk_n = on_disk.count("in Sources */ = {isa = PBXBuildFile")
             print(f"[x] {os.path.relpath(proj_file)} 与源码目录不一致："
                   f"磁盘 {disk_n} 个源文件，重新生成应为 {swift_n} 个。")
+            # 数量相等时上面的信息等于废话，直接把第一处差异打出来。
+            a, b = on_disk.splitlines(), pbx.splitlines()
+            for i in range(max(len(a), len(b))):
+                la = a[i] if i < len(a) else "<缺行>"
+                lb = b[i] if i < len(b) else "<缺行>"
+                if la != lb:
+                    print(f"    首个差异在第 {i + 1} 行：")
+                    print(f"      磁盘: {la.strip()[:110]}")
+                    print(f"      重新生成: {lb.strip()[:110]}")
+                    break
             print("    修复：python ios/tools/gen_xcodeproj.py 然后一起提交。")
             return 1
         print(f"project.pbxproj 与源码目录一致（{swift_n} 个源文件）")

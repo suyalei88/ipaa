@@ -7,47 +7,47 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		431DDD8770EA552864506B9B /* LMAES.swift in Sources */ = {isa = PBXBuildFile; fileRef = DECFBDD7C8E7A8BF06D895DC /* LMAES.swift */; };
-		43A8947F5769514899CBB511 /* LMHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D2E248EFC739555D286E4DC /* LMHash.swift */; };
-		99B0F85D7E8BB391F24625E7 /* LMRSA.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67F57E28C9A943DAA774356D /* LMRSA.swift */; };
-		4A9EB9E02136315828B92F47 /* LMSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A8E8597BBF55A9A5D757419 /* LMSelfTest.swift */; };
-		8195B78798F3346B820ACE08 /* LMSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBD917AC22C24562168AC9DD /* LMSigner.swift */; };
-		97C4CD79605E57FFF1489338 /* LMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D7FAE5111E07ED84CAB5DEA /* LMClient.swift */; };
-		FCCFEA529BB8AF8F506713A9 /* LMEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = 526F4AF88AD65B2AA7EC6894 /* LMEndpoints.swift */; };
-		A5EB8150E93165961AADF3BA /* LMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AF9788C8C65178ADC0B9968 /* LMModels.swift */; };
-		D349622BB27C4BC49A2AB8E4 /* LMSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E46160DBFCB7CF96FF25C7 /* LMSessionStore.swift */; };
-		147754A735CDF9CC109CF664 /* ControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D73CF31005539C1C16CC4BC0 /* ControlPanelView.swift */; };
-		1A6C0A1907BFF0D999541487 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA8839B5D92AF356DA3E3772 /* DashboardView.swift */; };
-		6716FD3CACA5B48B31FF4FB9 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E1C2C59717EC64683D1134E /* DiagnosticsView.swift */; };
-		CFA14A1F263488FDAAA44FEB /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F74F9AB52A32C95642475E0B /* LoginView.swift */; };
-		3714E809EA5913572BB63871 /* SelfTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F5855BD847CBBC1C0C48546 /* SelfTestView.swift */; };
-		F8AEA72856FAF00DC6B4C9B1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31435B0064E63C981A9754A8 /* SettingsView.swift */; };
-		08EF9795A8DA67A69E41A420 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD92FC46EDAAB325E4CBB13 /* Theme.swift */; };
+		A8C4605FC0BD6A2EB1967656 /* LMAES.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC379FB7D7EFFC185646B9C /* LMAES.swift */; };
+		5C8D5C329F193CC072D2BFD2 /* LMHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B9FC8D85BF79532E12462FE /* LMHash.swift */; };
+		69171C6192F603E4899EF04D /* LMRSA.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD8BB22C723B03DA3D6B4E8 /* LMRSA.swift */; };
+		7BD7FBF07B39253D76A1123A /* LMSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21605AA59368B17620004802 /* LMSelfTest.swift */; };
+		D3CC54788A45AC052294BDDB /* LMSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46236D7624BAB005E0678FC4 /* LMSigner.swift */; };
+		A2A03EDF6D2846BE4EBA4DF3 /* LMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 248EAADE93448B39F347B406 /* LMClient.swift */; };
+		67DB4B82330D1C8B287DA291 /* LMEndpoints.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3373F1032F8959D7495DA76 /* LMEndpoints.swift */; };
+		9A757E750C4A958BF5B13A6C /* LMModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111D949AB8906CEF24EB9CBC /* LMModels.swift */; };
+		B0F08AC632E7AB750BAC9A65 /* LMSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4741E8039A8C004B2345718F /* LMSessionStore.swift */; };
+		6451783540D5C3D218B3B9DF /* ControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 326FA4819659E3F08EF88084 /* ControlPanelView.swift */; };
+		B0A122A53DA94A1FD96246DD /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480C6EB9AB5E2F713BC25983 /* DashboardView.swift */; };
+		95AD1011D983EEA87E78FCC4 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 884B09FD5CEB6F0A0AB61C64 /* DiagnosticsView.swift */; };
+		6907F2DD1482F6BEE24E3450 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D2C4948680375B8853E1A6 /* LoginView.swift */; };
+		D2A095BDDF9A875C86BBFEB5 /* SelfTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D1F81B894F702F257C5CD1 /* SelfTestView.swift */; };
+		9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D451076F292E7189C3B2DBC6 /* SettingsView.swift */; };
+		7905221120FBB9DB8B74B787 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E662A36FCA7763CF25013E50 /* Theme.swift */; };
 		AD7D1D4EEC7C579D1396E3C3 /* LeapmotorLiteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */; };
 		48473DF59511BE9D55AE6216 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		500C8EDC27AEFDD750931F18 /* LeapmotorLite.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LeapmotorLite.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		DECFBDD7C8E7A8BF06D895DC /* LMAES.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMAES.swift; sourceTree = "<group>"; };
-		6D2E248EFC739555D286E4DC /* LMHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMHash.swift; sourceTree = "<group>"; };
-		67F57E28C9A943DAA774356D /* LMRSA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMRSA.swift; sourceTree = "<group>"; };
-		8A8E8597BBF55A9A5D757419 /* LMSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSelfTest.swift; sourceTree = "<group>"; };
-		CBD917AC22C24562168AC9DD /* LMSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSigner.swift; sourceTree = "<group>"; };
-		1D7FAE5111E07ED84CAB5DEA /* LMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMClient.swift; sourceTree = "<group>"; };
-		526F4AF88AD65B2AA7EC6894 /* LMEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMEndpoints.swift; sourceTree = "<group>"; };
-		8AF9788C8C65178ADC0B9968 /* LMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMModels.swift; sourceTree = "<group>"; };
-		F9E46160DBFCB7CF96FF25C7 /* LMSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSessionStore.swift; sourceTree = "<group>"; };
-		D73CF31005539C1C16CC4BC0 /* ControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelView.swift; sourceTree = "<group>"; };
-		CA8839B5D92AF356DA3E3772 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
-		6E1C2C59717EC64683D1134E /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
-		F74F9AB52A32C95642475E0B /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		6F5855BD847CBBC1C0C48546 /* SelfTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfTestView.swift; sourceTree = "<group>"; };
-		31435B0064E63C981A9754A8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		BAD92FC46EDAAB325E4CBB13 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		4EC379FB7D7EFFC185646B9C /* LMAES.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMAES.swift; sourceTree = "<group>"; };
+		5B9FC8D85BF79532E12462FE /* LMHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMHash.swift; sourceTree = "<group>"; };
+		EAD8BB22C723B03DA3D6B4E8 /* LMRSA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMRSA.swift; sourceTree = "<group>"; };
+		21605AA59368B17620004802 /* LMSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSelfTest.swift; sourceTree = "<group>"; };
+		46236D7624BAB005E0678FC4 /* LMSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSigner.swift; sourceTree = "<group>"; };
+		248EAADE93448B39F347B406 /* LMClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMClient.swift; sourceTree = "<group>"; };
+		D3373F1032F8959D7495DA76 /* LMEndpoints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMEndpoints.swift; sourceTree = "<group>"; };
+		111D949AB8906CEF24EB9CBC /* LMModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMModels.swift; sourceTree = "<group>"; };
+		4741E8039A8C004B2345718F /* LMSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSessionStore.swift; sourceTree = "<group>"; };
+		326FA4819659E3F08EF88084 /* ControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelView.swift; sourceTree = "<group>"; };
+		480C6EB9AB5E2F713BC25983 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		884B09FD5CEB6F0A0AB61C64 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		E8D2C4948680375B8853E1A6 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		14D1F81B894F702F257C5CD1 /* SelfTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfTestView.swift; sourceTree = "<group>"; };
+		D451076F292E7189C3B2DBC6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E662A36FCA7763CF25013E50 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		503EA159B38B35A8F3176C8D /* LeapmotorLiteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeapmotorLiteApp.swift; sourceTree = "<group>"; };
 		1FC48A12AC8DA9A5E82D0931 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		8AE43D51CDFC2B26D297A33E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B0213FAF817FCC4915F0DC1C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,11 +94,11 @@
 		4EBB3F0B5061532FFAABC0AF /* Crypto */ = {
 			isa = PBXGroup;
 			children = (
-				DECFBDD7C8E7A8BF06D895DC /* LMAES.swift */,
-				6D2E248EFC739555D286E4DC /* LMHash.swift */,
-				67F57E28C9A943DAA774356D /* LMRSA.swift */,
-				8A8E8597BBF55A9A5D757419 /* LMSelfTest.swift */,
-				CBD917AC22C24562168AC9DD /* LMSigner.swift */,
+				4EC379FB7D7EFFC185646B9C /* LMAES.swift */,
+				5B9FC8D85BF79532E12462FE /* LMHash.swift */,
+				EAD8BB22C723B03DA3D6B4E8 /* LMRSA.swift */,
+				21605AA59368B17620004802 /* LMSelfTest.swift */,
+				46236D7624BAB005E0678FC4 /* LMSigner.swift */,
 			);
 			path = Crypto;
 			sourceTree = "<group>";
@@ -106,9 +106,9 @@
 		AE2A4A41186ED8DD7576F55D /* API */ = {
 			isa = PBXGroup;
 			children = (
-				1D7FAE5111E07ED84CAB5DEA /* LMClient.swift */,
-				526F4AF88AD65B2AA7EC6894 /* LMEndpoints.swift */,
-				8AF9788C8C65178ADC0B9968 /* LMModels.swift */,
+				248EAADE93448B39F347B406 /* LMClient.swift */,
+				D3373F1032F8959D7495DA76 /* LMEndpoints.swift */,
+				111D949AB8906CEF24EB9CBC /* LMModels.swift */,
 			);
 			path = API;
 			sourceTree = "<group>";
@@ -116,7 +116,7 @@
 		455A1775BB2985D385F39223 /* Store */ = {
 			isa = PBXGroup;
 			children = (
-				F9E46160DBFCB7CF96FF25C7 /* LMSessionStore.swift */,
+				4741E8039A8C004B2345718F /* LMSessionStore.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -124,13 +124,13 @@
 		D154BF9AE96ED6D023BE10B6 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				D73CF31005539C1C16CC4BC0 /* ControlPanelView.swift */,
-				CA8839B5D92AF356DA3E3772 /* DashboardView.swift */,
-				6E1C2C59717EC64683D1134E /* DiagnosticsView.swift */,
-				F74F9AB52A32C95642475E0B /* LoginView.swift */,
-				6F5855BD847CBBC1C0C48546 /* SelfTestView.swift */,
-				31435B0064E63C981A9754A8 /* SettingsView.swift */,
-				BAD92FC46EDAAB325E4CBB13 /* Theme.swift */,
+				326FA4819659E3F08EF88084 /* ControlPanelView.swift */,
+				480C6EB9AB5E2F713BC25983 /* DashboardView.swift */,
+				884B09FD5CEB6F0A0AB61C64 /* DiagnosticsView.swift */,
+				E8D2C4948680375B8853E1A6 /* LoginView.swift */,
+				14D1F81B894F702F257C5CD1 /* SelfTestView.swift */,
+				D451076F292E7189C3B2DBC6 /* SettingsView.swift */,
+				E662A36FCA7763CF25013E50 /* Theme.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -138,7 +138,7 @@
 		57237621A0BE1CD5D3D4F0EE /* Support */ = {
 			isa = PBXGroup;
 			children = (
-				8AE43D51CDFC2B26D297A33E /* Info.plist */,
+				B0213FAF817FCC4915F0DC1C /* Info.plist */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -213,22 +213,22 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				431DDD8770EA552864506B9B /* LMAES.swift in Sources */,
-				43A8947F5769514899CBB511 /* LMHash.swift in Sources */,
-				99B0F85D7E8BB391F24625E7 /* LMRSA.swift in Sources */,
-				4A9EB9E02136315828B92F47 /* LMSelfTest.swift in Sources */,
-				8195B78798F3346B820ACE08 /* LMSigner.swift in Sources */,
-				97C4CD79605E57FFF1489338 /* LMClient.swift in Sources */,
-				FCCFEA529BB8AF8F506713A9 /* LMEndpoints.swift in Sources */,
-				A5EB8150E93165961AADF3BA /* LMModels.swift in Sources */,
-				D349622BB27C4BC49A2AB8E4 /* LMSessionStore.swift in Sources */,
-				147754A735CDF9CC109CF664 /* ControlPanelView.swift in Sources */,
-				1A6C0A1907BFF0D999541487 /* DashboardView.swift in Sources */,
-				6716FD3CACA5B48B31FF4FB9 /* DiagnosticsView.swift in Sources */,
-				CFA14A1F263488FDAAA44FEB /* LoginView.swift in Sources */,
-				3714E809EA5913572BB63871 /* SelfTestView.swift in Sources */,
-				F8AEA72856FAF00DC6B4C9B1 /* SettingsView.swift in Sources */,
-				08EF9795A8DA67A69E41A420 /* Theme.swift in Sources */,
+				A8C4605FC0BD6A2EB1967656 /* LMAES.swift in Sources */,
+				5C8D5C329F193CC072D2BFD2 /* LMHash.swift in Sources */,
+				69171C6192F603E4899EF04D /* LMRSA.swift in Sources */,
+				7BD7FBF07B39253D76A1123A /* LMSelfTest.swift in Sources */,
+				D3CC54788A45AC052294BDDB /* LMSigner.swift in Sources */,
+				A2A03EDF6D2846BE4EBA4DF3 /* LMClient.swift in Sources */,
+				67DB4B82330D1C8B287DA291 /* LMEndpoints.swift in Sources */,
+				9A757E750C4A958BF5B13A6C /* LMModels.swift in Sources */,
+				B0F08AC632E7AB750BAC9A65 /* LMSessionStore.swift in Sources */,
+				6451783540D5C3D218B3B9DF /* ControlPanelView.swift in Sources */,
+				B0A122A53DA94A1FD96246DD /* DashboardView.swift in Sources */,
+				95AD1011D983EEA87E78FCC4 /* DiagnosticsView.swift in Sources */,
+				6907F2DD1482F6BEE24E3450 /* LoginView.swift in Sources */,
+				D2A095BDDF9A875C86BBFEB5 /* SelfTestView.swift in Sources */,
+				9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */,
+				7905221120FBB9DB8B74B787 /* Theme.swift in Sources */,
 				AD7D1D4EEC7C579D1396E3C3 /* LeapmotorLiteApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

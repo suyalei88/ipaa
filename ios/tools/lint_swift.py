@@ -232,7 +232,10 @@ def main() -> int:
     verbose = "--verbose" in sys.argv
 
     files = []
-    for dirpath, _, fns in os.walk(root):
+    for dirpath, dirs, fns in os.walk(root):
+        # ★ os.walk 的遍历顺序跟文件系统有关，不排序的话 Windows / Linux 上
+        #   报告顺序不一样，CI 日志和本地对不上，容易看错行。
+        dirs.sort()
         for fn in sorted(fns):
             if fn.endswith(".swift"):
                 files.append(os.path.join(dirpath, fn))
@@ -245,7 +248,8 @@ def main() -> int:
     for f in files:
         src = open(f, encoding="utf-8").read()
         hits = check(f, src)
-        rel = os.path.relpath(f, os.path.dirname(root))
+        # 统一成 '/'，Windows 上 os.path.relpath 会给反斜杠
+        rel = os.path.relpath(f, os.path.dirname(root)).replace(os.sep, "/")
         if hits:
             total += len(hits)
             print(f"\n{rel}")
