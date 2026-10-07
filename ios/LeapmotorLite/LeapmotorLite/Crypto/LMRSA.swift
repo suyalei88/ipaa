@@ -48,7 +48,10 @@ enum LMRSA {
         // 优先按 SPKI 剥壳；已是 PKCS#1 时 pkcs1FromSPKI 返回 nil → 直接用原数据
         let pkcs1 = pkcs1FromSPKI(spki) ?? spki
 
-        let attrs: [CFString: Any] = [
+        // 键类型必须是 String：写成 [CFString: Any] 的话，
+        // `kSecAttrKeyType as String` 这个表达式的类型对不上（编译报
+        // "cannot convert value of type 'String' to expected dictionary key type 'CFString'"）。
+        let attrs: [String: Any] = [
             kSecAttrKeyType as String:  kSecAttrKeyTypeRSA,
             kSecAttrKeyClass as String: kSecAttrKeyClassPublic,
         ]

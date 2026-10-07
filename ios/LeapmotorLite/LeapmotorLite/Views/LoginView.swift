@@ -55,7 +55,10 @@ struct LoginView: View {
                     Section {
                         Text(message)
                             .font(.footnote)
-                            .foregroundStyle(isError ? .red : .secondary)
+                            // 两边都必须显式写成 Color.*：
+                            // .red 会解析成 Color、.secondary 会解析成 HierarchicalShapeStyle，
+                            // 三元运算符要求两分支同类型，混用直接编译失败。
+                            .foregroundStyle(isError ? Color.red : Color.secondary)
                     }
                 }
 

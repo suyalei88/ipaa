@@ -20,7 +20,10 @@ struct ControlPanelView: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let v = client.selectedVehicle {
                     HStack(spacing: 8) {
-                        Image(systemName: "car.fill").foregroundStyle(.lmAccent)
+                        // 注意：不能写 .lmAccent。
+                        // foregroundStyle 的参数是泛型 ShapeStyle，前导点简写
+                        // 推断不出具体类型，会报 "type 'ShapeStyle' has no member 'lmAccent'"。
+                        Image(systemName: "car.fill").foregroundStyle(Color.lmAccent)
                         Text(v.displayName).font(.headline)
                         Spacer()
                         if let locked = client.isLocked {

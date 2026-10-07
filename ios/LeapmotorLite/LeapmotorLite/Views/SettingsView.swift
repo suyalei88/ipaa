@@ -43,7 +43,9 @@ struct SettingsView: View {
             }
 
             Section("车辆") {
-                ForEach(client.vehicles) { v in
+                // 显式给 id: —— 不依赖 Identifiable 的隐式推断，
+                // 也就不会被 ForEach 的 Binding<C> 重载抢走（那会级联出一堆怪错误）。
+                ForEach(client.vehicles, id: \.vin) { v in
                     Button {
                         client.select(vehicle: v)
                         Task { await client.refreshAll() }
@@ -55,7 +57,7 @@ struct SettingsView: View {
                             }
                             Spacer()
                             if client.selectedVehicle?.vin == v.vin {
-                                Image(systemName: "checkmark").foregroundStyle(.lmAccent)
+                                Image(systemName: "checkmark").foregroundStyle(Color.lmAccent)
                             }
                         }
                     }
