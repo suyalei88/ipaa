@@ -46,7 +46,7 @@ jobs:
         run: pip install --quiet -r requirements.txt
 
       - name: Swift 陷阱静态检查
-        # 拦截「只能靠真机编译/运行才发现」的坑（R1~R11）：
+        # 拦截「只能靠真机编译/运行才发现」的坑（R1~R13）：
         #   R1 URLComponents 拼 URL（'+' 不转义 → 1019）
         #   R2 [CFString: Any]     R3 foregroundStyle(.自定义色)
         #   R4 三元两分支类型不同   R5 withUnsafe 闭包独占访问
@@ -55,6 +55,10 @@ jobs:
         #   R9 读依赖当前时间的锁定状态却没挂 .lmClock（倒计时冻住/按钮永远禁用）
         #   R10 用了 MapKit / CoreLocation / UIKit / CoreBluetooth 的符号却没 import
         #   R11 CoreBluetooth delegate 回调写 @Published 却没保证主线程
+        #   R12 局部变量遮蔽同文件的方法名（报「cannot call value of non-function type」）
+        #   R13 Text(...) 里超过 3 个 `+` 拼接 → Swift 类型检查器超时
+        #       （2026-10-08 真烧过一轮：ControlPanelView.swift:595 报
+        #        "unable to type-check this expression in reasonable time"）
         run: python3 ios/tools/lint_swift.py
 
       - name: 生成 App 图标（校验脚本可跑）
@@ -116,7 +120,41 @@ jobs:
           sips -g pixelWidth -g pixelHeight "$ICON"
 
       - name: 构建 IPA
-        run: bash ios/build_ipa.sh
+        # 同时 tee 一份到 $RUNNER_TEMP/build.log，供下面的「失败摘要」步骤取用。
+        # `set -o pipefail` 保证 build_ipa.sh 失败时这一步也失败（否则 tee 会
+        # 把退出码盖成 0，构建挂了 CI 却绿）。
+        run: |
+          set -o pipefail
+          bash ios/build_ipa.sh 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: 构建失败时把编译错误写进摘要
+        # ★ 为什么要有这一步：
+        #   GitHub 的 job 日志接口会 302 到 Azure Blob
+        #   （productionresultssa*.blob.core.windows.net）。在受限网络里那个域
+        #   拿不到，于是「CI 红了但看不到为什么」—— 2026-10-08 就卡在这上面。
+        #   而 job summary 走 api.github.com（可读），所以把关键错误搬过来。
+        #   当时真凶是 R13：
+        #     ControlPanelView.swift:595:9: error: the compiler is unable to
+        #     type-check this expression in reasonable time
+        if: failure()
+        run: |
+          LOG="$RUNNER_TEMP/build.log"
+          {
+            echo "### 构建失败"
+            echo ""
+            echo '```'
+            if [ -f "$LOG" ]; then
+              grep -E "error:|note: |The following build commands failed|BUILD FAILED" "$LOG" \
+                | head -80 || true
+              if ! grep -q "error:" "$LOG"; then
+                echo "（日志里没有 error: 行，下面给最后 60 行）"
+                tail -60 "$LOG"
+              fi
+            else
+              echo "（没找到 $LOG）"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 校验构建指纹已注入
         # ★ 为什么要有这一步：2026-10-07 出过一版包，版本号还是 1.0.0 (1)、

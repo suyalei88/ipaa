@@ -496,6 +496,18 @@ struct ChargeView: View {
 
     // MARK: - 待确认项
 
+    /// ⚠️ 长文案先算成 String 再交给 Text ——
+    ///    `Text("a" + "b" + …)` 超过 2~3 段会让 Swift 类型检查器超时
+    ///    （`Text` 同时有 LocalizedStringKey / String 两个 init，
+    ///     `+` 又有几十个重载，每个字面量都要参与重载推断 → 候选数指数增长）。
+    ///    CI 上真报过 "unable to type-check this expression in reasonable time"。
+    private var voltage1177Note: String {
+        "★ 之前标成「充电功率 ×100 W」，已被实测推翻："
+        + "没充电时它是 732.7，而功率在没充电时必须为 0。"
+        + "充电时 736.7、高出 4 V，符合「充电时母线电压抬升」，"
+        + "所以它是电压类量。具体是电池包电压还是充电机输出电压仍未定。"
+    }
+
     private var guessCard: some View {
         LMCard(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
@@ -509,10 +521,7 @@ struct ChargeView: View {
 
                 if let v = client.packVoltageGuessV {
                     keyValue("1177", String(format: "%.1f V", v))
-                    Text("★ 之前标成「充电功率 ×100 W」，已被实测推翻："
-                         + "没充电时它是 732.7，而功率在没充电时必须为 0。"
-                         + "充电时 736.7、高出 4 V，符合「充电时母线电压抬升」，"
-                         + "所以它是电压类量。具体是电池包电压还是充电机输出电压仍未定。")
+                    Text(voltage1177Note)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

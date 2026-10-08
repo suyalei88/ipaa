@@ -574,10 +574,15 @@ struct DiagnosticsView: View {
 
             · cmdid 130 {"value":"true"|"false"} —— 抓包里出现过，但没有任何证据
               说明它开关的是什么。
-            · cmdid 230 {"value":"3"} —— 风量 3 档。范围（1~9 档）来自车辆配置接口
-              funcConfig.HVAC.fan，但「3 档」这个 payload 本身没样本。
-            · cmdid 230 {"value":"2","temperature":"24"} —— 温度。字段名 temperature
-              是按 funcConfig.HVAC.temperature **反推**的，最不确定的一条。
+            · cmdid 230 {"value":"1"} —— 车窗开度 1。抓包里 230 只出现过
+              {"value":"0"}（全关）和 {"value":"2"}（一个开度），「1」是否存在未知。
+
+            ★ 2026-10-08 修正：这里原来挂着两条 ——
+              「cmdid 230 {"value":"3"} 风量 3 档」和
+              「cmdid 230 {"value":"2","temperature":"24"} 温度」。
+              **两条都挂错了 cmdid**：230 是车窗，发过去只会动车窗，
+              根本调不到风量和温度。已删除。
+              空调风量 / 温度的正确入口是车控页的「空调风量 / 温度」卡（cmdid 170）。
 
             ★ 顺带记一笔：抓包里 cmdid 161 只以「查询」形式出现过
               （getappointment，见上面「官方接口探测」），从来没有以「下发」出现过，

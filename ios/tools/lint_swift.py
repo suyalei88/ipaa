@@ -65,6 +65,20 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       错误信息**完全不提遮蔽**，只说不是函数，翻半天。
       Swift 对这类撞名没有任何编译警告，只能靠规则兜。
 
+  R13 Text(...) 里的长 `+` 拼接链
+      `Text("a" + "b" + "c" + "d" + …)` 会让 Swift 类型检查器超时：
+        error: the compiler is unable to type-check this expression in
+        reasonable time; try breaking up the expression into distinct
+        sub-expressions
+      ★ 2026-10-08 真烧过一轮 CI（ControlPanelView.swift:595）。
+      原因不是「字符串太长」，而是 **Text 同时有 LocalizedStringKey 和
+      String 两个 init**，而 `+` 又有几十个重载 —— 每个字面量都要参与
+      重载推断，候选数随 `+` 的个数指数增长，7 段就足够炸。
+      修法：长文案抽成 `-> String` 的计算属性，再 `Text(那个属性)`。
+      这个错误本地文本检查 / SwiftLint 都看不出来，只有真编译才暴露，
+      而拿到 CI 日志本身就要绕一圈（GitHub 把日志放在 Azure Blob 上），
+      所以宁可早拦。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -106,7 +120,12 @@ RULES = {
     "R10": "用了系统框架的符号却没 import 那个框架（MapKit / CoreLocation / UIKit / CoreBluetooth）",
     "R11": "CoreBluetooth delegate 回调里写 @Published 但没保证主线程（编译期无感，运行时崩/不刷新）",
     "R12": "局部变量名与同文件的方法名同名 → 遮蔽方法调用（报「cannot call value of non-function type」）",
+    "R13": "Text(...) 里超过 3 个 `+` 拼接 → Swift 类型检查器超时（抽成 String 计算属性）",
 }
+
+# R13 用：Text(...) 参数里允许的最大 `+` 个数。
+#   实测 7 段（6 个 `+`）必炸；4~5 段能过但已贴边，所以阈值取 3（= 4 段）。
+TEXT_PLUS_LIMIT = 3
 
 # R10 用：框架 → 该框架里「一眼能认出来」的符号正则
 #
@@ -432,6 +451,47 @@ def check(path: str, src: str):
                 add(m.start(), "R12",
                     f"局部变量 `{name}` 与同文件的方法名撞了 → 会遮蔽方法调用，"
                     f"报的却是「cannot call value of non-function type」。改个名")
+
+    # R13 —— Text(...) 里的长 `+` 拼接链
+    #
+    # ★ 2026-10-08 真烧过一轮 CI：
+    #     ControlPanelView.swift:595:9: error: the compiler is unable to
+    #     type-check this expression in reasonable time; try breaking up the
+    #     expression into distinct sub-expressions
+    #
+    #   原因**不是**「字符串太长」，而是：
+    #     · `Text` 同时有 `LocalizedStringKey` 和 `String` 两个 init
+    #     · `+` 在 Swift 里有几十个重载（String / Int / Double / Array …）
+    #   于是 `Text("a" + "b" + … + "g")` 里每个字面量都要参与重载推断，
+    #   候选数随 `+` 的个数**指数增长**，7 段拼接就足够让类型检查器超时。
+    #
+    #   修法（已在本仓库落地）：把长文案抽成 `-> String` 的计算属性，再
+    #   `Text(那个属性)`。类型被注解钉死成 String 之后，推断是线性的。
+    #
+    #   阈值取 3（= 4 段）而不是 6：实测 4~5 段能编过但已经很贴边，
+    #   而且这个错误**本地静态检查、SwiftLint 都看不出来**，只有真编译才暴露，
+    #   排查成本极高（要先拿到 CI 日志）。宁可早一点拦住。
+    #
+    #   注意：`code` 里的字符串已被清成空格，所以这里数到的 `+` 一定是
+    #   真正的拼接运算符，不是字符串内容。
+    for m in re.finditer(r"\bText\s*\(", code):
+        start = m.end() - 1          # 指向 '('
+        depth, j, plus = 0, start, 0
+        while j < len(code):
+            ch = code[j]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif ch == "+" and depth == 1:
+                plus += 1
+            j += 1
+        if plus >= TEXT_PLUS_LIMIT:
+            add(m.start(), "R13",
+                f"Text(...) 里有 {plus} 个 `+`（{plus + 1} 段拼接）→ "
+                f"Swift 类型检查器可能超时；抽成 `-> String` 的计算属性再 Text(它)")
 
     # R10 —— 用了某个系统框架的类型，却没 import 那个框架
     #

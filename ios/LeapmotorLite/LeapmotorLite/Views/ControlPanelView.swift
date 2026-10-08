@@ -233,6 +233,15 @@ struct ControlPanelView: View {
 
     private var windowOpenings: [LMEndpoints.WindowOpening] { [.close, .micro, .half] }
 
+    /// 车窗卡里那段长说明的后半截（见 footnoteText 的注释：
+    /// 长文案抽成 String 属性，避免 `Text("a" + "b" + …)` 让类型检查器超时）。
+    private var windowFootnoteTail: String {
+        "。0 = 全关，2 / 5 = 两个开度。\n"
+        + "⚠️「2 是微开、5 是半开」是按开度大小排的 —— "
+        + "抓包只录到过这两个值，没记录当时按的是哪个按钮。"
+        + "实测反了说一声，改一行就行。"
+    }
+
     private var windowCard: some View {
         VStack(spacing: 10) {
             SectionHeader(text: "车窗")
@@ -250,17 +259,16 @@ struct ControlPanelView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    // ⚠️ 这里必须用 Text + Text 拼接，**不能**写成
-                    //    Text("...**加粗**..." + "...") —— SwiftUI 只在
-                    //    **字符串字面量**上解析 markdown；一旦用 `+` 拼成
-                    //    String，加粗就失效，用户会看到字面的星号。
+                    // ⚠️ 两件事：
+                    //   ① 想加粗只能用 `Text + Text` —— SwiftUI 只在**字符串字面量**
+                    //      上解析 markdown，用 `+` 拼成 String 之后 `**` 会原样显示。
+                    //   ② 但拼接段数不能多：`Text("a" + "b" + …)` 会让类型检查器
+                    //      超时（见下面 footnoteText 的注释）。所以长的那段抽成
+                    //      String 属性，这里只留 3 个 Text 项。
                     (
                         Text("cmdid \(LMEndpoints.windowCmdid)，一次会让")
                         + Text("四个车窗一起动").bold()
-                        + Text("。0 = 全关，2 / 5 = 两个开度。\n"
-                               + "⚠️「2 是微开、5 是半开」是按开度大小排的 —— "
-                               + "抓包只录到过这两个值，没记录当时按的是哪个按钮。"
-                               + "实测反了说一声，改一行就行。")
+                        + Text(windowFootnoteTail)
                     )
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -591,14 +599,32 @@ struct ControlPanelView: View {
 
     // MARK: - 脚注
 
+    /// ★★ 这段文案必须先算成 String 再交给 Text，**不能**直接写
+    ///    `Text("a" + "b" + "c" + …)` —— CI 上真报过：
+    ///
+    ///      error: the compiler is unable to type-check this expression in
+    ///      reasonable time; try breaking up the expression into distinct
+    ///      sub-expressions
+    ///
+    ///    原因不是「太长」，而是 **Text 同时有 `LocalizedStringKey` 和 `String`
+    ///    两个 init**：`+` 链里每个字面量都要参与重载推断，候选数指数增长，
+    ///    7 段拼接就足够让类型检查器超时。
+    ///    拆成一个 `-> String` 的属性后，`+` 的类型被注解钉死成 String，
+    ///    推断是线性的，秒过。
+    ///
+    ///    ⚠️ 所以本文件里凡是超过 2~3 段的拼接，一律走这个模式。
+    private var footnoteText: String {
+        "指令下发后会轮询结果。部分功能需要车辆处于对应状态（例如上电前要先解锁）。"
+        + "同一账号在官方 App 与本 App 之间不要频繁交叉操作。\n"
+        + "已抓包双向验证的：门锁 110、后备箱 130、鸣笛 120、空调开关 170、车窗 230、上电 400。\n"
+        + "未验证的只有两处：① 空调风量 / 温度的 payload 组合（字段名和档位范围都有据，"
+        + "但没人调过，所以没有样本）；② 车窗的「2 = 微开 / 5 = 半开」哪个是哪个"
+        + "（两个值都录到了，但没记录当时按的是哪个按钮）。"
+        + "这两处试的时候留意车有没有真的响应。"
+    }
+
     private var footnote: some View {
-        Text("指令下发后会轮询结果。部分功能需要车辆处于对应状态（例如上电前要先解锁）。"
-             + "同一账号在官方 App 与本 App 之间不要频繁交叉操作。\n"
-             + "已抓包双向验证的：门锁 110、后备箱 130、鸣笛 120、空调开关 170、车窗 230、上电 400。\n"
-             + "未验证的只有两处：① 空调风量/温度的 payload 组合（字段名和档位范围都有据，"
-             + "但没人调过，所以没有样本）；② 车窗的「2 = 微开 / 5 = 半开」哪个是哪个"
-             + "（两个值都录到了，但没记录当时按的是哪个按钮）。"
-             + "这两处试的时候留意车有没有真的响应。")
+        Text(footnoteText)
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)

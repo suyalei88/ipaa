@@ -122,6 +122,25 @@ struct VehicleProfileView: View {
 
     // MARK: - 空调能力范围
 
+    /// ⚠️ 长文案必须先算成 String 再交给 Text ——
+    ///    `Text("a" + "b" + …)` 超过 2~3 段会让 Swift 类型检查器超时
+    ///    （`Text` 同时有 LocalizedStringKey / String 两个 init，
+    ///     每个字面量都要参与重载推断，候选数指数增长）。
+    ///    CI 上真报过 "unable to type-check this expression in reasonable time"。
+    ///    另外这段是 `+` 拼出来的 String，**不会**解析 markdown，
+    ///    所以这里也不能写 `**加粗**`（会原样显示星号）。
+    private var hvacNoteText: String {
+        "★ 这是「空调到底有几档」的唯一权威来源。\n"
+        + "⚠️ 2026-10-08 修正：这里以前写「抓包里 cmdid 230 只出现过 "
+        + "{\"value\":\"0\"|\"2\"|\"5\"}，很容易让人以为空调就三档」"
+        + "—— 那句话是错的。230 是车窗，不是空调；"
+        + "车窗确实只有三个开度（关 / 微开 / 半开），跟空调档位无关。\n"
+        + "空调的风量是 1~9 档、温度是 16~32 °C，就是上面这两个范围。\n"
+        + "这只证明车支持这些档位，没有证明 {\"operate\":\"manual\",…} "
+        + "这种 payload 服务端一定接受 —— 所以车控页把风量 / 温度"
+        + "单独放在标注了「未验证」的卡片里。"
+    }
+
     private func hvacCard(_ v: LMVehicle) -> some View {
         VStack(spacing: 10) {
             SectionHeader(text: "空调能力范围")
@@ -135,11 +154,7 @@ struct VehicleProfileView: View {
                             .foregroundStyle(.secondary)
                     }
                     Divider()
-                    Text("★ 这是「空调到底有几档」的唯一权威来源。\n"
-                         + "抓包里 cmdid 230 只出现过 {\"value\":\"0\"|\"2\"|\"5\"}，"
-                         + "很容易让人以为空调就三档；实际上风量是 1~9 档、温度是 16~32 °C。\n"
-                         + "⚠️ 这只证明**车支持**这些档位，没有证明 {\"value\":\"3\"} 这种 payload "
-                         + "服务端一定接受 —— 所以车控页把 1~9 档单独放在「未验证」卡片里。")
+                    Text(hvacNoteText)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -284,6 +299,17 @@ struct VehicleProfileView: View {
 
     // MARK: - cmdid 路线图
 
+    /// ⚠️ 长文案先算成 String 再交给 Text（原因见 hvacNoteText 的注释：
+    ///    `Text("a" + "b" + …)` 段数一多就会让 Swift 类型检查器超时）。
+    ///    另外这里是 `+` 拼的 String，不解析 markdown，所以不能写 `**加粗**`。
+    private var roadmapLegendText: String {
+        "绿色 = 本 App 已实现（有抓包确认的 payload）。\n"
+        + "灰色 = 已知编号但语义未确认，没有可靠 payload，故意不做 —— "
+        + "对一台真车下发「不知道干什么」的指令是不负责任的。\n"
+        + "这 \(LMEndpoints.allKnownCmdids.count) 个编号来自 "
+        + "sharecar 接口的 rightList（见上方「车辆分享」）。"
+    }
+
     private var cmdidRoadmapCard: some View {
         VStack(spacing: 10) {
             SectionHeader(text: "车控指令全集（路线图）")
@@ -322,11 +348,7 @@ struct VehicleProfileView: View {
                         }
                     }
                     Divider()
-                    Text("绿色 = 本 App 已实现（有抓包确认的 payload）。\n"
-                         + "灰色 = 已知编号但语义未确认，没有可靠 payload，**故意不做** —— "
-                         + "对一台真车下发「不知道干什么」的指令是不负责任的。\n"
-                         + "这 \(LMEndpoints.allKnownCmdids.count) 个编号来自 "
-                         + "sharecar 接口的 rightList（见上方「车辆分享」）。")
+                    Text(roadmapLegendText)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
