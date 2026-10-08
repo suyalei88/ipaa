@@ -20,9 +20,9 @@
 	     （2026-10-07 踩过：两版都是 1.0.0 (1)，用户装完说「跟上个版本一样」）。
 	     改完顺便把 LMBuildInfo.tag 也改掉，那里是给人看的说明。 -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.6</string>
+	<string>1.0.7</string>
 	<key>CFBundleVersion</key>
-	<string>7</string>
+	<string>8</string>
 
 	<!-- 构建指纹：由 ios/build_ipa.sh 在打包时注入（git 提交号 + UTC 构建时刻）。
 	     这是「这一版到底是哪一次构建」的最终判据 —— 手工改版本号总会忘，

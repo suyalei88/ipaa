@@ -44,8 +44,8 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            NavigationStack { DashboardView() }
-                .tabItem { Label("车况", systemImage: "car.fill") }
+            NavigationStack { LoveCarView() }
+                .tabItem { Label("爱车", systemImage: "car.fill") }
 
             NavigationStack { LocationView() }
                 .tabItem { Label("定位", systemImage: "location.fill") }

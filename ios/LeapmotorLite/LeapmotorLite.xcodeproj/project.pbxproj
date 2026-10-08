@@ -27,10 +27,10 @@
 		4C4904ED9704516D9B1A6C2B /* Car3DView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEE77136E2A2D1C1D300EE94 /* Car3DView.swift */; };
 		F288E6D7545C2089C17B3017 /* ChargeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56213D6C5F00FE3EBD2AD69D /* ChargeView.swift */; };
 		6451783540D5C3D218B3B9DF /* ControlPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 326FA4819659E3F08EF88084 /* ControlPanelView.swift */; };
-		B0A122A53DA94A1FD96246DD /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480C6EB9AB5E2F713BC25983 /* DashboardView.swift */; };
 		95AD1011D983EEA87E78FCC4 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 884B09FD5CEB6F0A0AB61C64 /* DiagnosticsView.swift */; };
 		C990ACEEF612FBECF2853C0E /* LocationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2232B272CB878B5367BDDB8 /* LocationView.swift */; };
 		6907F2DD1482F6BEE24E3450 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D2C4948680375B8853E1A6 /* LoginView.swift */; };
+		10A3B02F7E0803331B2AD39D /* LoveCarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 697A2E04EE1DD337750026C1 /* LoveCarView.swift */; };
 		D2A095BDDF9A875C86BBFEB5 /* SelfTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D1F81B894F702F257C5CD1 /* SelfTestView.swift */; };
 		9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D451076F292E7189C3B2DBC6 /* SettingsView.swift */; };
 		4815462BBC23FF3D6F58FF3C /* SignalExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */; };
@@ -65,10 +65,10 @@
 		CEE77136E2A2D1C1D300EE94 /* Car3DView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Car3DView.swift; sourceTree = "<group>"; };
 		56213D6C5F00FE3EBD2AD69D /* ChargeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChargeView.swift; sourceTree = "<group>"; };
 		326FA4819659E3F08EF88084 /* ControlPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlPanelView.swift; sourceTree = "<group>"; };
-		480C6EB9AB5E2F713BC25983 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		884B09FD5CEB6F0A0AB61C64 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		A2232B272CB878B5367BDDB8 /* LocationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationView.swift; sourceTree = "<group>"; };
 		E8D2C4948680375B8853E1A6 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		697A2E04EE1DD337750026C1 /* LoveCarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoveCarView.swift; sourceTree = "<group>"; };
 		14D1F81B894F702F257C5CD1 /* SelfTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfTestView.swift; sourceTree = "<group>"; };
 		D451076F292E7189C3B2DBC6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalExplorerView.swift; sourceTree = "<group>"; };
@@ -177,10 +177,10 @@
 				CEE77136E2A2D1C1D300EE94 /* Car3DView.swift */,
 				56213D6C5F00FE3EBD2AD69D /* ChargeView.swift */,
 				326FA4819659E3F08EF88084 /* ControlPanelView.swift */,
-				480C6EB9AB5E2F713BC25983 /* DashboardView.swift */,
 				884B09FD5CEB6F0A0AB61C64 /* DiagnosticsView.swift */,
 				A2232B272CB878B5367BDDB8 /* LocationView.swift */,
 				E8D2C4948680375B8853E1A6 /* LoginView.swift */,
+				697A2E04EE1DD337750026C1 /* LoveCarView.swift */,
 				14D1F81B894F702F257C5CD1 /* SelfTestView.swift */,
 				D451076F292E7189C3B2DBC6 /* SettingsView.swift */,
 				16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */,
@@ -290,10 +290,10 @@
 				4C4904ED9704516D9B1A6C2B /* Car3DView.swift in Sources */,
 				F288E6D7545C2089C17B3017 /* ChargeView.swift in Sources */,
 				6451783540D5C3D218B3B9DF /* ControlPanelView.swift in Sources */,
-				B0A122A53DA94A1FD96246DD /* DashboardView.swift in Sources */,
 				95AD1011D983EEA87E78FCC4 /* DiagnosticsView.swift in Sources */,
 				C990ACEEF612FBECF2853C0E /* LocationView.swift in Sources */,
 				6907F2DD1482F6BEE24E3450 /* LoginView.swift in Sources */,
+				10A3B02F7E0803331B2AD39D /* LoveCarView.swift in Sources */,
 				D2A095BDDF9A875C86BBFEB5 /* SelfTestView.swift in Sources */,
 				9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */,
 				4815462BBC23FF3D6F58FF3C /* SignalExplorerView.swift in Sources */,

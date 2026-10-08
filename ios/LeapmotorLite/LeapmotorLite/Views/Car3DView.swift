@@ -1,6 +1,62 @@
 import SwiftUI
 import WebKit
 
+// MARK: - 喂给官方查看器的两个 JSON（共享）
+
+/// 官方 `index.js` 只认两个 JSON 字符串，全 App 只在这里构造一次。
+///
+/// 为什么抽出来：爱车页要**内嵌**一个可拖动的 3D 车模卡（固定高度），
+/// 而「3D 看车」是全屏页 —— 两处必须喂**完全一样**的参数，
+/// 否则同一台车在两个地方会长得不一样（车机会退回查看器的内置默认值，
+/// 变成 B10 / 2025 / 510悦享智驾版）。
+enum Car3DConfig {
+
+    /// 对应 `index.js` 的 `parseServerJson()` —— 直接吃 `3d/key` 的 `modelParam`。
+    ///
+    /// 字段名必须与官方一致（`carType` / `year` / `carTypeCode` / `colorCode` / `roofColor`）。
+    static func serverJSON(for client: LMClient) -> String {
+        let mp = client.car3DKey?.modelParam
+        var d: [String: Any] = [
+            "carType": mp?.carType ?? "D19",
+            "year": mp?.year ?? 2026,
+            "carTypeCode": mp?.carTypeCode ?? "720智尊版 六座",
+            "colorCode": mp?.colorCode ?? 0,
+            "roofColor": mp?.roofColor ?? "0",
+            // 左舵 0 / 右舵 1
+            "rudder": 0,
+            // "0" = 让查看器按车型取默认座位数（D19 → 6）
+            "seat": "0",
+            "sdkVersion": "3.24.2",
+            "licenseNumber": "",
+        ]
+        if let sel = mp?.selection, sel != "null", !sel.isEmpty {
+            d["selection"] = sel
+        }
+        return jsonString(d)
+    }
+
+    /// 对应 `parseAppJson()` —— 画布尺寸必须跟真实视图一致，否则车会被裁切。
+    ///
+    /// ★ 内嵌卡每次尺寸变化（旋转 / 分屏）都会重新走这里，
+    ///   所以不要缓存结果。
+    static func appJSON(width: CGFloat, height: CGFloat) -> String {
+        jsonString([
+            "width": Int(width.rounded()),
+            "height": Int(height.rounded()),
+            "energy": 0,
+            "inland": 0,
+        ])
+    }
+
+    static func jsonString(_ obj: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: []),
+              let s = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return s
+    }
+}
+
 // MARK: - 3D 看车
 
 /// 官方 3D 车模页。
@@ -39,8 +95,9 @@ struct Car3DView: View {
             ZStack {
                 Color(.systemBackground).ignoresSafeArea()
 
-                Car3DWebView(serverJSON: serverJSON,
-                             appJSON: appJSON(width: geo.size.width, height: geo.size.height),
+                Car3DWebView(serverJSON: Car3DConfig.serverJSON(for: client),
+                             appJSON: Car3DConfig.appJSON(width: geo.size.width,
+                                                          height: geo.size.height),
                              status: $status,
                              ready: $ready,
                              failure: $failure)
@@ -71,6 +128,13 @@ struct Car3DView: View {
                             Text(status)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if !hasModelParam {
+                                Text("未取到 3d/key，先用默认版型（D19 六座）渲染")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                            }
                         }
                     }
                 }
@@ -87,49 +151,12 @@ struct Car3DView: View {
     }
 
     // MARK: - 喂给官方查看器的两个 JSON
+    //
+    // 构造逻辑已抽到文件顶部的 `Car3DConfig`，因为爱车页的内嵌车模卡
+    // 必须和这个全屏页喂**完全一样**的参数。
 
-    /// 对应 `index.js` 里的 `parseServerJson()` —— 直接吃 `3d/key` 的 `modelParam`。
-    ///
-    /// 字段名必须与官方一致（`carType` / `year` / `carTypeCode` / `colorCode` / `roofColor`），
-    /// 否则查看器会退回它自己的默认值（B10 / 2025 / 510悦享智驾版），车就变成别的车型。
-    private var serverJSON: String {
-        let mp = client.car3DKey?.modelParam
-        var d: [String: Any] = [
-            "carType": mp?.carType ?? "D19",
-            "year": mp?.year ?? 2026,
-            "carTypeCode": mp?.carTypeCode ?? "720智尊版 六座",
-            "colorCode": mp?.colorCode ?? 0,
-            "roofColor": mp?.roofColor ?? "0",
-            // 左舵 0 / 右舵 1
-            "rudder": 0,
-            // "0" = 让查看器按车型取默认座位数（D19 → 6）
-            "seat": "0",
-            "sdkVersion": "3.24.2",
-            "licenseNumber": "",
-        ]
-        if let sel = mp?.selection, sel != "null", !sel.isEmpty {
-            d["selection"] = sel
-        }
-        return Car3DView.jsonString(d)
-    }
-
-    /// 对应 `parseAppJson()` —— 画布尺寸必须跟真实视图一致，否则车会被裁切。
-    private func appJSON(width: CGFloat, height: CGFloat) -> String {
-        Car3DView.jsonString([
-            "width": Int(width.rounded()),
-            "height": Int(height.rounded()),
-            "energy": 0,
-            "inland": 0,
-        ])
-    }
-
-    static func jsonString(_ obj: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: []),
-              let s = String(data: data, encoding: .utf8) else {
-            return "{}"
-        }
-        return s
-    }
+    /// 是否已经拿到 `3d/key`（拿不到就用默认版型兜底，见 `Car3DConfig`）。
+    private var hasModelParam: Bool { client.car3DKey?.modelParam != nil }
 }
 
 // MARK: - WKWebView 包装
@@ -193,7 +220,10 @@ struct Car3DWebView: UIViewRepresentable {
         private let failure: Binding<String?>
 
         weak var webViewRef: WKWebView?
-        private var serverJSON = "{}"
+        /// ★ 叫 `serverJSONText` 而不是 `serverJSON`：
+        ///   同文件里 `Car3DConfig.serverJSON(for:)` 是个方法名，
+        ///   属性叫同名会遮蔽它（lint R12）。
+        private var serverJSONText = "{}"
         private var appJSONText = "{}"
         private var booted = false
         private var lastSize: CGSize = .zero
@@ -207,7 +237,7 @@ struct Car3DWebView: UIViewRepresentable {
         // MARK: 启动
 
         func start(serverJSON: String, appJSON: String) {
-            self.serverJSON = serverJSON
+            self.serverJSONText = serverJSON
             self.appJSONText = appJSON
             do {
                 let url = try Car3DServer.shared.pageURL()
@@ -283,7 +313,7 @@ struct Car3DWebView: UIViewRepresentable {
                   // window.prompt("onFirstFrame") 上报给原生（见 handleSwitchCar）
                   if (typeof window.onIOSWebview === 'function') { window.onIOSWebview(); }
                   post({event:'api-ready'});
-                  window.newInit(\(Self.jsLiteral(serverJSON)), \(Self.jsLiteral(appJSONText)));
+                  window.newInit(\(Self.jsLiteral(serverJSONText)), \(Self.jsLiteral(appJSONText)));
                   post({event:'init-called'});
                 } catch (e) {
                   post({event:'error', message: String(e)});

@@ -173,9 +173,11 @@ def test_car3d_assets() -> None:
               "lastKnownFileType = folder; path = Car3D;" in p)
         check("Car3D 进了 Resources build phase", "Car3D in Resources" in p)
 
-    # 入口：DashboardView 必须挂上 Car3DView
-    dash = read("Views/DashboardView.swift")
-    check("车况页挂了 3D 看车入口", "Car3DView()" in dash)
+    # 入口：爱车页必须同时挂上「内嵌车模」和「全屏看车」
+    love = read("Views/LoveCarView.swift")
+    check("爱车页内嵌了 3D 车模（Car3DWebView 直接出现在本页）",
+          "Car3DWebView(" in love)
+    check("爱车页保留了全屏看车入口", "Car3DView()" in love)
 
     # ATS 必须放开本地回环（Car3DServer 走 http://127.0.0.1）
     plist = read("Support/Info.plist")
@@ -232,6 +234,70 @@ def test_response_shapes() -> None:
               kn == "7C2C1588AC130B0B64D549A92B5DC76BC8FA5C5307B5B9624DADAC513A8AC566", kn)
 
 
+# ============================================================
+# 3c. 「爱车」页完整复刻
+#     —— 官方爱车页（已绑车态）的模块顺序是固定的，而且每一块都有实测数据源。
+#        这一节钉住「模块没被删掉」「快捷操作分页没被压平」
+#        「没拿假数据冒充官方那一块（驻车照片）」。
+# ============================================================
+def test_lovecar_page() -> None:
+    print("\n[3c] 爱车页完整复刻")
+    love = read("Views/LoveCarView.swift")
+
+    # ① 官方爱车页的模块（顺序即官方截图顺序）
+    modules = [
+        ("顶部车辆栏", "private func topBar("),
+        ("续航主数字 + SOC 进度条 + 车门锁态", "private var rangeHero"),
+        ("充电中心入口", "private var chargeCenterChip"),
+        ("3D 车模（内嵌）", "private var car3DCard"),
+        ("快捷操作分页", "private var quickActionsPager"),
+        ("预约充电横幅", "private var appointmentBanner"),
+        ("车内温度 / 空调", "private var climateCard"),
+        ("地图卡", "private var mapCard"),
+        ("蓝牙钥匙卡", "private var bleCard"),
+    ]
+    for label, token in modules:
+        check(f"模块在：{label}", token in love)
+
+    # ② 快捷操作第 1 页必须与官方截图逐字一致
+    m = re.search(r"quickPages:\s*\[\[String\]\]\s*=\s*\[\s*\[([^\]]*)\]", love)
+    check("找得到 quickPages 定义", m is not None)
+    if m:
+        page1 = [s.strip().strip('"') for s in m.group(1).split(",") if s.strip()]
+        check("快捷操作第 1 页 = 解锁/上锁/后备箱/车窗（与官方截图一致）",
+              page1 == ["lock", "unlock", "trunk_open", "window"], str(page1))
+
+    # ③ 车窗必须走三档（关闭 / 微开 / 半开），不是单一开关
+    check("车窗用 WindowOpening 全量枚举（三档）",
+          "LMEndpoints.WindowOpening.allCases" in love)
+    check("车窗走 cmdid 230 的 controlRaw",
+          "LMEndpoints.windowCmdid" in love and "windowState(" in love)
+
+    # ④ 3D 内嵌卡必须把真实宽度喂给官方查看器（否则车会被裁切）
+    check("内嵌车模用 GeometryReader 量宽度",
+          re.search(r"GeometryReader\s*\{\s*geo\s+in[\s\S]{0,120}?car3DBody\(width:", love) is not None)
+    check("内嵌车模喂 Car3DConfig.appJSON(width:height:)",
+          "Car3DConfig.appJSON(width: width, height: height)" in love)
+
+    # ⑤ 反向断言：**不能**把「驻车照片」做成 UI 元素 ——
+    #    那个接口在 IPA 字符串表里扫不到、抓包里也没有样本，
+    #    本 App 明确不做，不拿假图糊上去。有人「顺手补上」时这里会红。
+    #    （只允许它出现在解释「为什么不做」的注释里。）
+    check("没有把「驻车照片」做成 UI 元素（接口未确认，明确不做）",
+          re.search(r'(?:Text|Label)\(\s*"驻车照片"', love) is None)
+
+    # ⑥ lint R9：读了锁定态就必须挂时钟，否则倒计时冻住
+    check("挂了 .lmClock 驱动锁定倒计时", ".lmClock(until:" in love)
+
+    # ⑦ Tab 必须换成爱车页，旧的车况页不能留
+    app = read("LeapmotorLiteApp.swift")
+    check("首 Tab 是 LoveCarView", "LoveCarView()" in app)
+    check("Tab 标签叫「爱车」", 'Label("爱车"' in app)
+    check("旧 DashboardView 已移除", not os.path.exists(os.path.join(APP, "Views", "DashboardView.swift")))
+    check("代码里没有 DashboardView 残留",
+          "DashboardView" not in app and "DashboardView" not in love)
+
+
 def main() -> int:
     print("=" * 64)
     print("续期契约测试（test_refresh_contract）")
@@ -243,6 +309,7 @@ def main() -> int:
     test_session_codable()
     test_request_shape()
     test_car3d_assets()
+    test_lovecar_page()
     test_response_shapes()
     print("\n" + "=" * 64)
     if FAILS:

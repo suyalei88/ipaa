@@ -399,7 +399,7 @@ enum LMEndpoints {
     ///      2 = 微开（小开度）
     ///      5 = 半开（大开度）
     ///    如果实测发现反了，改下面两行的 rawValue 即可，别的地方不用动。
-    enum WindowOpening: Int {
+    enum WindowOpening: Int, CaseIterable {
         case close = 0
         case micro = 2
         case half  = 5
