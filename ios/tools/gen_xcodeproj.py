@@ -37,7 +37,14 @@ DEPLOYMENT_TARGET = "17.0"
 SWIFT_VERSION = "5.9"
 
 # 这些目录名排在最前（只是美观，不影响构建）
-DIR_ORDER = ["Crypto", "API", "BLE", "Store", "Views", "Support"]
+DIR_ORDER = ["Crypto", "API", "BLE", "Store", "Views", "Support", "Car3D"]
+
+# ★ 整目录资源：这些目录按 Xcode 的「蓝色文件夹引用」（lastKnownFileType = folder）
+#   原样拷进 .app 根目录，**不递归展开**成 PBXGroup。
+#   必须这样做的原因：3D 车模包里有 .fbx/.js/.csv/.png 等几十个文件，
+#   逐个建 PBXFileReference 既没必要，而且 .js/.fbx 会被当成源码文件误处理；
+#   folder 引用保证 bundle 内相对路径与官方 H5 里写死的 './D19_2026/xxx.fbx' 完全一致。
+RESOURCE_DIRS = ["Car3D"]
 
 
 def uid(key: str) -> str:
@@ -93,6 +100,12 @@ def scan(root: str, rel: str = "") -> list[Node]:
                 n.kind = "assetcatalog"
                 out.append(n)
                 continue
+            if name in RESOURCE_DIRS:
+                # 整目录 folder 引用，见 RESOURCE_DIRS 的注释
+                n = Node(name, r, False)
+                n.kind = "folder"
+                out.append(n)
+                continue
             n = Node(name, r, True)
             n.children = scan(root, r)
             out.append(n)
@@ -134,6 +147,7 @@ def build_pbxproj() -> str:
 
     swift = [n for n in flat if n.kind == "swift"]
     assets = [n for n in flat if n.kind == "assetcatalog"]
+    folders = [n for n in flat if n.kind == "folder"]
     plists = [n for n in flat if n.kind == "plist"]
     dirs = [n for n in flat if n.is_dir]
 
@@ -176,6 +190,9 @@ def build_pbxproj() -> str:
     for n in assets:
         A(f"\t\t{uid('bf/' + n.rel)} /* {n.name} in Resources */ = {{isa = PBXBuildFile; "
           f"fileRef = {uid('fr/' + n.rel)} /* {n.name} */; }};")
+    for n in folders:
+        A(f"\t\t{uid('bf/' + n.rel)} /* {n.name} in Resources */ = {{isa = PBXBuildFile; "
+          f"fileRef = {uid('fr/' + n.rel)} /* {n.name} */; }};")
     A("/* End PBXBuildFile section */")
     A("")
 
@@ -190,6 +207,9 @@ def build_pbxproj() -> str:
     for n in assets:
         A(f"\t\t{uid('fr/' + n.rel)} /* {n.name} */ = {{isa = PBXFileReference; "
           f"lastKnownFileType = folder.assetcatalog; path = {quote(n.name)}; sourceTree = \"<group>\"; }};")
+    for n in folders:
+        A(f"\t\t{uid('fr/' + n.rel)} /* {n.name} */ = {{isa = PBXFileReference; "
+          f"lastKnownFileType = folder; path = {quote(n.name)}; sourceTree = \"<group>\"; }};")
     for n in plists:
         A(f"\t\t{uid('fr/' + n.rel)} /* {n.name} */ = {{isa = PBXFileReference; "
           f"lastKnownFileType = text.plist.xml; path = {quote(n.name)}; sourceTree = \"<group>\"; }};")
@@ -321,6 +341,8 @@ def build_pbxproj() -> str:
     A("\t\t\tbuildActionMask = 2147483647;")
     A("\t\t\tfiles = (")
     for n in assets:
+        A(f"\t\t\t\t{uid('bf/' + n.rel)} /* {n.name} in Resources */,")
+    for n in folders:
         A(f"\t\t\t\t{uid('bf/' + n.rel)} /* {n.name} in Resources */,")
     A("\t\t\t);")
     A("\t\t\trunOnlyForDeploymentPostprocessing = 0;")

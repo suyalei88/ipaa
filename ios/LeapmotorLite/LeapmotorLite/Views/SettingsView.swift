@@ -50,6 +50,7 @@ struct SettingsView: View {
                 row("accessToken 有效期", tokenExpiryText(s.accessToken))
                 row("refreshToken",
                     s.refreshToken.isEmpty ? "无 —— 到期只能重新登录" : prefix(s.refreshToken, 20))
+                row("refreshToken 有效期", refreshTokenTTLText)
                 row("续期状态", refreshStatusText)
                 if !s.refreshToken.isEmpty {
                     Button {
@@ -66,10 +67,19 @@ struct SettingsView: View {
                 accessToken 只有约 2 小时，refreshToken 约 7 天。
                 本 App 会在 token 剩余不足 5 分钟时自动打 /base/base-user/token/v1/refresh 换新，
                 服务端仍判失效时也会自动续期后重放原请求。
-                只要 refreshToken 没过期，就不会被踢回登录页。
+                续期用的是 HMAC-SHA256(旧 signKey) 签名（实测确认；无密钥 SHA256 会被判签名失败）。
+                服务端每次续期都会下发新的 refreshToken，7 天窗口是**滑动**的 ——
+                所以只要 7 天内续过一次，就不会被踢回登录页。
                 """)
             }
         }
+    }
+
+    /// refreshToken 的 TTL（服务端下发，实测 604799 秒 ≈ 7 天）
+    private var refreshTokenTTLText: String {
+        guard let ttl = client.session?.refreshTokenExpireTime, ttl > 0 else { return "未知" }
+        let days = Double(ttl) / 86400.0
+        return String(format: "%.1f 天（%d 秒）", days, ttl)
     }
 
     private var refreshStatusText: String {

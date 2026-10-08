@@ -1,0 +1,11 @@
+image_base = 0x100000000
+  __TEXT,__text             vm=0x100004200 off=0x4200 size=0xA4115BC
+  __TEXT,__objc_methname    vm=0x10A70027C off=0xA70027C size=0x217267
+  __TEXT,__cstring          vm=0x10A956C10 off=0xA956C10 size=0x2E43E0
+  __TEXT,__const            vm=0x10AC3B000 off=0xAC3B000 size=0x478374
+  __DATA_CONST,__const            vm=0x10B296200 off=0xB296200 size=0x1E1B00
+
+'/app-user/applogin/check_login_with_phone' 文件偏移命中 1 处
+
+===== '/app-user/applogin/check_login_with_phone' off=0xA9B5FA4 vm=0x10A9B5FA4 page=0x10A9B5000 pageoff=0xFA4 =====
+  （未找到 adrp/add 引用）

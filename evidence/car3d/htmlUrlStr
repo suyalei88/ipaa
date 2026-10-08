@@ -1,0 +1,143 @@
+{
+  "VersionNum" : "20220630",
+  "MyEnergy" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv\/my-energy.html?APPFullScreen=true ",
+    "description" : "我的能量"
+  },
+  "CarGuide" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/carGuide.html",
+    "description" : "用户手册"
+  },
+  "PostDetail" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/dynamic-details.html",
+    "description" : "评论详情页"
+  },
+  "RegionHome" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/regionHome.html",
+    "description" : "区域门店"
+  },
+  "Basic" : {
+    "URLStr" : "https:\/\/cn.leapmotor.com\/afterSaleService.html?singlePage=1&platform=app&afterSale=1",
+    "description" : "基础权益"
+  },
+  "MyEquity" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/equity.html?source=app&APPFullScreen=true",
+    "description" : "我的权益"
+  },
+  "iOSUpdateDesc" : {
+    "URLStr" : "https:\/\/appgateway.leapmotor.com\/updateDesc\/ios",
+    "description" : "APP更新介绍iOS"
+  },
+  "MyInfo" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv\/my-info\/index.html",
+    "description" : "个人信息设置"
+  },
+  "RegionDetail" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/regionDetail.html",
+    "description" : "门店"
+  },
+  "StoreOrderAfterSales" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/maintenance/index.html?sr=app&APPFullScreen=true",
+    "description" : "售后预约"
+  },
+  "StoreOrderAfterSalesInStore" : {
+        "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/maintenance/index.html?sr=app&APPFullScreen=true",
+        "description" : "售后预约预约维保入口"
+    },
+  "MallView" : {
+    "URLStr" : "https:\/\/mall.leapmotor.com\/pages\/home\/index?sr=app",
+    "description" : "商城页面"
+  },
+  "RoadRescue" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/roadRescue.html",
+    "description" : "道路救援"
+  },
+  "MyFavorite" : {
+    "URLStr" : "https:\/\/lpmall.leapmotor.cn\/#\/favorite\/favorite",
+    "description" : "我的收藏"
+  },
+  "CarCalendar" : {
+    "URLStr" : "https:\/\/lptestdrive.leapmotor.com\/service-order-list?APPFullScreen=true&isCloseWebview=true&active=0",
+    "description" : "我的维保"
+  },
+  "MyAppoint" : {
+    "URLStr" : "https:\/\/lptestdrive.leapmotor.com\/my-reservation-list?platform=app",
+    "description" : "我的预约"
+  },
+  "MyOrder" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/my-order.html",
+    "description" : "我的订单"
+  },
+  "AboutUS" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv\/about-us.html?openByBrowser=false",
+    "description" : "关于我们"
+  },
+  "AndroidUpdateDesc" : {
+    "URLStr" : "https:\/\/appgateway.leapmotor.com\/updateDesc\/android",
+    "description" : "APP更新介绍Android"
+  },
+  "LMTheOrderUrl" : {
+    "URLStr" : "https:\/\/lptestdrive.leapmotor.com\/appoint-drive?platform=app&APPFullScreen=true",
+    "description" : "预约试驾"
+  },
+  "MyCouponUrlStr" : {
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv/equity-detail.html?type=0",
+    "description" : "我的券包"
+  },
+  "InviteCourteous" : {
+    "URLStr" : "https:\/\/apptec-invite.leapmotor.com\/InviteHomePage.html?sr=app&APPFullScreen=true",
+    "description" : "邀请有礼"
+  },
+  "SignTurnUrl":{
+    "URLStr" :"https:\/\/apptec-invite.leapmotor.com\/InviteHomePage.html?sr=app&APPFullScreen=true&source=2",
+    "description" : "签到后跳转页面"
+  },
+  "UserGrowth":{
+     "URLStr" :"https:\/\/apptec.leapmotor.com\/lpv\/user-level\/my-level.html?APPFullScreen=true",
+     "description" : "用户成长等级"
+  },
+  "AccountCancellation": {
+       "URLStr" :"https:\/\/apptec.leapmotor.com\/lpv/accCancelNotice.html",
+       "description" : "账号注销"
+    },
+  "MyDocuments" : {
+     "URLStr" : "NativePage:MyDocuments",
+     "description" : "我的证件"
+  },
+  "PersonalInformationCollectionChecklist":{
+    "URLStr" :"https:\/\/apptec.leapmotor.com/lpv/otherPrivacy/index.html?id=1595042725424918530&sr=PC&status=1&from=menu",
+    "description" : "个人信息收集清单"
+  },
+  "PersonalInformationShareChecklist":{
+    "URLStr" :"https:\/\/apptec.leapmotor.com/lpv/otherPrivacy/index.html?id=1596072995871391746&sr=PC&status=1",
+    "description" : "个人信息共享清单"
+  },
+  "OldMailUrlStr":{
+    "URLStr" :"https:\/\/mall.leapmotor.com\/pages\/home\/index?isNewShopMall=1&sr=app",
+    "description" : "旧商城地址"
+  },
+  "ZeroFeedBackStr" : {
+    "description" : "零居有话说",
+    "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv\/feedback\/addNew.html"
+   },
+   "InfoRegulation":{
+    "URLStr" :"https:\/\/apptec.leapmotor.com\/lpv\/use-stipulation\/index.html",
+     "description" : "ip属地说明"
+  },
+      "PrivacyPolicyUrl":{
+        "URLStr":"https:\/\/apptec.leapmotor.com\/lpv\/privacyAgreement.html",
+        "description":"隐私政策地址"
+    },
+       "UserAgreementUrl":{
+        "URLStr":"https:\/\/apptec.leapmotor.cn\/lpv\/userAgreementNew.html?deviceEnd=1",
+        "description":"用户协议地址"
+    },
+    "DefaultTopicDetailShare":{
+     "URLStr" :"https:\/\/apptec.leapmotor.cn\/lpv\/topic-details.html?id=",
+     "description" : "话题详情页分享默认地址"
+  },
+	"FeedBackNew" : {
+     "description" : "首页零居有话说",
+     "URLStr" : "https:\/\/apptec.leapmotor.com\/lpv\/feedback\/addNew.html?allowPopFromLeftEdgePanGesture=0"
+   }
+}

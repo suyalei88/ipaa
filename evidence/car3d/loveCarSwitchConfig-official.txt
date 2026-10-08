@@ -1,0 +1,14 @@
+{
+    "code":200,
+    "message":"成功",
+    "data":{
+        "toOrderTitle":"我的订单",
+        "toOrderImg":"http://ueapp.oss-cn-hangzhou.aliyuncs.com/nativeApp/loveCar/pic/switch_img/icon_to_order.png",
+        "toBuyTitle":"去看车",
+        "toBuyImg":"http://ueapp.oss-cn-hangzhou.aliyuncs.com/nativeApp/loveCar/pic/switch_img/icon_to_buy.png",
+        "configurationTitle":"我的配置",
+        "configurationImg":"http://ueapp.oss-cn-hangzhou.aliyuncs.com/nativeApp/loveCar/pic/switch_img/icon_to_config.png",
+        "toCarController":"返回爱车",
+        "carControllerImg":"http://ueapp.oss-cn-hangzhou.aliyuncs.com/nativeApp/loveCar/pic/switch_img/icon_car_controller.png"
+    }
+}

@@ -72,7 +72,7 @@ def test_session_codable() -> None:
         return
     body = m.group(1)
 
-    for field in ("tokenExpireTime", "tokenIssuedAt"):
+    for field in ("tokenExpireTime", "refreshTokenExpireTime", "tokenIssuedAt"):
         fm = re.search(rf"var\s+{field}\s*:\s*([^\n=]+)", body)
         check(f"{field} 已声明", fm is not None)
         if fm:
@@ -100,13 +100,25 @@ def test_session_codable() -> None:
 # 3. 续期请求体与触发点
 # ============================================================
 def test_request_shape() -> None:
-    print("\n[3] 续期请求体 / 触发点")
+    print("\n[3] 续期请求体 / 签名 / 触发点")
     src = read("API/LMClient.swift")
 
     check("performRefresh 用 refreshToken 作为 body 键",
           re.search(r'body:\s*\[\s*"refreshToken"\s*:', src) is not None)
-    check("续期走 preLoginRequest（无密钥 SHA256 签名）",
-          re.search(r"preLoginRequest\(path:\s*LMEndpoints\.Path\.refreshToken", src) is not None)
+
+    # ★★ 2026-10-08 实测定论：续期**不能**用登录那条无密钥 SHA256 ——
+    #    服务端会回 {"code":302002002,"message":"签名信息校验失败"}；
+    #    换成 HMAC(旧 signKey) 才回 code:0。所以这里必须钉住「走 HMAC 签名路径」，
+    #    防止后人「顺手统一成 preLoginRequest」把续期改回坏的。
+    check("续期走 signedPost（HMAC 签名 + token 头）",
+          re.search(r"signedPost\(path:\s*LMEndpoints\.Path\.refreshToken", src) is not None)
+    check("续期不再用 preLoginRequest（无密钥 SHA256 已实测失败）",
+          re.search(r"preLoginRequest\(path:\s*LMEndpoints\.Path\.refreshToken", src) is None)
+    check("signedPost 用 buildHeaders（内含 signKey HMAC）",
+          re.search(r"private func signedPost[\s\S]{0,600}?buildHeaders\(", src) is not None)
+    check("signedPost 挂在 login 之外（不触发续期钩子，避免递归）",
+          "throwsOnBusinessError: false" in src)
+
     check("有并发去重（refreshTask）", "private var refreshTask" in src)
     check("request(...) 会主动续期",
           re.search(r"await\s+refreshSessionIfNeeded\(\)", src) is not None)
@@ -114,6 +126,64 @@ def test_request_shape() -> None:
           re.search(r"looksLikeTokenExpired", src) is not None
           and src.count("sendWithFreshHeaders") >= 3)
     check("401/403 被当作 token 失效", "code == 401 || code == 403" in src)
+
+
+# ============================================================
+# 3b. 3D 车模：离线包必须在 bundle 里，且工程把它按 folder 引用
+#     —— 官方查看器用 `new Worker("./FBX.worker.js")` 在 worker 里解析 FBX，
+#        且模型路径是写死的 './D19_2026/D19_2026_full_car.fbx'，
+#        所以 bundle 内的目录结构必须原样保留，不能被打平。
+# ============================================================
+def test_car3d_assets() -> None:
+    print("\n[3b] 3D 车模离线包")
+
+    assets = os.path.join(APP, "Car3D")
+    need = [
+        "index.html",
+        "index.js",
+        "FBX.worker.js",
+        "D19_2026/D19_2026_full_car.fbx",
+        "D19_2026/D19_2026_starter_car.fbx",
+        "D19_2026/D19_2026_CarPaintConfig.csv",
+    ]
+    for rel in need:
+        p = os.path.join(assets, *rel.split("/"))
+        ok = os.path.isfile(p)
+        size = os.path.getsize(p) if ok else 0
+        check(f"资源存在 {rel}", ok and size > 0, f"{size} B")
+
+    # index.js 必须是「零 import/export」的 IIFE 包 —— 我们据此判断它可以
+    # 不依赖 ESM 加载（也是本地 HTTP 方案之外的退路依据）
+    idx = os.path.join(assets, "index.js")
+    if os.path.isfile(idx):
+        with open(idx, "r", encoding="utf-8", errors="replace") as f:
+            js = f.read()
+        check("index.js 无 ESM import/export",
+              len(re.findall(r"(?m)^\s*(?:import|export)[\s{*]", js)) == 0)
+        check("index.js 导出 newInit 入口", "window.newInit=newInit" in js)
+        check("index.js 有 OrbitControls 阻尼/旋转参数（全方位旋转）",
+              "enableDamping" in js and "rotateSpeed" in js)
+
+    # 工程必须用 folder 引用（不是逐文件），否则 .js/.fbx 不会被打进 bundle
+    pbx = os.path.join(ROOT, "ios", "LeapmotorLite", "LeapmotorLite.xcodeproj", "project.pbxproj")
+    if os.path.isfile(pbx):
+        with open(pbx, encoding="utf-8") as f:
+            p = f.read()
+        check("pbxproj 里有 Car3D folder 引用",
+              "lastKnownFileType = folder; path = Car3D;" in p)
+        check("Car3D 进了 Resources build phase", "Car3D in Resources" in p)
+
+    # 入口：DashboardView 必须挂上 Car3DView
+    dash = read("Views/DashboardView.swift")
+    check("车况页挂了 3D 看车入口", "Car3DView()" in dash)
+
+    # ATS 必须放开本地回环（Car3DServer 走 http://127.0.0.1）
+    plist = read("Support/Info.plist")
+    check("Info.plist 放开 NSAllowsLocalNetworking", "NSAllowsLocalNetworking" in plist)
+
+    srv = read("Support/Car3DServer.swift")
+    check("本地服务只绑回环", "requiredInterfaceType = .loopback" in srv)
+    check("本地服务有目录穿越防护", '".."' in srv or "'..'" in srv)
 
 
 # ============================================================
@@ -172,6 +242,7 @@ def main() -> int:
     test_endpoint()
     test_session_codable()
     test_request_shape()
+    test_car3d_assets()
     test_response_shapes()
     print("\n" + "=" * 64)
     if FAILS:

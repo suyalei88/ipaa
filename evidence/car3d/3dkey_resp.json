@@ -1,0 +1,23 @@
+{
+  "code": 0,
+  "result": 0,
+  "message": "请求成功",
+  "data": {
+    "h5Key": "3D-616d34c0-33b8-4a05-a6af-284490d82608",
+    "modelVersion": null,
+    "modelParam": {
+      "carType": "D19",
+      "selection": "null",
+      "year": 2026,
+      "carTypeCode": "720智尊版 六座",
+      "colorCode": 0,
+      "roofColor": "0"
+    },
+    "h5Whole": "w58wdL6R6Dnv3lOzXhYT1Q==",
+    "srcKey": "3D-8444a1b9-f975-4efb-9025-515e8197e938",
+    "modelType": 3,
+    "srcWhole": "+idvVcToKuoG3gRrmhmUXw==",
+    "shareBindUrl": "http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/carModel3D/3D-5a8537fe-dcf9-4bca-98a4-ce3c664dbd38?Expires=4943496040&OSSAccessKeyId=LTAI4Fmo2WXExVH9PecXNnpy&Signature=4Y4blDm87OdhNJgzqnPnr3nVO0w%3D",
+    "currentTheme": null
+  }
+}

@@ -124,6 +124,30 @@ enum LMEndpoints {
         ///   和 `shareBindUrl`（官方 3D 分享页）。
         static let car3dKey       = "/carownerservice/v3/api/carpicture/3d/key"
 
+        /// 3D 车模离线包下载（**直接返回 zip 字节流，不是 JSON**）。
+        ///
+        /// ★★ 2026-10-08 实测确认（`?key=<h5Key|srcKey>`，GET）：
+        /// ```
+        ///   GET …/carpicture/key/package?key=3D-616d34c0-…   → 3 953 803 B  package.zip
+        ///   GET …/carpicture/key/package?key=3D-8444a1b9-…   → 10 634 536 B  package.zip
+        /// ```
+        /// 响应头 `content-type: application/octet-stream`、
+        /// `content-disposition: attachment; filename=package.zip`，magic 是 `PK\x03\x04`。
+        ///
+        ///   · `key=h5Key` → **查看器包**：`index.html` + `index.js`(1.6 MB three.js)
+        ///     + `FBX.worker.js` + `models/` + `textures/`
+        ///   · `key=srcKey` → **模型包**：`D19_2026/D19_2026_full_car.fbx`(5.9 MB)
+        ///     + `starter_car.fbx` + 贴图 + `CarPaintConfig.csv` / `CarRoofConfig.csv`
+        ///
+        /// ⚠️ 注意两点：
+        ///   1. 参数名是 `key`（缺了会返回 `Required String parameter 'key' is not present`）；
+        ///      用 `h5Key` / `srcKey` 当参数名一律无效。
+        ///   2. 它是**登录后接口**，必须带 token 头 + HMAC 签名（无签名 → `TOKEN已过期`）。
+        ///
+        /// 本 App 已经把这两个包离线内置在 `Car3D/` 里，所以运行时不调这个接口；
+        /// 常量留在这里是为了「以后要支持别的车型时直接换成动态下载」。
+        static let car3dPackage   = "/carownerservice/v3/api/carpicture/key/package"
+
         /// 车机固件版本 + 最近一次 OTA 的完整更新日志。
         /// 实测：`GET ?vin=…` → `{versionNo, logContent, updateTime}`
         static let fotaVersion    = "/carownerservice/v3/api/fota/getCurrentVersion"

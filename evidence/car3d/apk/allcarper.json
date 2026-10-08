@@ -1,0 +1,20 @@
+{"data":[
+  {"peimissCode":"100","permissName":"点熄火"},
+  {"peimissCode":"110","permissName":"车门"},
+  {"peimissCode":"120","permissName":"寻车"},
+  {"peimissCode":"130","permissName":"后备箱"},
+  {"peimissCode":"150","permissName":"自动泊车"},
+  {"peimissCode":"160","permissName":"PTC预热"},
+  {"peimissCode":"161","permissName":"PTC预热预约"},
+  {"peimissCode":"170","permissName":"空调控制"},
+  {"peimissCode":"171","permissName":"空调预约"},
+  {"peimissCode":"180","permissName":"路径同步"},
+  {"peimissCode":"190","permissName":"预约充电"},
+  {"peimissCode":"200","permissName":"途记"},
+  {"peimissCode":"210","permissName":"行车录像"},
+  {"peimissCode":"220","permissName":"行程"},
+  {"peimissCode":"230","permissName":"车窗控制"},
+  {"peimissCode":"240","permissName":"遮阳帘控制"}
+
+]
+}

@@ -1,0 +1,50 @@
+{"data":[
+	{
+		"per_title": "车辆",
+		"per_code": "300",
+		"isSelect":"1" /*0 未选中 1 选中*/
+
+
+	},
+	{
+		"per_title": "空调",
+		"per_code": "301",
+		"isSelect":"0"
+	},
+
+	{
+		"per_title": "电池预热",
+		"per_code": "302",
+		"isSelect":"0"
+	}
+,
+
+/*	{
+		"per_title": "途记",
+		"per_code": "303",
+		"isSelect":"0"
+	}
+,
+
+	{
+		"per_title": "行车录像",
+		"per_code": "304",
+		"isSelect":"0"
+	}
+,*/
+
+	{
+		"per_title": "里程能耗",
+		"per_code": "305",
+		"isSelect":"0"
+	}
+,
+
+	{
+		"per_title": "车辆位置",
+		"per_code": "310",
+		"isSelect":"0"
+	}
+
+]
+}

@@ -33,3 +33,12 @@
 *.har           binary
 *.zip           binary
 *.dex           binary
+
+# ---------- 3D 车模资源：整棵树禁止任何文本转换（2026-10-08）----------
+# 这些文件是从官方 `carpicture/key/package` 下发的 zip 里原样解出来的，
+# 官方 index.js 里模型/贴图路径是写死的相对路径，我们要求**逐字节保留**。
+# ★ 真踩过：`* text=auto eol=lf` 会把 D19_2026_CarPaintConfig.csv 的 CRLF 改成 LF
+#   （2251 → 2227 字节）。虽然 CSV 解析器不在乎，但「一个字节不改」这条线一旦松了，
+#   下次就可能是某个 .fbx 被当成文本改写 —— 那会直接让车模加载失败。
+#   8 个 .fbx / 2 个 .js 这次侥幸被 git 自动识别为二进制，但不能靠侥幸。
+ios/LeapmotorLite/LeapmotorLite/Car3D/**   -text

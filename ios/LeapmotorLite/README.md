@@ -7,6 +7,14 @@
 - 语言：Swift / SwiftUI
 - 依赖：**零第三方库**（CryptoKit + CommonCrypto，系统自带）
 - 网络：URLSession，全部接口走 HTTPS
+  （唯一例外：「3D 看车」由 App 自己在 `127.0.0.1` 起一个只服务内置资源的本地 HTTP 服务，
+   原因是官方 H5 查看器必须在 Web Worker 里解析 FBX，见 §1.6）
+
+| 能力 | 状态 |
+|---|---|
+| 车况 / 定位 / 充电 / 车控 / 信号浏览器 | ✅ |
+| 登录态自动续期（`refreshToken`） | ✅ 2026-10-08，签名方式已用真实凭据实测确认（§1.5） |
+| **3D 看车**（官方车模，可全方位旋转） | ✅ 2026-10-08，离线内置官方查看器 + D19 FBX（§1.6） |
 
 ---
 
@@ -141,6 +149,146 @@ cmdid 表：
 - 手机号加密公钥是 **RSA-1024 SPKI**，需先剥成 PKCS#1（1024-bit → **140 字节** DER）
   再交给 `SecKeyCreateWithData`（见 `Crypto/LMRSA.swift`）。
   注意 BIT STRING 长度是长格式 `03 81 8d 00`，别只读一个字节。
+
+---
+
+### 续期接口（`/base/base-user/token/v1/refresh`）
+
+> ⚠️ **本地三份 HAR 里都没有这条请求**，以下全部来自官方 1.22.68 主二进制逆向。
+> 定位手段：`ios/tools/macho_xref_cfstring.py` —— 先扫 `__DATA_CONST,__cfstring`
+> 解码 chained fixup 找到字面量条目，再按 `adrp + add` 找引用它的代码。
+>
+> 踩过的坑（别再犯）：这个 Mach-O 用 `DYLD_CHAINED_PTR_64`（**非** `_64_OFFSET`），
+> ptr 的低 36 位就是 vmaddr，高位还塞着 `next` 链字段 → 判等必须
+> `(v & 0xFFFFFFFFF) == vmaddr`，拿 `vmaddr - imageBase` 去比会一条都命中不了。
+> 另外 `md.detail = True` 必须开，否则 `ins.operands` 抛错被 `except` 吞掉，
+> 表现为「明明有引用却扫不到」。
+
+```
+POST app-gw-global-master.leapmotor.com/base/base-user/token/v1/refresh
+     {"refreshToken": "<登录响应里的 refreshToken>"}
+     sign = HMAC_SHA256(valueStr, 旧 signKey)   ← ★ 必须带 token 头，属登录后接口
+     → data = { accessToken, refreshToken, tokenExpireTime, refreshTokenExpireTime,
+                signParam{r2,r3} | signR2/signR3,
+                encryptParam{r2,r3} | encryptR2/encryptR3, accountId, nickname }
+```
+
+逆向证据（主二进制偏移）：
+
+| 项 | 证据 |
+|---|---|
+| 调用点 | 函数 `@0x106E8115C`；`0x106E811B4 add x3,x3,#0x9c0 ; @"/token/v1/refresh"` |
+| body 键 | `0x106E81240 add x3,x3,#0x8c0 ; @"refreshToken"` → `setObject:forKey:` |
+| 方法 | `0x106E81354 add x4,x4,#0x960 ; @"POST_Json"`（JSON POST，超时 20s） |
+| 路径前缀 | 裸路径 `@0xAA33226`，前缀常量 `@0xAA33D8E "/base/base-user"`（与 `@0xAA33E05 "/account/v1/login"` 同表相邻，运行时拼） |
+| 响应键 | 函数 `@0x106E82B34`，每个字段成对出现：`data.signParam.r2` / `signR2` … |
+| 主动续期 | ivar `_tokenAliveSec`(double) + `_tokenRefreshedFlagTime` + `_refreshTokenQueue`（串行队列）；通知 `com.tokenServer.login` / `com.tokenServer.refreshToken` |
+| 请求头 | `XFX-CDN-CROSS-NODE` / `XFX-CDN-CROSS-REFRESH-NODE`（SDK 通用头，logout 同款） |
+
+#### ★ 签名方式：**实测**推翻过一次（别再改回去）
+
+逆向阶段只能看出「这是个 JSON POST + 20s 超时」，**签名方式在二进制里看不出来**，
+当时的推断是「accessToken 已失效 → 用不了由它派生的 signKey → 必然是登录那条
+无密钥 SHA256」。2026-10-08 拿到真实凭据后直接打了两发，结论是反的：
+
+| 签名方式 | 服务端响应 | 判定 |
+|---|---|---|
+| 无密钥 `SHA256(valueStr)` | `{"code":302002002,"message":"签名信息校验失败"}` | ✗ |
+| **`HMAC_SHA256(valueStr, 旧 signKey)`** | `{"code":0,"message":"SUCCESS", data:{…}}` | ✓ |
+| HMAC 但**去掉 token 头** | `{"code":302002002,…}` | ✗（token 头参与校验） |
+
+→ 它属于**登录后接口**，走 `buildHeaders` 那一套（signKey + token + carvin/cartype）。
+App 侧为此专门加了 `signedPost(...)`：与 `request(...)` 同款签名，但**不挂续期钩子**
+（否则续期会撞上 `request` 里的主动续期判断，无限递归）。
+
+#### TTL 与「为什么能一直不掉线」
+
+实测续期响应里 `tokenExpireTime = 7200`、`refreshTokenExpireTime = 604799`
+（都是**秒数**，不是绝对时间戳），并且**每次续期都会下发新的 refreshToken** ——
+即 refreshToken 是**滑动续期**的。只要每 7 天内成功续过一次，会话就能一直延长，
+这才是官方「验证码登录一次再也不退出」的机制本体。
+
+App 侧策略（`API/LMClient.swift`）：
+
+- **主动**：`request(...)` 发请求前，token 剩余寿命 < 300s 就先续
+- **被动**：命中 401/403 或 token 类业务码 → 续一次 → 原请求重放一次
+- **去重**：`refreshTask` 保证并发请求只打一次续期接口（对齐官方 `_refreshTokenQueue`）
+- 过期时刻优先取 **JWT 的 `exp`**，退化到 `tokenExpireTime + 落地时间`
+- 契约测试 `client/test_refresh_contract.py` 已挂进 CI，钉住端点前缀、
+  `LMSession` 新字段的 Optional 性、**必须走 HMAC 而不是 SHA256**、两条触发路径、
+  响应双形状兼容，以及 3D 车模离线包的完整性（见下）
+
+---
+
+### 3D 车模（官方「3D 看车」）
+
+**结论先说：官方 3D 车模不是原生 3D，而是一个服务端下发的离线 H5 包（three.js）+
+FBX 模型，跑在 WKWebView 里。**
+
+三条独立证据：
+
+1. **IPA 内 0 个 3D 资源** —— 5266 个条目里 `.usdz/.scn/.dae/.obj/.glb/.gltf/.fbx/.reality/.usdc` 全零命中
+2. **官方 Android APK 里也没有**（10625 条目，只有导航/TTS 的 `.bin`）→ 两端同一个 H5 方案
+3. 主二进制字符串表挖出完整路径模板与选择器：
+   ```
+   %@/3DCarModel/%@        %@/%@/3DHoleCarImage/        %@/%@/.%@.zip → %@index.html
+   react · DayOrNight · OriginalView · modelParam
+   LMVCar3DModelService / LMVCarImage3DView / LMV3DCarModeVM
+   fecth3DCarModelRootPath / isHave3DResouce / LMVZipArchiveDelegate(unzippedFiles)
+   getCacheDownloadModelByHttpUrl: / configureWithPlateNumber:showPlate:showInHomeModel:is3DCarModel:
+   ```
+
+#### 取包接口（**直接返回 zip 字节流，不是 JSON**）
+
+```
+GET /carownerservice/v3/api/carpicture/3d/key?osVersion=…&vin=…
+    → h5Key / srcKey / h5Whole / srcWhole / modelParam{carType,year,carTypeCode,colorCode,roofColor}
+
+GET /carownerservice/v3/api/carpicture/key/package?key=<h5Key>   → 3 953 803 B  package.zip（查看器）
+GET /carownerservice/v3/api/carpicture/key/package?key=<srcKey>  → 10 634 536 B package.zip（模型）
+```
+
+⚠️ 两个坑：参数名必须是 `key`（用 `h5Key`/`srcKey` 当参数名会回
+`Required String parameter 'key' is not present`）；它是**登录后接口**，必须带 token + HMAC 签名。
+
+两个 zip 解开后：
+
+| 包 | 内容 |
+|---|---|
+| `key=h5Key` | `index.html`(458 B) + `index.js`(1.6 MB three.js 打包产物) + `FBX.worker.js`(388 KB) + `models/`(7) + `textures/`(36) |
+| `key=srcKey` | `D19_2026/D19_2026_full_car.fbx`(5.9 MB) + `_starter_car.fbx`(4.2 MB) + 贴图 + `CarPaintConfig.csv` / `CarRoofConfig.csv` + 7 个版型 CSV |
+
+#### 官方查看器的驱动契约（从 `index.js` 里读出来的）
+
+```js
+window.onIOSWebview();                       // 打开开关 → 首帧完成后走 window.prompt("onFirstFrame")
+window.newInit(serverJson, appJson);         // serverJson/appJson 都是 **JSON 字符串**
+//   serverJson ← 就是 3d/key 的 modelParam（parseServerJson 直接吃 carType/year/
+//                carTypeCode/colorCode/roofColor/rudder/seat/…）
+//   appJson    ← {width, height, energy, inland}
+```
+
+「全方位移动」= `index.js` 内置的 OrbitControls（`rotateSpeed` / `enableDamping` /
+`autoRotate` / `touchAction`），单指拖动旋转、双指缩放，没有额外实现。
+
+#### 本 App 怎么接的
+
+- 两个包**离线内置**在 `LeapmotorLite/Car3D/`（17 MB / 63 文件），看车不依赖网络；
+  只有「车型 / 颜色」参数走一次 `3d/key`（拿不到就用 D19 2026 六座兜底）
+- 工程里必须用 **Xcode 蓝色文件夹引用**（`lastKnownFileType = folder`）整目录拷进
+  bundle —— 官方 H5 里模型路径是写死的 `./D19_2026/D19_2026_full_car.fbx`，
+  逐文件加会打平目录结构。`gen_xcodeproj.py` 为此加了 `RESOURCE_DIRS = ["Car3D"]`
+- **不能**用 `loadFileURL`：`index.js` 用 `new Worker("./FBX.worker.js")` 在 Worker 里解析
+  FBX，WKWebView 对 `file://` 页面按唯一不透明源处理，Worker 与 XHR 都会被拦。
+  改由 `Support/Car3DServer.swift` 在 `127.0.0.1` 起一个**只服务 bundle 内 `Car3D/`**
+  的极简 HTTP 服务（只实现 GET 静态文件、分块发送、目录穿越防护），
+  官方 `index.html` / `index.js` / `FBX.worker.js` 一个字节都不用改
+- `Info.plist` 加 `NSAllowsLocalNetworking`（只放开回环，不放开任意明文 HTTP）
+- 本地验证工具：`ios/tools/car3d_webtest.mjs`
+  （起静态服务 + headless Chromium 跑官方查看器 → 截图 + 控制台日志），
+  已实测能完整渲染出 D19 并触发 `onFirstFrame`
+
+入口：车况页 →「3D 看车」卡片。
 
 ---
 
@@ -290,10 +438,18 @@ ios/
         │   ├── BLEDebugView.swift       # BLE 调试台（扫描 / GATT / 订阅抓帧 / 发字节）
         │   ├── SignalExplorerView.swift # 信号浏览器 + 快照 A/B 对比
         │   ├── DiagnosticsView.swift    # 车控体检 + 官方接口探测
+        │   ├── Car3DView.swift          # 3D 看车（WKWebView 驱动官方查看器）
         │   ├── SettingsView.swift       # 设置
         │   └── SelfTestView.swift       # 算法自检
+        ├── Car3D/                       # ★ 官方 3D 车模离线包（folder 引用，17 MB / 63 文件）
+        │   ├── index.html               #   官方查看器入口（未改动）
+        │   ├── index.js                 #   three.js 打包产物 1.6 MB（未改动）
+        │   ├── FBX.worker.js            #   Worker 里解析 FBX（未改动）
+        │   ├── models/ textures/        #   充电枪 / 天空球 / 车道线 + 贴图
+        │   └── D19_2026/                #   D19_2026_full_car.fbx(5.9 MB) + 贴图 + 配色 CSV
         └── Support/
-            └── Info.plist
+            ├── Info.plist
+            └── Car3DServer.swift        # 127.0.0.1 回环静态服务（供 Worker/XHR 用）
 ```
 
 ---
@@ -312,7 +468,7 @@ ios/
 | 车辆坐标的**坐标系** | ⚠️ **方向未定** —— 官方 App 里 `wgs84ToGcj02` 和 `gcj02ToWgs84` 两个方向都实现了，静态分析定不下来。已做成三选一校正（默认 `WGS-84 → GCJ-02`），在定位页换选项、站车边上 10 秒即可自证 |
 | 充电状态判定 | ✅ 5 个状态位 `100004/1149/1257/3636/3722` 投票 + 充电电流 `1178`，判据来自「充电 vs 未充电」逐信号 diff |
 | `1200` 的语义 | ✅ **不是剩余充电时间**，是纯 SOC 投影 `round(11.33 × (目标 − SOC))`，未充电时也是正数 |
-| 登录态自动续期（refreshToken） | 未实现；token 过期（约 2h）后重新登录即可 |
+| 登录态自动续期（refreshToken） | ✅ 已实现（2026-10-08）。**本地三份 HAR 里没有任何续期样本**，整条链路逆向自主二进制 —— 见下节「续期接口」 |
 | **蓝牙钥匙（BLE）** | ⚠️ **协议未打通**。已从官方 IPA 静态逆向出 UUID / 握手字段 / 分号帧模板（见 `BLE/LMBLEProtocol.swift`），但缺 `passwordCard`、帧语义、cmdId 表。App 里给的是**调试台 + 协议进度**，不是能解锁的钥匙。补齐办法见 `IPA_BUILD.md` |
 
 ### 客户端固定参数（可直接复用抓包值）

@@ -62,6 +62,12 @@ struct LMSession: Codable, Equatable {
     //    用户一升级就被踢下线，正好和本次要修的问题相反。
     /// accessToken 的 TTL（秒），来自登录 / 续期响应的 `tokenExpireTime`
     var tokenExpireTime: Int?
+    /// refreshToken 的 TTL（秒），来自续期响应的 `refreshTokenExpireTime`。
+    ///
+    /// ★ 2026-10-08 实测值 **604799**（= 7 天 - 1 秒），并且每次续期都会重新下发一个
+    ///   新的 refreshToken —— 即 **refreshToken 是滑动续期的**。所以只要每 7 天内
+    ///   成功续过一次，会话就能一直延长下去，这才是「登录一次再也不退出」的真正机制。
+    var refreshTokenExpireTime: Int?
     /// 本次 accessToken 的落地时间，用来把 TTL 换算成绝对过期时刻
     var tokenIssuedAt: Date?
 
@@ -345,8 +351,18 @@ final class LMClient: ObservableObject {
     //   · 响应：函数 @0x106E82B34 每个字段都同时认扁平键与点路径：
     //       accessToken/data.accessToken、signR2/data.signParam.r2、
     //       encryptR2/data.encryptParam.r2、tokenExpireTime/data.tokenExpireTime …
-    //   · 签名：复用登录那条 `sign = SHA256(valueStr)` 无密钥路径 —— 续期必然发生在
-    //     accessToken 已失效之后，用不了由 accessToken 派生的 signKey。
+    //   · 签名：**HMAC_SHA256(valueStr, 旧 signKey)**，不是无密钥 SHA256。
+    //     ★★ 2026-10-08 用真实凭据实测定论（这是本轮唯一必须真机/真请求才能定的点）：
+    //        sha256  → {"code":302002002,"message":"签名信息校验失败"}
+    //        hmac    → {"code":0,"message":"SUCCESS", data:{accessToken, refreshToken,
+    //                    tokenExpireTime:7200, refreshTokenExpireTime:604799,
+    //                    signParam:{r2,r3}, encryptParam:{…}}}
+    //     并且**必须带 token 头**（去掉 token 头后 hmac 也会退化成 302002002），
+    //     所以它属于「登录后接口」，用 `buildHeaders` 那套（signKey + token + carvin/cartype）。
+    //
+    //   · 续期响应实测会**同时返回新的 refreshToken**，`refreshTokenExpireTime=604799`（7 天）
+    //     —— 即 refreshToken 是**滑动续期**的：只要每 7 天内续过一次，就能一直不掉线，
+    //     这就是官方「验证码登录一次再也不退出」的机制本体。
     //
     // 两条触发路径（缺一不可）：
     //   ① 主动：token 剩余寿命 < 300s 时，在 `request(...)` 发请求前先续（见 request 内）
@@ -415,10 +431,12 @@ final class LMClient: ObservableObject {
 
     private func performRefresh(refreshToken rt: String) async throws -> LMSession {
         logRefresh("→ POST \(LMEndpoints.Path.refreshToken)  body={\"refreshToken\":\"\(rt.prefix(10))…\"}")
-        let any = try await preLoginRequest(path: LMEndpoints.Path.refreshToken,
-                                            host: LMEndpoints.accountHost,
-                                            body: ["refreshToken": rt],
-                                            accountId: session?.accountId ?? "")
+        // ★ 必须走 HMAC 签名（用当前 signKey）+ 带 token 头 —— 实测无密钥 SHA256 会被判
+        //   「签名信息校验失败」。所以不能复用登录那条 `preLoginRequest`。
+        //   这里绕开 `request(...)` 直接发，否则会撞上 request 里的续期钩子无限递归。
+        let any = try await signedPost(path: LMEndpoints.Path.refreshToken,
+                                       host: LMEndpoints.accountHost,
+                                       body: ["refreshToken": rt])
         guard let dict = any as? [String: Any] else {
             throw LMError.decoding("续期响应不是 JSON 对象")
         }
@@ -602,6 +620,20 @@ final class LMClient: ObservableObject {
                               bodyData: bodyData, throwsOnBusinessError: true)
     }
 
+    /// 带 HMAC 签名的 JSON POST（`buildHeaders` 那套：signKey + token + carvin/cartype）。
+    ///
+    /// 与 `request(...)` 的区别：**不挂主动/被动续期钩子** —— 续期接口自己不能用它，
+    /// 否则 `request` 里发现 token 快过期就会去调续期，续期又走 `request`，直接递归。
+    private func signedPost(path: String, host: String, body: [String: Any]) async throws -> Any {
+        guard let url = URL(string: host + path) else {
+            throw LMError.transport("URL 非法：\(host + path)")
+        }
+        let bodyData = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        let headers = buildHeaders(signBody: body, skipAuth: false, contentType: "application/json")
+        return try await send(method: "POST", url: url, headers: headers,
+                              bodyData: bodyData, throwsOnBusinessError: false)
+    }
+
     /// 低层发送：负责 HTTP、解码、业务码校验（可选）
     private func send(method: String,
                       url: URL,
@@ -745,6 +777,8 @@ final class LMClient: ObservableObject {
 
         // tokenExpireTime 可能是数字也可能是字符串；缺失时沿用旧值
         let ttl = LMClient.intValue(dict["tokenExpireTime"]) ?? session?.tokenExpireTime
+        // 续期响应实测会带 refreshTokenExpireTime（604799 ≈ 7 天）
+        let rtTtl = LMClient.intValue(dict["refreshTokenExpireTime"]) ?? session?.refreshTokenExpireTime
 
         let s = LMSession(
             accessToken: token,
@@ -756,6 +790,7 @@ final class LMClient: ObservableObject {
             nickname: newNickname,
             opPassword: session?.opPassword ?? "",
             tokenExpireTime: ttl,
+            refreshTokenExpireTime: rtTtl,
             tokenIssuedAt: Date()
         )
         adopt(session: s)

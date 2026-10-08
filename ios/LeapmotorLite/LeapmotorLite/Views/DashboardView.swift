@@ -33,6 +33,7 @@ struct DashboardView: View {
             VStack(spacing: 16) {
                 if let v = client.selectedVehicle {
                     vehicleHeader(v)
+                    car3DCard
                     heroCard
                     statusChips
                     locationCard
@@ -128,6 +129,40 @@ struct DashboardView: View {
                 StatusPill(text: "锁态未知", icon: "questionmark.circle", tint: Color.secondary)
             }
         }
+    }
+
+    // MARK: - 3D 看车入口
+
+    /// 官方 3D 车模（离线内置，拖动能全方位旋转）。
+    /// 实现说明见 `Car3DView` / `Car3DServer`。
+    private var car3DCard: some View {
+        NavigationLink {
+            Car3DView()
+        } label: {
+            LMCard(padding: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: "cube.transparent")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Color.lmAccent)
+                        .frame(width: 44, height: 44)
+                        .background(Color.lmAccent.opacity(0.10),
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("3D 看车")
+                            .font(.headline)
+                        Text("官方车模 · 单指拖动全方位旋转")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 电量 / 续航主卡

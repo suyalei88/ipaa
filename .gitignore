@@ -54,8 +54,24 @@ Thumbs.db
 # ---------- 敏感信息（登录态！绝对不要提交）----------
 evidence/session.json
 **/session.json
+# ★ 2026-10-08 新增：3D 车模那一轮用短信登录换来的**新会话**（内含存活中的
+#   accessToken / refreshToken）。规则必须覆盖它，否则一次误提交就等于把
+#   一个还能用的登录态公开出去。
+evidence/session_new.json
+**/session_*.json
 # 实时车况快照（信号 id → 实时值，属于车辆隐私数据）
 evidence/live_signalmap.json
 *.secrets
 .env
 .env.*
+
+# ---------- 3D 车模逆向的中间产物（2026-10-08）----------
+# 主二进制 204MB（超过 GitHub 单文件上限），需要时按 IPA_BUILD.md 重新提取
+evidence/leapmotor_main
+# 两个离线包解出来的 43MB 工作副本；正式资源已固化在
+# ios/LeapmotorLite/LeapmotorLite/Car3D/ 里，这里不再重复入库
+evidence/car3d/pkg/
+# 停车场俯视哨兵照（含车辆实际停放位置，隐私）
+evidence/car3d/chassis.jpg
+# model3d.bin 与 model3d.png 字节完全相同，只留 png
+evidence/car3d/model3d.bin
