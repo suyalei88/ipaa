@@ -79,6 +79,16 @@ jobs:
       - name: HAR 签名回归（期望 101/105）
         run: python client/test_sign_regression.py || true
 
+      - name: 续期契约（refreshToken 自动续期）
+        # 续期是唯一一条**没有任何抓包样本**的链路（三份 HAR 里都没有
+        # /token/v1/refresh），全部结论来自官方主二进制逆向 —— 这种代码最怕
+        # 「后人顺手清理」：把 /base/base-user 前缀删掉，续期就静默失效；
+        # 给 LMSession 加一个非 Optional 字段，Keychain 里的老会话就解不出来，
+        # 升级即掉登录（正好和这条要修的问题相反）。
+        # 这里钉住：端点前缀 / LMSession 字段的 Optional 性 / 请求体键 /
+        # 主动+被动两条触发路径 / 响应「嵌套 + 扁平」双形状兼容。
+        run: python client/test_refresh_contract.py
+
       # gen_xcodeproj.py --check 做三件事：
       #   1. 结构自检（括号平衡 + UUID 闭合）
       #   2. 跨平台确定性自测（UUID 金标，抓 rel 分隔符 / md5 前缀被改）

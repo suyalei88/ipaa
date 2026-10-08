@@ -45,7 +45,68 @@ struct LMSession: Codable, Equatable {
     /// 操作密码（明文），用于每次车控时派生 oppwd
     var opPassword: String = ""
 
+    // MARK: - 登录态有效期
+    //
+    // ★ 2026-10-08 新增，专治「token 存活时间太短，官方 App 验证码登录一次就不退出」。
+    //
+    // 官方链路（实测 + 主二进制逆向）：
+    //   accessToken   TTL ≈ 7199s  （2 小时）—— 响应字段 tokenExpireTime
+    //   refreshToken  TTL ≈ 604799s（7 天）  —— 响应字段 refreshTokenExpireTime
+    // 官方 App 靠 `com.tokenServer.refreshToken` 通知 + `_refreshTokenAlive` 倒计时
+    // 在 accessToken 到期前主动打 `/token/v1/refresh`，所以「登录一次长期不掉线」。
+    // 我们之前只把 refreshToken 存下来却**从不使用**，2 小时一到所有接口全部失败。
+    //
+    // ⚠️ 这两个字段必须写 Optional。`LMSession` 是 Codable 且已经写进 Keychain，
+    //    Swift 合成的 `init(from:)` 对**非 Optional** 属性要求 key 必须存在
+    //    （属性默认值不参与解码），加一个非 Optional 字段会让老会话解不出来 →
+    //    用户一升级就被踢下线，正好和本次要修的问题相反。
+    /// accessToken 的 TTL（秒），来自登录 / 续期响应的 `tokenExpireTime`
+    var tokenExpireTime: Int?
+    /// 本次 accessToken 的落地时间，用来把 TTL 换算成绝对过期时刻
+    var tokenIssuedAt: Date?
+
     var isValid: Bool { !accessToken.isEmpty && !signKeyHex.isEmpty }
+
+    /// 从 JWT 的 `exp` 声明解出绝对过期时刻。
+    ///
+    /// 这是**比 tokenExpireTime 更硬的证据**：TTL 字段是服务端配额，而 `exp` 是
+    /// 签发时写进 token 里的，服务端校验的就是它。有 exp 时以 exp 为准。
+    var jwtExpiresAt: Date? {
+        let parts = accessToken.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var b64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while b64.count % 4 != 0 { b64 += "=" }
+        guard let data = Data(base64Encoded: b64),
+              let json = try? JSONSerialization.jsonObject(with: data),
+              let obj = json as? [String: Any],
+              let exp = obj["exp"] as? Double else { return nil }
+        return Date(timeIntervalSince1970: exp)
+    }
+
+    /// accessToken 的绝对过期时刻。优先信 JWT 的 exp，退化到 tokenExpireTime + 落地时间。
+    /// nil = 两个来源都拿不到（例如手工粘贴了一个非 JWT 的 token）
+    var tokenExpiresAt: Date? {
+        if let e = jwtExpiresAt { return e }
+        guard let ttl = tokenExpireTime, ttl > 0, let at = tokenIssuedAt else { return nil }
+        return at.addingTimeInterval(TimeInterval(ttl))
+    }
+
+    /// 距过期还剩多少秒；负数 = 已过期，nil = 未知
+    func tokenRemainingSeconds(at now: Date = Date()) -> Int? {
+        guard let exp = tokenExpiresAt else { return nil }
+        return Int(exp.timeIntervalSince(now).rounded())
+    }
+
+    /// 是否该续期了。
+    ///
+    /// `skew` 默认 300 秒：提前 5 分钟续，避免「请求在路上时刚好过期」。
+    /// TTL 未知（手工粘贴 token 建的会话）时返回 false —— 那种情况走「401 再续」的被动路径。
+    func needsRefresh(at now: Date = Date(), skew: TimeInterval = 300) -> Bool {
+        guard let exp = tokenExpiresAt else { return false }
+        return exp.timeIntervalSince(now) <= skew
+    }
 }
 
 // MARK: - 错误
@@ -259,6 +320,154 @@ final class LMClient: ObservableObject {
         d.removeObject(forKey: LMClient.coordSinceKey)
         coordinateUnchangedSince = nil
         store.clear()
+        tokenRefreshLog = []
+        lastTokenRefresh = nil
+        lastTokenRefreshOK = nil
+    }
+
+    // MARK: - 登录态续期（refreshToken）
+    //
+    // ★ 2026-10-08 新增，专治「token 存活时间太短 / 官方 App 登录一次就不退出」。
+    //
+    // 之前的状态：`refreshToken` 从登录响应里存进了 Keychain，但**全仓零调用**，
+    // `LMEndpoints.Path.refreshToken` 定义了也没人用 → accessToken 2 小时一到，
+    // 所有接口全挂，用户被迫重新登录。官方 App 靠 refreshToken 续期，
+    // 所以「验证码登录一次就一直不退出」。
+    //
+    // 官方实现（逆向自主二进制，本地无抓包样本 —— 三份 HAR 里都没有续期请求）：
+    //   · 主动续期：ivar `_tokenAliveSec`(double 倒计时) + `_tokenRefreshedFlagTime`
+    //     + `_refreshTokenQueue`(串行队列，防并发重复续期)
+    //     + 通知名 `com.tokenServer.login` / `com.tokenServer.refreshToken`
+    //   · 请求：函数 @0x106E8115C
+    //       add x3, x3, #0x9c0  ; @"/token/v1/refresh"
+    //       add x3, x3, #0x8c0  ; @"refreshToken"  → setObject:forKey:（body 键）
+    //       add x4, x4, #0x960  ; @"POST_Json"     → JSON POST，超时 20s
+    //   · 响应：函数 @0x106E82B34 每个字段都同时认扁平键与点路径：
+    //       accessToken/data.accessToken、signR2/data.signParam.r2、
+    //       encryptR2/data.encryptParam.r2、tokenExpireTime/data.tokenExpireTime …
+    //   · 签名：复用登录那条 `sign = SHA256(valueStr)` 无密钥路径 —— 续期必然发生在
+    //     accessToken 已失效之后，用不了由 accessToken 派生的 signKey。
+    //
+    // 两条触发路径（缺一不可）：
+    //   ① 主动：token 剩余寿命 < 300s 时，在 `request(...)` 发请求前先续（见 request 内）
+    //   ② 被动：服务端仍然判 token 失效（401 / token 类业务码）时，续一次再重放原请求
+
+    /// 续期过程日志（诊断页展示，只留最近 30 条）
+    @Published private(set) var tokenRefreshLog: [String] = []
+    /// 最近一次续期时间
+    @Published private(set) var lastTokenRefresh: Date?
+    /// 最近一次续期是否成功（nil = 还没试过）
+    @Published private(set) var lastTokenRefreshOK: Bool?
+
+    /// 续期任务去重：多个请求同时发现 token 过期时，只打一次接口
+    private var refreshTask: Task<LMSession, Error>?
+
+    private func logRefresh(_ line: String) {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        tokenRefreshLog.append("[\(f.string(from: Date()))] \(line)")
+        if tokenRefreshLog.count > 30 {
+            tokenRefreshLog.removeFirst(tokenRefreshLog.count - 30)
+        }
+    }
+
+    /// 有没有可用于续期的 refreshToken
+    var canRefresh: Bool {
+        guard let s = session else { return false }
+        return !s.refreshToken.isEmpty
+    }
+
+    /// 主动续期：token 快过期 / 已过期时调一次 `/token/v1/refresh`。
+    ///
+    /// 刻意不抛错 —— 调用方是「顺手续一下」的请求路径，续期失败不该让业务请求也失败。
+    /// - Returns: true = 当前持有可用 token（含「本来就没到期，无需续」）
+    @discardableResult
+    func refreshSessionIfNeeded(force: Bool = false) async -> Bool {
+        guard let s = session, !s.refreshToken.isEmpty else { return false }
+        if !force, !s.needsRefresh() { return true }
+        do {
+            _ = try await refreshAccessToken()
+            return true
+        } catch {
+            lastTokenRefresh = Date()
+            lastTokenRefreshOK = false
+            logRefresh("✗ 续期失败：\(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// 真打续期接口。并发调用复用同一个 Task（对齐官方的 `_refreshTokenQueue` 串行队列）。
+    @discardableResult
+    func refreshAccessToken() async throws -> LMSession {
+        if let t = refreshTask { return try await t.value }
+        guard let s = session, !s.refreshToken.isEmpty else {
+            throw LMError.notLoggedIn
+        }
+        let rt = s.refreshToken
+        let task = Task<LMSession, Error> { [weak self] in
+            guard let self else { throw LMError.notLoggedIn }
+            return try await self.performRefresh(refreshToken: rt)
+        }
+        refreshTask = task
+        defer { refreshTask = nil }
+        return try await task.value
+    }
+
+    private func performRefresh(refreshToken rt: String) async throws -> LMSession {
+        logRefresh("→ POST \(LMEndpoints.Path.refreshToken)  body={\"refreshToken\":\"\(rt.prefix(10))…\"}")
+        let any = try await preLoginRequest(path: LMEndpoints.Path.refreshToken,
+                                            host: LMEndpoints.accountHost,
+                                            body: ["refreshToken": rt],
+                                            accountId: session?.accountId ?? "")
+        guard let dict = any as? [String: Any] else {
+            throw LMError.decoding("续期响应不是 JSON 对象")
+        }
+        if let code = dict["code"] as? Int, code != 0 {
+            let msg = (dict["message"] as? String) ?? (dict["msg"] as? String) ?? ""
+            throw LMError.business(code, msg)
+        }
+        var inner = (dict["data"] as? [String: Any]) ?? dict
+        // 续期响应常常不带 accountId / nickname —— 补上旧值，
+        // 否则 adoptLoginResponse 会把它们清成空串（userId 请求头就没了）
+        if inner["accountId"] == nil, let old = session?.accountId, !old.isEmpty {
+            inner["accountId"] = old
+        }
+        if inner["nickname"] == nil, let old = session?.nickname, !old.isEmpty {
+            inner["nickname"] = old
+        }
+        let data = try JSONSerialization.data(withJSONObject: inner)
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        let newSession = try adoptLoginResponse(json: json)
+        lastTokenRefresh = Date()
+        lastTokenRefreshOK = true
+        let rem = newSession.tokenRemainingSeconds().map { "\($0 / 60) 分钟" } ?? "未知"
+        logRefresh("✓ 续期成功，新 token 有效期 \(rem)")
+        return newSession
+    }
+
+    /// 判断一个错误是否「像 token 失效」。
+    ///
+    /// 官方的失效码表是 ivar `tokenInvalidErrorCodes`，但它的**取值在二进制里查不到**
+    /// （只有符号名，没有常量数组），所以这里采取「宁可多试一次」的策略：
+    /// 401/403，或业务码/文案带 token 语义，都当成失效。
+    /// 多续一次最多浪费一个请求；漏判则会让用户被迫重登 —— 代价不对等。
+    static func looksLikeTokenExpired(_ error: Error) -> Bool {
+        if let e = error as? LMError {
+            switch e {
+            case .http(let code, _):
+                return code == 401 || code == 403
+            case .business(let code, let msg):
+                if code == 100101 { return true }   // 二进制里紧挨「Token Refresh」出现的码
+                let m = msg.lowercased()
+                for kw in ["token", "登录", "过期", "expired", "invalid", "unauthorized", "鉴权", "认证"] {
+                    if m.contains(kw) { return true }
+                }
+                return false
+            default:
+                return false
+            }
+        }
+        return false
     }
 
     func select(vehicle: LMVehicle) {
@@ -347,7 +556,6 @@ final class LMClient: ObservableObject {
         }
 
         let contentType = (form != nil) ? "application/x-www-form-urlencoded" : "application/json"
-        let headers = buildHeaders(signBody: signBody, skipAuth: skipAuth, contentType: contentType)
 
         // 3) 请求体
         var bodyData: Data?
@@ -360,7 +568,36 @@ final class LMClient: ObservableObject {
             bodyData = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         }
 
-        // 4) 发送
+        // 4) 主动续期：token 剩余寿命不足就先换掉，别等它真过期被服务端打回来。
+        //    ⚠️ 不能在这里 buildHeaders —— 续期会换 accessToken，headers 必须每次重算。
+        if !skipAuth, let s = session, !s.refreshToken.isEmpty, s.needsRefresh() {
+            await refreshSessionIfNeeded()
+        }
+
+        do {
+            return try await sendWithFreshHeaders(method: method, url: url, signBody: signBody,
+                                                  skipAuth: skipAuth, contentType: contentType,
+                                                  bodyData: bodyData)
+        } catch {
+            // 5) 被动续期：主动判断漏了（TTL 未知 / 服务端提前失效）时兜底 ——
+            //    续一次，然后把原请求**原样重放一次**。只重放一次，避免死循环。
+            guard !skipAuth, canRefresh, LMClient.looksLikeTokenExpired(error) else { throw error }
+            logRefresh("⚠ 命中 token 失效信号，续期后重放：\(error.localizedDescription)")
+            guard await refreshSessionIfNeeded(force: true) else { throw error }
+            return try await sendWithFreshHeaders(method: method, url: url, signBody: signBody,
+                                                  skipAuth: skipAuth, contentType: contentType,
+                                                  bodyData: bodyData)
+        }
+    }
+
+    /// 用「当前最新的 session」现算请求头再发一次。
+    ///
+    /// 单独抽出来是因为续期会替换 accessToken / signKey，而 headers 里两者都参与，
+    /// 提前算好再续期就会拿旧 token 发出去。
+    private func sendWithFreshHeaders(method: String, url: URL, signBody: [String: Any],
+                                      skipAuth: Bool, contentType: String,
+                                      bodyData: Data?) async throws -> Any {
+        let headers = buildHeaders(signBody: signBody, skipAuth: skipAuth, contentType: contentType)
         return try await send(method: method, url: url, headers: headers,
                               bodyData: bodyData, throwsOnBusinessError: true)
     }
@@ -470,31 +707,81 @@ final class LMClient: ObservableObject {
         let token = (dict["accessToken"] as? String) ?? ""
         guard !token.isEmpty else { throw LMError.decoding("缺少 accessToken") }
 
-        let sp = dict["signParam"] as? [String: String]
-        let ep = dict["encryptParam"] as? [String: String]
+        // ★ 续期响应与登录响应**同构，但可能更扁平**。
+        //   原生登录 SDK 对每个字段都同时尝试「点路径」和「扁平键」，见主二进制
+        //   0x106E82B34 起的字符串表（同一函数里成对出现）：
+        //       data.signParam.r2 / signR2      data.signParam.r3 / signR3
+        //       data.encryptParam.r2 / encryptR2  data.encryptParam.r3 / encryptR3
+        //       data.accessToken / accessToken  ... tokenExpireTime / data.tokenExpireTime
+        //   所以这里两条路都要认，否则续期回来的扁平结构会被判成「派生失败」。
+        let sp: Any? = dict["signParam"]
+        let ep: Any? = dict["encryptParam"]
+
+        func rValue(_ nested: Any?, _ key: String, _ flatKey: String) -> String? {
+            if let d = nested as? [String: Any], let v = d[key] as? String, !v.isEmpty { return v }
+            if let d = nested as? [String: String], let v = d[key], !v.isEmpty { return v }
+            if let v = dict[flatKey] as? String, !v.isEmpty { return v }
+            return nil
+        }
 
         var signKeyHex = ""
         var encryptKeyHex = ""
-        if let sp = sp, let r2 = sp["r2"], let r3 = sp["r3"] {
+        if let r2 = rValue(sp, "r2", "signR2"), let r3 = rValue(sp, "r3", "signR3") {
             signKeyHex = LMSigner.deriveKey(accessToken: token, r2: r2, r3: r3)?.hexUppercased ?? ""
         }
-        if let ep = ep, let r2 = ep["r2"], let r3 = ep["r3"] {
+        if let r2 = rValue(ep, "r2", "encryptR2"), let r3 = rValue(ep, "r3", "encryptR3") {
             encryptKeyHex = LMSigner.deriveKey(accessToken: token, r2: r2, r3: r3)?.hexUppercased ?? ""
         }
-        guard !signKeyHex.isEmpty else { throw LMError.decoding("无法派生 signKey（缺少 signParam.r2/r3）") }
+        guard !signKeyHex.isEmpty else {
+            throw LMError.decoding("无法派生 signKey（响应里既没有 signParam.r2/r3，也没有 signR2/signR3）")
+        }
+
+        // accountId / nickname / refreshToken 在续期响应里可能缺省 → 沿用旧会话的值
+        let newAccountId = LMClient.stringValue(dict["accountId"]) ?? session?.accountId ?? ""
+        let newNickname = (dict["nickname"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? session?.nickname ?? ""
+        let newRefreshToken = (dict["refreshToken"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            ?? session?.refreshToken ?? ""
+
+        // tokenExpireTime 可能是数字也可能是字符串；缺失时沿用旧值
+        let ttl = LMClient.intValue(dict["tokenExpireTime"]) ?? session?.tokenExpireTime
 
         let s = LMSession(
             accessToken: token,
-            refreshToken: (dict["refreshToken"] as? String) ?? "",
+            refreshToken: newRefreshToken,
             signKeyHex: signKeyHex,
             encryptKeyHex: encryptKeyHex,
-            userId: String(describing: dict["accountId"] ?? ""),
-            accountId: String(describing: dict["accountId"] ?? ""),
-            nickname: (dict["nickname"] as? String) ?? "",
-            opPassword: session?.opPassword ?? ""
+            userId: newAccountId,
+            accountId: newAccountId,
+            nickname: newNickname,
+            opPassword: session?.opPassword ?? "",
+            tokenExpireTime: ttl,
+            tokenIssuedAt: Date()
         )
         adopt(session: s)
         return s
+    }
+
+    /// 把 JSON 里可能是 Int / Double / String 的数值统一成 Int
+    static func intValue(_ any: Any?) -> Int? {
+        switch any {
+        case let i as Int:            return i
+        case let d as Double:         return Int(d)
+        case let n as NSNumber:       return n.intValue
+        case let s as String:         return Int(s)
+        default:                      return nil
+        }
+    }
+
+    /// 把 JSON 里可能是数字 / 字符串的标识统一成 String（accountId 有时是 123 有时是 "123"）
+    static func stringValue(_ any: Any?) -> String? {
+        switch any {
+        case let s as String:         return s.isEmpty ? nil : s
+        case let i as Int:            return String(i)
+        case let d as Double:         return String(Int(d))
+        case let n as NSNumber:       return n.stringValue
+        default:                      return nil
+        }
     }
 
     /// 只填 token + 两组 r2/r3 的简写方式

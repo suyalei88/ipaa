@@ -24,6 +24,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             sessionSection
+            refreshLogSection
             opPasswordSection
             vehicleSection
             featureSection
@@ -40,13 +41,59 @@ struct SettingsView: View {
     @ViewBuilder
     private var sessionSection: some View {
         if let s = client.session {
-            Section("当前会话") {
+            Section {
                 row("账号", s.accountId.isEmpty ? s.nickname : s.accountId)
                 row("userId", s.userId.isEmpty ? "--" : s.userId)
                 row("signKey", prefix(s.signKeyHex, 20))
                 row("encryptKey", prefix(s.encryptKeyHex, 20))
                 row("token", prefix(s.accessToken, 24))
-                row("会话有效期", tokenExpiryText(s.accessToken))
+                row("accessToken 有效期", tokenExpiryText(s.accessToken))
+                row("refreshToken",
+                    s.refreshToken.isEmpty ? "无 —— 到期只能重新登录" : prefix(s.refreshToken, 20))
+                row("续期状态", refreshStatusText)
+                if !s.refreshToken.isEmpty {
+                    Button {
+                        Task { await client.refreshSessionIfNeeded(force: true) }
+                    } label: {
+                        Label("立即续期 accessToken", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+            } header: {
+                Text("当前会话")
+            } footer: {
+                Text("""
+                官方 App「验证码登录一次就一直不退出」，靠的就是 refreshToken 续期。
+                accessToken 只有约 2 小时，refreshToken 约 7 天。
+                本 App 会在 token 剩余不足 5 分钟时自动打 /base/base-user/token/v1/refresh 换新，
+                服务端仍判失效时也会自动续期后重放原请求。
+                只要 refreshToken 没过期，就不会被踢回登录页。
+                """)
+            }
+        }
+    }
+
+    private var refreshStatusText: String {
+        guard let t = client.lastTokenRefresh else { return "尚未续期" }
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm:ss"
+        return "\(f.string(from: t))　\(client.lastTokenRefreshOK == true ? "成功" : "失败")"
+    }
+
+    // MARK: - 续期日志
+
+    private var refreshLogSection: some View {
+        Section("续期日志") {
+            if client.tokenRefreshLog.isEmpty {
+                Text("暂无记录（token 未临近过期时不会触发续期）")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(client.tokenRefreshLog.indices, id: \.self) { i in
+                    Text(client.tokenRefreshLog[i])
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
     }

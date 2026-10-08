@@ -52,8 +52,20 @@ enum LMEndpoints {
         static let sendSMS            = "/app-user/applogin/compliance/sendmessagecode"
         static let checkLoginWithPhone = "/app-user/applogin/check_login_with_phone"   // POST_Form
         static let login              = "/base/base-user/account/v1/login"             // 外层token换JWT
-        static let refreshToken       = "/token/v1/refresh"
-        static let logout             = "/account/v1/logout"
+        static let logout             = "/base/base-user/account/v1/logout"
+
+        /// 登录态续期。**这是官方 App「验证码登录一次就一直不退出」的关键接口。**
+        ///
+        /// ★ 2026-10-08 逆向自官方主二进制，不是猜的：
+        ///   · 主二进制 `__TEXT,__cstring` 里路径表只有裸的 `/token/v1/refresh`（@0xAA33226），
+        ///     服务名前缀是运行时拼的 —— 同一张表里就是 `@"/base/base-user"`（@0xAA33D8E）
+        ///     与 `@"/account/v1/login"`（@0xAA33E05）相邻，所以前缀同 login。
+        ///   · 调用点：函数 @0x106E8115C
+        ///       add x3, x3, #0x9c0  ; @"/token/v1/refresh"
+        ///       add x3, x3, #0x8c0  ; @"refreshToken"  → setObject:forKey:
+        ///       add x4, x4, #0x960  ; @"POST_Json"     → JSON POST，超时 20s
+        ///   · host 与 login 同源 = app-gw-global-master.leapmotor.com
+        static let refreshToken       = "/base/base-user/token/v1/refresh"
 
         // 车辆
         static let vehicleList    = "/app/app-global-service/v1/vehicle/list"
