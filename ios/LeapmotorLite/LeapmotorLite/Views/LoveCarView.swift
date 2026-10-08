@@ -75,9 +75,12 @@ struct LoveCarView: View {
             VStack(spacing: 16) {
                 if let v = client.selectedVehicle {
                     topBar(v)
+                    // ★ 2026-10-08 调整：车模提到顶部、放大、去掉卡片底色。
+                    //   官方爱车页的车模是「页面背景的一部分」而不是一张卡片，
+                    //   所以这里紧跟顶部车辆栏，且不套 `LMCard` / 不画圆角底色。
+                    car3DCard
                     rangeHero
                     chargeCenterChip
-                    car3DCard
                     quickActionsPager
                     if client.chargeSchedule?.isEnabled == true { appointmentBanner }
                     climateCard
@@ -313,7 +316,11 @@ struct LoveCarView: View {
     }
 
     /// 内嵌车模卡的高度。
-    private var car3DHeight: CGFloat { 230 }
+    ///
+    /// ★ 2026-10-08 从 230 提到 330：用户要求「放大、跟背景一起」。
+    ///   330 接近官方爱车页车模区占屏的比例（约 40% 屏高），
+    ///   且宽高比 361:330 ≈ 1.09，官方查看器在这个比例下不会裁切车头/车尾。
+    private var car3DHeight: CGFloat { 330 }
 
     private func car3DBody(width: CGFloat, height: CGFloat) -> some View {
         ZStack(alignment: .topTrailing) {
@@ -347,9 +354,9 @@ struct LoveCarView: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: height)
-            .background(Color(.secondarySystemBackground),
-                        in: RoundedRectangle(cornerRadius: LMRadius.card, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: LMRadius.card, style: .continuous))
+            // ★ 2026-10-08：不再铺卡片底色、不再裁剪圆角 —— 车模直接浮在页面背景上，
+            //   与官方爱车页一致。WebView 本身是透明的（`isOpaque = false` +
+            //   `backgroundColor = .clear`），所以去掉底色后不会有白块。
 
             Button {
                 // 先复位，再跳全屏：返回时这里会用新 nonce 重建一个干净的 WebView

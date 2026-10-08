@@ -1383,6 +1383,8 @@ final class LMClient: ObservableObject {
         try? await refreshNoticeCount()
         // 位置同理。★ 这是复现官方「车辆位置」的唯一来源，见 refreshIPAddress 注释。
         await refreshIPAddress()
+        // 健康充电开关状态（只读查询）。充电中心页要用它显示开关的当前值。
+        _ = await refreshHealthyCharging()
     }
 
     // MARK: - 蓝牙钥匙
@@ -1893,6 +1895,119 @@ final class LMClient: ObservableObject {
         guard coordinate != nil else { return false }
         guard let s = coordinateUnchangedFor else { return false }
         return s > 24 * 3600
+    }
+
+    // MARK: - 充电控制（★ 2026-10-08 从官方 IPA 主二进制反汇编解出 cmdid）
+    //
+    // 四个 cmdid 全部来自「官方主二进制的 cmdid 分派函数」反汇编，
+    // 详见 `LMEndpoints.ChargeCmdid` 的注释（含每条 case 的指令地址）。
+    //
+    // 通道：全部走车控 `POST /app/app-control-service/v3/api/appremotectl`
+    //      （form: carvin + cmdid + oppwd + state），复用已跑通的 `controlRaw`。
+    //
+    // ⚠️ 诚实标注：cmdid 是硬证据；**state 字段名**部分有据、部分推断，
+    //    每个方法上单独写明来源与置信度，不混为一谈。
+
+    /// 立即充电 / 结束充电（cmdid **193**）。
+    ///
+    /// cmdid 证据：`0x106c5eeec  cmp x23, #0xc1` → `b.eq 0x106c5f248`
+    /// → `bl objc_msgSend$requestForBeginOrEndChargingWithContent:`。
+    ///
+    /// ⚠️ state：`Begin_Charge` 取自主二进制字符串表
+    /// （`LMVChargingAppointment.chargesoc.chargeEnable.recharge.cycles.circulation.Begin_Charge`），
+    /// **字段名有据、取值类型无样本**。所以同时带 `Begin_Charge` 和 `recharge`
+    /// 两个候选键（都按车端习惯用 1/0）—— 多一个未知键通常被忽略，
+    /// 比押注单一键名安全。
+    @discardableResult
+    func setChargingActive(_ active: Bool) async -> Bool {
+        await controlRaw(cmdid: LMEndpoints.ChargeCmdid.startOrStop,
+                         state: ["Begin_Charge": active ? 1 : 0,
+                                 "recharge": active ? 1 : 0],
+                         label: active ? "立即充电" : "结束充电")
+    }
+
+    /// 充电上限设置（cmdid **190**）。
+    ///
+    /// cmdid 证据：`0x106c5f08c  cmp x23, #0xbe` → `bl objc_msgSend$requestForChargingSetContent:`。
+    ///
+    /// state：`percent` 是**服务端 `config["3"]` 实测回来的字段名**（置信度高），
+    /// 同时冗余带上主二进制字段串里的 `chargesoc`。
+    @discardableResult
+    func setChargeLimit(_ percent: Int) async -> Bool {
+        let p = min(max(percent, LMEndpoints.chargeSocRange.lowerBound),
+                    LMEndpoints.chargeSocRange.upperBound)
+        return await controlRaw(cmdid: LMEndpoints.ChargeCmdid.socLimit,
+                                state: ["percent": p, "chargesoc": p],
+                                label: "充电上限 \(p)%")
+    }
+
+    /// 健康充电开关（cmdid **480**）。
+    ///
+    /// cmdid 证据：`0x106c5ef28  cmp x23, #0x1e0` → `bl objc_msgSend$requestForChargingHealthControl:`。
+    ///
+    /// state：`isPush` 是**确认过的字段** —— 查询接口
+    /// `healthyCharging/queryPushState` 实测返回 `{"isPush":false}`。
+    /// 下发成功后立刻重新查一次，用服务端回值校准本地开关，不靠乐观更新。
+    @discardableResult
+    func setHealthyCharging(_ on: Bool) async -> Bool {
+        let ok = await controlRaw(cmdid: LMEndpoints.ChargeCmdid.health,
+                                  state: ["isPush": on],
+                                  label: on ? "打开健康充电" : "关闭健康充电")
+        if ok { _ = await refreshHealthyCharging() }
+        return ok
+    }
+
+    /// 预约充电设置（cmdid **161**）。
+    ///
+    /// cmdid 证据：`0x106c5ee88  cmp x23, #0xa1` → `bl objc_msgSend$requestForAppointmentContrlCmdID:content:`。
+    /// （同一分支还接了 `0xab`=171、`0x188`=392，是预约族的另外两个子码。）
+    ///
+    /// state：**刻意使用服务端下发的原字段名** —— `commonConfig` 的 `config["3"]`
+    /// 实测回来过 `beginTime` / `endTime` / `percent` / `isEnable` /
+    /// `cycles` / `circulation` / `recharge`。读什么写什么，不引入新名字，
+    /// 这是所有候选方案里最不容易写错的一路。
+    @discardableResult
+    func saveAppointmentCharge(beginTime: String,
+                               endTime: String,
+                               percent: Int,
+                               enabled: Bool,
+                               cycles: String,
+                               circulation: Bool) async -> Bool {
+        let p = min(max(percent, LMEndpoints.chargeSocRange.lowerBound),
+                    LMEndpoints.chargeSocRange.upperBound)
+        let state: [String: Any] = [
+            "beginTime": beginTime,
+            "endTime": endTime,
+            "percent": p,
+            "isEnable": enabled ? 1 : 0,
+            "cycles": cycles,
+            "circulation": circulation ? 1 : 0,
+            "recharge": 0,
+        ]
+        let ok = await controlRaw(cmdid: LMEndpoints.ChargeCmdid.appointment,
+                                  state: state,
+                                  label: "预约充电 \(beginTime)–\(endTime) \(p)%")
+        if ok { try? await refreshCommonConfig() }
+        return ok
+    }
+
+    /// 健康充电开关查询（只读，不抛错）。
+    ///
+    /// 从 `probeHealthyChargingPush()` 抽出来的可复用版本 —— 那个是诊断页
+    /// 手动探测用的，返回人类可读字符串；这个返回 `Bool?` 给界面直接用。
+    @discardableResult
+    func refreshHealthyCharging() async -> Bool? {
+        guard let vin = selectedVehicle?.vin else { return nil }
+        do {
+            let any = try await request(method: "POST",
+                                        path: LMEndpoints.Path.healthyChargingPush,
+                                        form: ["carvin": vin, "deviceId": config.deviceId])
+            let env = try? decode(LMEnvelope<LMHealthyChargingPush>.self, from: any)
+            healthyChargingPush = env?.data?.isPush
+            return healthyChargingPush
+        } catch {
+            return nil
+        }
     }
 
     // MARK: - 充电

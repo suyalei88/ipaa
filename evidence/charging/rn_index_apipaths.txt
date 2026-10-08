@@ -1,0 +1,73 @@
+# RN bundle 里的 API 路径清单（充电页是否用 RN 实现的反证）
+
+来源：官方 IPA `Payload/leapmotorCarOwner.app/index.jsbundle`
+大小：3,044,225 B
+提取方式：
+```
+unzip -p 零跑-1.22.68.ipa 'Payload/leapmotorCarOwner.app/index.jsbundle' > evidence/rn_index.jsbundle
+```
+
+扫描方式（宽松匹配已知服务前缀，避免漏掉）：
+```python
+import re
+d = open("evidence/rn_index.jsbundle", "rb").read().decode("utf-8", "replace")
+pats = set()
+for m in re.finditer(r'/(?:appaicenter|carownerservice|app-control-service|app-user|base)[A-Za-z0-9_\-/.]*', d):
+    pats.add(m.group(0))
+```
+
+## 结果：**11 条真实接口路径，0 条与充电相关**
+
+```
+# —— AI 中心（bigmodelapp）9 条 ——
+/appaicenter/v3/api/bigmodelapp/getSessionId
+/appaicenter/v3/api/bigmodelapp/v2/carStatusQuery
+/appaicenter/v3/api/bigmodelapp/v2/getSessionId
+/appaicenter/v3/api/bigmodelapp/v2/history/sessionDetail
+/appaicenter/v3/api/bigmodelapp/v2/history/sessionIdList
+/appaicenter/v3/api/bigmodelapp/v2/interact
+/appaicenter/v3/api/bigmodelapp/v2/interact-debug
+/appaicenter/v3/api/bigmodelapp/v2/interact-short-text-test
+/appaicenter/v3/api/bigmodelapp/v2/like/record
+
+# —— 协议（agreement）2 条 ——
+/carownerservice/agreement/loadLatestAgreement
+/carownerservice/agreement/operateAgreement
+```
+
+> ⚠️ 另有 2 条是**误报**：`/baseMinusT`、`/baseMinusTMin` ——
+> 那是压缩后的 JS 变量名（`baseMinusT` 是 base64 解码函数的局部变量），不是接口。
+> 所以「13 条」这个早期数字里含 2 条噪声，**真实是 11 条**。
+
+## 结论
+
+RN bundle 里**一条充电相关路径都没有**，而主二进制里充电相关路径齐全
+（`appremotectl` / `appremotectl/appointment` / `appremotectl/getappointment` /
+`healthyCharging/control` / `healthyCharging/queryPushState`）。
+
+→ **充电中心是原生页面，不是 RN**。所以逆向充电只能从主二进制下手，
+扫 RN bundle 是白费功夫。
+
+## 顺带：RN bundle 里的预约充电文案 key
+
+虽然是原生页面，但 RN bundle 里仍有预约充电卡的**布局配置**（应该是配置中心下发的
+文案 key 表，原生页也会读）：
+
+```
+label_appointment_charge_charge_limit   → 充电上限
+charge_continue                         → 充到限值后继续
+charge_switch                           → 预约开关
+charge_start_time / charge_end_time     → 开始 / 结束时间
+charge_cycle                            → 每天
+label_appointment_battery_preheat_*     → 电池预热族
+```
+
+这些 key 与官方本地化表（`LMVLocalizedBundle.bundle/zh-Hans.lproj/Localizable.strings`）
+里的 `ChargingCenter_*` 是两套命名，说明**预约充电卡的文案走配置中心**，
+而**充电中心页的文案走本地化表**。
+
+## 为什么不把 bundle 本体提交进仓库
+
+3 MB 的官方压缩 JS 属于**官方代码的再分发**，而且 `.gitignore` 的既定原则是
+「原始素材超大，不要进仓库」。上面这份路径清单才是本结论真正需要的证据，
+bundle 本体按需从 IPA 重新提取即可（一行命令，见文件开头）。

@@ -75,3 +75,7 @@ evidence/car3d/pkg/
 evidence/car3d/chassis.jpg
 # model3d.bin 与 model3d.png 字节完全相同，只留 png
 evidence/car3d/model3d.bin
+
+# RN bundle（3MB 官方压缩 JS，属官方代码再分发；结论与路径清单见
+# evidence/charging/rn_index_apipaths.txt，需要时从 IPA 重新提取）
+evidence/rn_index.jsbundle

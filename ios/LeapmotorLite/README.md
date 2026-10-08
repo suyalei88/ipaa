@@ -364,6 +364,138 @@ window.newInit(serverJson, appJson);         // serverJson/appJson 都是 **JSON
 > 完整的逆向记录（含未绑车态三个配置源、Lottie 误判、cmdid 对照）
 > 见 `evidence/lovecar/FINDINGS_LOVECAR.md`。
 
+#### 3D 车模的位置与尺寸（2026-10-09 调整）
+
+用户反馈「把 3D 车模放大调到上面跟背景一起」，据此改了三点：
+
+| 项 | 改前 | 改后 | 理由 |
+|---|---|---|---|
+| 页面位置 | 续航条之后 | **紧跟顶部车辆栏** | 官方爱车页车模就是最先看到的内容 |
+| 高度 | 230 pt | **330 pt** | 约 40% 屏高，接近官方车模区占比；宽高比 361:330 ≈ 1.09，官方查看器在这个比例下不裁车头/车尾 |
+| 底色 | `secondarySystemBackground` + 圆角裁剪 | **无底色、无裁剪** | 车模直接浮在页面背景上，与官方一致 |
+
+去底色是安全的：`Car3DWebView` 里的 `WKWebView` 已设 `isOpaque = false`
++ `backgroundColor = .clear`，本身透明，不会露白块。契约测试 [11] 盯着这三条，
+并**反向断言**了「不能再出现 `secondarySystemBackground` / `clipShape`」。
+
+---
+
+### 1.8 充电中心（可写 · 四个 cmdid 全部来自反汇编）
+
+**2026-10-09 新增。** 用户要求「能直接在 App 设置预约充电 / 健康充电 / 立即充电 / 结束充电」。
+改造前 `ChargeView` 是纯只读展示页；现在四个动作都能真正下发。
+
+#### 为什么必须靠反汇编，而不能靠抓包
+
+抓包里 `POST /carownerservice/v3/api/appremotectl` 的 cmdid **只有**
+`110 / 120 / 130 / 170 / 230 / 400`（即已实现的 6 个车控），
+**充电四个 cmdid 一个样本都没有** —— 因为抓包期间用户没在官方 App 里点过充电。
+所以结论只能从官方主二进制里挖。
+
+#### 定位方法（可复用）
+
+```
+__objc_methname 取 selector 字符串 vmaddr
+        ↓
+__objc_selrefs 找引用 —— ⚠️ 磁盘上全是 0，
+        指针是 chained-fixups 未 rebase 状态，
+        必须解析 LC_DYLD_CHAINED_FIXUPS（fileoff 0xbb5c000）还原
+        ↓
+__objc_stubs 里找 selector stub（adrp + ldr 配对）
+        ↓
+__text 里找 bl <stub> 调用点（(insn & 0xFC000000) == 0x94000000）
+        ↓
+反汇编调用点所在的大 switch = cmdid 分派表
+```
+
+#### 结论：四个 cmdid（每条都有指令地址作证）
+
+分派函数起始 `0x106c5ee00`，形如 `cmp x23, #<cmdid>` + `b.eq`：
+
+| cmdid | Hex | 官方 selector | 语义 | 调用点 |
+|---|---|---|---|---|
+| **190** | `0xBE` | `requestForChargingSetContent:` | 充电上限设置 | `0x106c5f09c` |
+| **193** | `0xC1` | `requestForBeginOrEndChargingWithContent:` | 立即 / 结束充电 | `0x106c5f250` |
+| **480** | `0x1E0` | `requestForChargingHealthControl:` | 健康充电开关 | `0x106c5ef38` |
+| **161** | `0xA1` | `requestForAppointmentContrlCmdID:content:` | 预约充电 | `0x106c5ef54` |
+
+stub 地址：`AppointmentContrl @0x10a4d4d40` / `BeginOrEndCharging @0x10a4d4d80`
+/ `ChargingHealthControl @0x10a4d4e00` / `ChargingSetContent @0x10a4d4e20`。
+
+> **可复现**：`python client/ios_charge_cmdid.py evidence/leapmotor_main`
+> 会把四个 cmdid、四个 stub、四个调用点全部重算一遍并断言与代码常量一致
+> （脚本自带纯 stdlib 的 chained-fixups 解码，不依赖 lief）。
+> 官方换版本时它会报红 —— 比人肉核对可靠。
+
+⚠️ **预约充电那一格是「多对一」**：161 / 171 / 361 / 392 四个 cmdid 都落到
+同一个分支体（`0x106C5EF48`）。所以「161 = 预约充电」成立，但反过来说
+「预约充电只有 161」不成立。本 App 只用 161（它也在 `rightList` 里）。
+
+**交叉验证**：`sharecar/getShareVehicleListByVin` 返回的
+`rightList = "190,192,170,193,171,150,370,470,130,131,230,110,430,410,160,161,480,360,240,361,120,340,440,220,320,420,421,301,500"`
+里 **190 排第一位**，且 193 / 161 / 480 都在 —— 与反汇编解出的结果完全吻合。
+
+#### state 字段：分级证据，不混为一谈
+
+分派器只传 `cmdid + content`，**content 的字段名在调用方构造，反汇编这段拿不到**。
+所以每个字段单独标来源：
+
+| 动作 | state 字段 | 证据等级 |
+|---|---|---|
+| 预约充电 | `beginTime` / `endTime` / `percent` / `isEnable` / `cycles` / `circulation` / `recharge` | **最高** —— 服务端 `config["3"]` 实测回来的原名，「读什么写什么」 |
+| 健康充电 | `isPush` | **高** —— 只读查询 `healthyCharging/queryPushState` 实测返回 `{"isPush":false}` |
+| 充电上限 | `percent`（+ 冗余 `chargesoc`） | **中高** —— `percent` 是 `config["3"]` 实测名；`chargesoc` 来自主二进制字段串 |
+| 立即 / 结束充电 | `Begin_Charge` + 冗余 `recharge` | **中** —— 字段名有据（主二进制字符串表 `…circulation.Begin_Charge`），**取值类型无样本**，所以两个键都带、都按 1/0 |
+
+> ⚠️ 「立即/结束充电」的 state 是最弱的一环，**必须真机验证**。
+> 多带一个未知键通常会被车端忽略，比押注单一键名安全。
+
+#### 三个实现决定
+
+1. **健康充电不做乐观更新**。下发成功后立刻重新查一次 `queryPushState`，
+   用服务端回值校准开关。否则会出现「界面显示已开、车端没收到」的错觉。
+2. **`healthyChargingPush` 是 `Bool?` 而不是 `Bool`**。`nil` = 还没读到，
+   界面显示「读取开关状态」按钮；`false` = 确认关闭。用 `Bool` 会把「未知」
+   显示成「已关闭」，是**主动误导**。
+3. **预约回填只在服务端有值时才覆盖**（`syncAppointmentFromServer` 里跳过
+   `--:--` 占位）。服务端没配过预约时保留占位默认值，而不是把「未设置」
+   写成一堆 `00:00` 骗用户。
+
+#### 官方限制（已复刻到文案）
+
+官方本地化表 `LMVLocalizedBundle.bundle/zh-Hans.lproj/Localizable.strings`（669 条）里
+与充电相关的原文：
+
+| key | 文案 |
+|---|---|
+| `ChargingCenter_Title` | 充电中心 |
+| `ChargingCenter_SubTitle` | 插枪后会根据设定时间充电，仅支持慢充 |
+| `ChargingCenter_SelectAppointmentTime` | 预约充电 |
+| `ChargingCenter_ChargeHealth` | 健康充电 |
+| `ChargingCenter_ChargeHealthSocAlert` | 为保持电池健康状态，无法调节至90%以上，请关闭健康充电后重调。 |
+| `ChargingCenter_OptimalLimit` / `…OptimalLimit80` | 最佳限值90% / 最佳限值80% |
+| `ChargingCenter_ChargingTimeTips` | 设置时间需在当前时间\n5分钟后 |
+| `ChargingCenter_ChargingCurrentTimeTips` | 设置时间需在当前时间后\n12小时内 |
+| `ChargingCenter_SameTimeTips` | 开始、结束时间相同，请重新选择 |
+| `ChargingCenter_CurrentSocTips` | 充电的电量不能小于当前电量 |
+| `ChargingCenter_ChargeHealthCloseAlertTip` | 确定关闭健康充电吗？ |
+| `LMV_Charge_startCharge` / `LMV_Charge_endCharge` | 开始充电 / 结束充电 |
+
+#### 顺带确认的两件事
+
+- **充电页是原生页面，不是 RN**。从官方 IPA 里提出 `index.jsbundle`
+  （3,044,225 B）后只扫到 **11 条真实接口路径**（9 条 AI 中心 `bigmodelapp`
+  + 2 条 `agreement`），**一条充电相关都没有** —— 而主二进制里充电路径齐全。
+  > 早期记录里写的「13 条」含 2 条噪声（`/baseMinusT`、`/baseMinusTMin`
+  > 是压缩后的 JS 变量名，不是接口），已更正。
+  > 清单见 `evidence/charging/rn_index_apipaths.txt`。
+- **没有独立的「立即充电」HTTP 接口**。主二进制里 71 条 `v3/api/` 路径全列出来过，
+  充电相关只有 `appremotectl` / `appremotectl/appointment` / `appremotectl/getappointment`
+  / `appremotectl/query` / `healthyCharging/control` / `healthyCharging/queryPushState`
+  —— 立即/结束充电只能走 `appremotectl` + cmdid 193。
+
+> 完整逆向记录见 `evidence/charging/FINDINGS_CHARGING.md`。
+
 ---
 
 ## 2. 编译 / 打包 IPA

@@ -363,6 +363,161 @@ def test_location_source() -> None:
           re.search(r"var carLocationShareOff[\s\S]{0,700}?coordinateUnchangedFor", client) is not None)
 
 
+def test_charging_center() -> None:
+    """⑩ 充电中心可写：四个 cmdid 全部来自官方主二进制反汇编。
+
+    背景（2026-10-09 用户报）：`ChargeView` 之前是纯只读展示页，
+    用户要求「能直接在 App 设置预约充电 / 健康充电 / 立即充电 / 结束充电」。
+
+    这四个 cmdid **一个都没有抓包样本**（抓包里 POST `appremotectl` 只有
+    110/120/130/170/230/400 这 6 个已知值），所以结论全部来自反汇编：
+    从 `__objc_methname` 取 selector → `__objc_selrefs`（chained fixups，
+    磁盘上是 0，必须解析 `LC_DYLD_CHAINED_FIXUPS` 才还原）→ `__objc_stubs`
+    → 在 `__text` 里找 `bl <stub>` → 反汇编那个大 switch。
+
+    下面把这些数字钉死。**它们改一个就全盘失效**，而失效方式是「指令发出去了、
+    车端按另一个语义执行」—— 比编译错误危险得多，所以必须由测试守住。
+    """
+    print("\n[10] 充电中心可写（cmdid 反汇编实证）")
+
+    ep = read("API/LMEndpoints.swift")
+    client = read("API/LMClient.swift")
+    view = read("Views/ChargeView.swift")
+
+    # ---- cmdid 取值 ----
+    m = re.search(r"enum\s+ChargeCmdid\s*\{(.*?)\n\s*\}", ep, re.S)
+    check("LMEndpoints 里有 enum ChargeCmdid", m is not None)
+    if m:
+        body = m.group(1)
+        for name, val in (("socLimit", 190), ("startOrStop", 193),
+                          ("health", 480), ("appointment", 161)):
+            mm = re.search(rf"static\s+let\s+{name}\s*=\s*(\d+)", body)
+            check(f"ChargeCmdid.{name} = {val}",
+                  mm is not None and int(mm.group(1)) == val,
+                  f"实际 {mm.group(1) if mm else '缺失'}")
+
+    # ---- 端点 ----
+    check("端点表里有预约充电设置路径 appremotectl/appointment（不带 get）",
+          re.search(r'appointmentSet\s*=\s*"/carownerservice/v3/api/appremotectl/appointment"', ep)
+          is not None)
+    check("端点表里有健康充电控制路径 healthyCharging/control",
+          re.search(r'healthyChargingControl\s*=\s*"/carownerservice/v3/api/healthyCharging/control"', ep)
+          is not None)
+    check("健康充电只读查询路径仍在（开关初值靠它）",
+          re.search(r'healthyChargingPush\s*=\s*"/carownerservice/v3/api/healthyCharging/queryPushState"', ep)
+          is not None)
+
+    # ---- 客户端方法 ----
+    for fn in ("setChargingActive", "setChargeLimit", "setHealthyCharging",
+               "saveAppointmentCharge", "refreshHealthyCharging"):
+        check(f"LMClient 有 {fn}()", re.search(rf"func\s+{fn}\(", client) is not None)
+
+    check("充电上限被夹在 chargeSocRange 内（不信任调用方传值）",
+          re.search(r"chargeSocRange\.lowerBound", client) is not None
+          and re.search(r"chargeSocRange\.upperBound", client) is not None)
+
+    # ---- 每个方法必须挂到正确的 cmdid 上 ----
+    for fn, cid in (("setChargingActive", "startOrStop"), ("setChargeLimit", "socLimit"),
+                    ("setHealthyCharging", "health"), ("saveAppointmentCharge", "appointment")):
+        check(f"{fn} 走 ChargeCmdid.{cid}",
+              re.search(rf"func\s+{fn}\([\s\S]{{0,1400}}?ChargeCmdid\.{cid}", client) is not None)
+
+    # ---- state 字段：分级证据，字段名不能乱换 ----
+    check("立即充电用 Begin_Charge（主二进制字符串表）",
+          re.search(r'"Begin_Charge"', client) is not None)
+    check("健康充电用 isPush（查询接口实测字段）",
+          re.search(r'"isPush"\s*:\s*on', client) is not None)
+    check("充电上限用 percent（服务端 config[\"3\"] 实测名）",
+          re.search(r'"percent"\s*:\s*p', client) is not None)
+    for f in ("beginTime", "endTime", "isEnable", "cycles", "circulation"):
+        check(f"预约充电回传服务端原名 {f}", f'"{f}"' in client)
+
+    # ---- 健康充电状态必须是 Optional（区分「未知」与「已关闭」）----
+    check("healthyChargingPush 是 Bool?（未读取 ≠ 已关闭）",
+          re.search(r"var\s+healthyChargingPush\s*:\s*Bool\?", client) is not None)
+    check("refreshAll 里会查一次健康充电状态",
+          re.search(r"refreshAll\(\)[\s\S]*?refreshHealthyCharging\(\)", client) is not None)
+
+    # ---- 界面：四张卡 + 四个动作 ----
+    for card in ("controlCard", "healthCard", "socLimitCard", "appointmentEditor"):
+        check(f"ChargeView 有 {card}", re.search(rf"private\s+var\s+{card}\s*:", view) is not None)
+    for act in ("runCharging", "runHealth", "runSocLimit", "runAppointment"):
+        check(f"ChargeView 有动作 {act}()", re.search(rf"func\s+{act}\(", view) is not None)
+
+    # body 顺序：控制 → 健康 → 上限 → 预约
+    idx = [view.find(x) for x in ("controlCard", "healthCard", "socLimitCard", "appointmentEditor")]
+    check("四张卡的 body 顺序为 控制→健康→上限→预约",
+          all(i >= 0 for i in idx) and idx == sorted(idx), str(idx))
+
+    check("按钮在忙 / 控制锁定期内禁用（controlLockRemaining）",
+          "controlLockRemaining() > 0" in view)
+    check("下发结果用 alert 回报（不静默）",
+          re.search(r"\.alert\(", view) is not None and "toast" in view)
+
+    # ---- 预约回填：只在服务端有值时才覆盖 ----
+    check("syncAppointmentFromServer 存在", re.search(r"func\s+syncAppointmentFromServer\(", view) is not None)
+    check("回填时跳过占位值 --:--（不把「未设置」写成 00:00）",
+          re.search(r'syncAppointmentFromServer[\s\S]{0,900}?"--:--"', view) is not None)
+    check("预约开关初值来自服务端 isEnabled",
+          re.search(r"syncAppointmentFromServer[\s\S]{0,900}?apEnabled\s*=\s*s\.isEnabled", view) is not None)
+
+    # ---- 可复现脚本必须在（否则这些 cmdid 就只剩「注释里的传说」）----
+    repro = os.path.join(ROOT, "client", "ios_charge_cmdid.py")
+    check("client/ios_charge_cmdid.py 存在（cmdid 可重算）", os.path.exists(repro))
+    if os.path.exists(repro):
+        with open(repro, "r", encoding="utf-8") as f:
+            r = f.read()
+        for cid in (190, 193, 480, 161):
+            check(f"复现脚本里断言了 cmdid {cid}", f", {cid}, " in r)
+        check("复现脚本解释了「预约充电是多对一」",
+              "多对一" in r or "161 / 171 / 361 / 392" in r)
+
+
+def test_car3d_layout() -> None:
+    """⑪ 3D 车模：放大 + 提到顶部 + 去掉卡片感。
+
+    背景（2026-10-09 用户报）：「把 3D 车模给放大调到上面跟背景一起」。
+    官方爱车页的车模是**页面背景的一部分**（直接浮在页面上），
+    而我们之前套了 `LMCard` 式的圆角底色，看起来像一张卡。
+
+    注意「去掉底色」是安全的：`Car3DWebView` 的 WKWebView 已设
+    `isOpaque = false` + `backgroundColor = .clear`，所以没有白块。
+    """
+    print("\n[11] 3D 车模布局（放大 + 上移 + 去卡片感）")
+
+    love = read("Views/LoveCarView.swift")
+    c3d = read("Views/Car3DView.swift")
+
+    check("car3DHeight = 330（原 230）",
+          re.search(r"var\s+car3DHeight\s*:\s*CGFloat\s*\{\s*330\s*\}", love) is not None)
+
+    # 顺序：topBar → car3DCard → rangeHero
+    i_top = love.find("topBar(v)")
+    i_car = love.find("car3DCard\n")
+    i_rng = love.find("rangeHero\n")
+    check("car3DCard 紧跟在 topBar 之后（提到页面顶部）",
+          i_top >= 0 and i_car >= 0 and i_top < i_car, f"topBar@{i_top} car3D@{i_car}")
+    check("car3DCard 在 rangeHero 之前",
+          i_car >= 0 and i_rng >= 0 and i_car < i_rng, f"car3D@{i_car} range@{i_rng}")
+
+    # 去卡片感：car3DBody 里不能再有 secondarySystemBackground / clipShape
+    seg = love[love.find("private func car3DBody"):]
+    seg = seg[: seg.find("private var car3DFailureView") if "private var car3DFailureView" in seg else 3000]
+    check("car3DBody 不再铺 secondarySystemBackground 底色",
+          "secondarySystemBackground" not in seg)
+    check("car3DBody 不再 clipShape 圆角", "clipShape" not in seg)
+
+    # 安全性前提：WebView 必须透明，否则去底色会露白块
+    check("Car3DWebView 设了 isOpaque = false（去底色才安全）",
+          "isOpaque = false" in c3d)
+    check("Car3DWebView 设了 backgroundColor = .clear",
+          "backgroundColor = .clear" in c3d)
+
+    # 全屏入口与手势提示保留
+    check("全屏看车入口保留", "全屏看车" in love)
+    check("拖动/缩放手势提示保留", "hand.draw" in love)
+
+
 def main() -> int:
     print("=" * 64)
     print("续期契约测试（test_refresh_contract）")
@@ -377,6 +532,8 @@ def main() -> int:
     test_lovecar_page()
     test_location_source()
     test_response_shapes()
+    test_charging_center()
+    test_car3d_layout()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

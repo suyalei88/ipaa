@@ -173,6 +173,20 @@ enum LMEndpoints {
         ///    （`data` 是空串，说明这台车当前没有预约项。响应结构因此未知。）
         static let appointment    = "/carownerservice/v3/api/appremotectl/getappointment"
 
+        /// 预约充电**设置**（写）。
+        ///
+        /// ★ 2026-10-08 从官方 IPA 主二进制解出：路径
+        ///   `/v3/api/appremotectl/appointment`（**不带 `get`**）与
+        ///   `cmdid` / `carvin` / `oppwd` / `controlSource` 字段同区出现，
+        ///   说明它走的是**车控通道**（带 cmdid），与 `appremotectl` 同族。
+        static let appointmentSet = "/carownerservice/v3/api/appremotectl/appointment"
+
+        /// 健康充电**控制**（写）。
+        ///
+        /// ★ 2026-10-08 从官方 IPA 主二进制字符串表解出，与查询用的
+        ///   `healthyCharging/queryPushState` 紧邻配对。
+        static let healthyChargingControl = "/carownerservice/v3/api/healthyCharging/control"
+
         /// 车辆分享列表（谁被授权用这台车、能用哪些 cmdid）。
         /// 实测：`GET ?vin=…` → `carShareInfoList[].rightList`（29 个 cmdid）
         static let shareList      = "/carownerservice/v3/api/sharecar/getShareVehicleListByVin"
@@ -348,6 +362,77 @@ enum LMEndpoints {
     static func actions(in group: Command.Group) -> [String] {
         quickActions.filter { commands[$0]?.group == group }
     }
+
+    // MARK: - 充电中心（★ 2026-10-08 从官方 IPA 主二进制反汇编解出）
+
+    /// 充电相关 cmdid → 官方处理方法 的映射。
+    ///
+    /// ## 证据来源（反汇编，不是猜的）
+    ///
+    /// 官方 `leapmotorCarOwner` 主二进制（204 MB 未加密 arm64 Mach-O）里有一个
+    /// **cmdid 分派函数**（`0x106c5ee00` 起），形如：
+    /// ```
+    /// cmp  x23, #0xbe            ; cmdid == 190
+    /// b.ne ...
+    /// mov  x0, x21
+    /// mov  x2, x19               ; content
+    /// bl   0x10a4d4e20           ; objc_msgSend$requestForChargingSetContent:
+    /// ```
+    /// 逐个 case 解出的映射与 `rightList` 的 29 个 cmdid **完全吻合**：
+    ///
+    /// | cmdid | 十六进制 | 官方方法 | 语义 | 调用点 |
+    /// |---|---|---|---|---|
+    /// | 190 | `0xBE` | `requestForChargingSetContent:` | 充电上限设置 | `0x106C5F09C` |
+    /// | 193 | `0xC1` | `requestForBeginOrEndChargingWithContent:` | 立即 / 结束充电 | `0x106C5F250` |
+    /// | 480 | `0x1E0` | `requestForChargingHealthControl:` | 健康充电开关 | `0x106C5EF38` |
+    /// | 161 | `0xA1` | `requestForAppointmentContrlCmdID:content:` | 预约充电 | `0x106C5EF54` |
+    ///
+    /// stub 地址：`ChargingSetContent @0x10A4D4E20` /
+    /// `BeginOrEndCharging @0x10A4D4D80` / `ChargingHealthControl @0x10A4D4E00` /
+    /// `AppointmentContrl @0x10A4D4D40`。
+    ///
+    /// ★ **可复现**：`python client/ios_charge_cmdid.py evidence/leapmotor_main`
+    /// 会把上面四个 cmdid、四个 stub、四个调用点全部重算一遍并断言一致。
+    /// 官方一旦换版本，那个脚本会报红 —— 比人肉核对可靠。
+    ///
+    /// ⚠️ **预约充电那一格是「多对一」**：161 / 171 / 361 / 392 四个 cmdid
+    /// 都 `b.eq 0x106C5EF48`，共用同一个分支体。所以「161 = 预约充电」成立，
+    /// 但反过来说「预约充电只有 161」不成立。本 App 只用 161 ——
+    /// 它也在 `rightList` 里。
+    ///
+    /// ## ⚠️ 没解出来的部分（如实说明）
+    ///
+    /// 分派器只传 `cmdid` + `content`，**content 的字段名在调用方构造**，
+    /// 反汇编这一段拿不到。所以本 App 的 state 构造遵循「**能确认的才用，其余标注**」：
+    ///   · **预约充电** —— 用**服务端下发的原字段名**。`commonConfig` 的
+    ///     `config["3"]` 实测回来过 `beginTime` / `endTime` / `percent` /
+    ///     `isEnable` / `cycles` / `circulation` / `recharge`，
+    ///     读什么写什么，**最安全**；
+    ///   · **健康充电** —— 用 `isPush`。查询接口 `healthyCharging/queryPushState`
+    ///     实测返回 `{"isPush":false}`，是**确认过的字段**；
+    ///   · **充电上限** —— 用 `percent`（`config["3"]` 实测名）+ 冗余 `chargesoc`
+    ///     （主二进制字段串）；
+    ///   · **立即 / 结束充电** —— 用 `Begin_Charge` + 冗余 `recharge`。主二进制
+    ///     字符串表里有 `LMVChargingAppointment.chargesoc.chargeEnable.recharge.cycles.circulation.Begin_Charge`
+    ///     这一串，字段名有据，但**取值类型待真机验证**。
+    enum ChargeCmdid {
+        /// 充电上限设置（`requestForChargingSetContent:`）
+        static let socLimit = 190
+        /// 立即充电 / 结束充电（`requestForBeginOrEndChargingWithContent:`）
+        static let startOrStop = 193
+        /// 健康充电开关（`requestForChargingHealthControl:`）
+        static let health = 480
+        /// 预约充电（`requestForAppointmentContrlCmdID:content:`）
+        static let appointment = 161
+    }
+
+    /// 充电上限的可调范围（%）。
+    ///
+    /// 依据官方本地化表：`ChargingCenter_OptimalLimit` = 「最佳限值90%」、
+    /// `ChargingCenter_OptimalLimit80` = 「最佳限值80%」，
+    /// 且 `ChargingCenter_ChargeHealthSocAlert` = 「为保持电池健康状态，
+    /// **无法调节至90%以上**」→ 说明上限区间是 [50, 100] 一类的整数百分比。
+    static let chargeSocRange = 50...100
 
     // MARK: - 空调（cmdid 170）
 

@@ -24,10 +24,26 @@ struct ChargeView: View {
 
     @State private var now = Date()
 
+    // ★ 2026-10-08 新增：充电控制（立即/结束充电、健康充电、充电上限、预约充电）
+    @State private var toast: String?
+    @State private var toastIsError = false
+    /// 预约充电编辑态。初值只是占位，真实值由服务端 `config["3"]` 覆盖
+    /// （见 `syncAppointmentFromServer()`）—— 不凭空造一个假的默认值给用户。
+    @State private var apBegin = "03:00"
+    @State private var apEnd = "08:00"
+    @State private var apPercent = 80
+    @State private var apEnabled = true
+    @State private var apEveryDay = true
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 heroCard
+                // ★ 2026-10-08 新增：可写的充电控制区（cmdid 193 / 480 / 190 / 161）
+                controlCard
+                healthCard
+                socLimitCard
+                appointmentEditor
                 // 有投影值就显示（它跟充不充电无关），没充电时卡片里会自己说明。
                 if client.chargeMinutesToTarget != nil { remainingCard }
                 scheduleCard
@@ -46,11 +62,16 @@ struct ChargeView: View {
         .refreshable {
             try? await client.refreshStatus()
             try? await client.refreshCommonConfig()
+            _ = await client.refreshHealthyCharging()
         }
+        // ★ 控制锁（操作密码累计出错后的 5 分钟冷却）倒计时必须挂时钟，
+        //   否则到期后按钮不会重新启用 —— 见 LMClient 里 `controlLockRemaining` 的注释。
+        .lmClock(until: client.controlLockedUntil, now: $now)
         .task {
             if client.chargeSchedule == nil {
                 try? await client.refreshCommonConfig()
             }
+            syncAppointmentFromServer()
         }
         // 充电时的「预计充满时刻」要跟着时间走，挂上 30 秒的时钟
         .task {
@@ -77,6 +98,277 @@ struct ChargeView: View {
                 }
             }
         }
+        // 下发结果提示。用 alert 而不是一闪而过的 toast ——
+        // 这几个动作会动车的高压充电状态，用户必须明确看到「成功 / 失败」。
+        .alert(toastIsError ? "下发失败" : "充电中心", isPresented: Binding(
+            get: { toast != nil },
+            set: { if !$0 { toast = nil } }
+        )) {
+            Button("知道了") { toast = nil }
+        } message: {
+            Text(toast ?? "")
+        }
+    }
+
+    // MARK: - 充电控制（★ 2026-10-08 新增）
+    //
+    // 四个 cmdid 全部来自「官方 IPA 主二进制里的 cmdid 分派函数」反汇编，
+    // 证据与指令地址见 `LMEndpoints.ChargeCmdid` 的注释。
+    // 这一区是**可写**的 —— 之前这个页面纯只读，用户要求能直接操作。
+
+    /// 立即充电 / 结束充电（cmdid 193）。
+    ///
+    /// 按钮语义跟随**实测充电状态**（`client.isCharging`：5 路标志位投票 + 充电电流），
+    /// 不跟随本地按钮状态 —— 否则会出现「点了没生效但按钮已经变了」的错觉。
+    private var controlCard: some View {
+        LMCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    SectionHeader(text: "充电控制")
+                    Spacer(minLength: 0)
+                    if client.controlLockRemaining() > 0 {
+                        StatusPill(text: "锁定 \(client.controlLockRemaining())s",
+                                   icon: "lock.fill", tint: Color.lmWarn)
+                    }
+                }
+
+                Button {
+                    Task { await runCharging(!client.isCharging) }
+                } label: {
+                    Label(client.isCharging ? "结束充电" : "立即充电",
+                          systemImage: client.isCharging ? "stop.circle.fill" : "bolt.fill")
+                        .font(.callout.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(client.isCharging ? Color.lmWarn : Color.lmGood)
+                .disabled(client.isBusy || client.controlLockRemaining() > 0)
+
+                Text("cmdid 193（官方 `requestForBeginOrEndChargingWithContent:`）。"
+                     + "能不能真的充起来还取决于是否插枪、枪是否锁止 —— 车端自己判断，"
+                     + "本 App 只负责把指令发过去并回报结果。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// 健康充电开关（cmdid 480）。
+    ///
+    /// 开关的当前值来自**只读查询** `healthyCharging/queryPushState`
+    /// （实测 `{"isPush":false}`），下发后立刻重查一次，用服务端回值校准，
+    /// 不做乐观更新 —— 免得界面显示「已开」而车端其实没收到。
+    private var healthCard: some View {
+        LMCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    SectionHeader(text: "健康充电")
+                    Spacer(minLength: 0)
+                    if client.healthyChargingPush == nil {
+                        Text("未读取").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+
+                if let on = client.healthyChargingPush {
+                    Toggle(isOn: Binding(
+                        get: { on },
+                        set: { v in Task { await runHealth(v) } }
+                    )) {
+                        Text(on ? "已开启" : "已关闭")
+                            .font(.callout.weight(.medium))
+                    }
+                    .disabled(client.isBusy || client.controlLockRemaining() > 0)
+                } else {
+                    Button("读取开关状态") {
+                        Task { _ = await client.refreshHealthyCharging() }
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Text("打开后，将根据车辆电池状态自动调整充电上限，以保持电池健康。"
+                     + "官方说明：健康充电期间可能无法把上限调到 90% 以上，属正常保护。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// 充电上限（cmdid 190）。
+    private var socLimitCard: some View {
+        LMCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    SectionHeader(text: "充电上限")
+                    Spacer(minLength: 0)
+                    Text("\(apPercent) %")
+                        .font(.callout.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Color.lmAccent)
+                }
+
+                Slider(value: Binding(
+                    get: { Double(apPercent) },
+                    set: { apPercent = Int($0.rounded()) }
+                ), in: 50...100, step: 5)
+                .disabled(client.isBusy || client.controlLockRemaining() > 0)
+
+                HStack(spacing: 8) {
+                    ForEach([80, 90, 100], id: \.self) { v in
+                        Button("\(v)%") { apPercent = v }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .disabled(client.isBusy || client.controlLockRemaining() > 0)
+                    }
+                }
+
+                Button {
+                    Task { await runSocLimit(apPercent) }
+                } label: {
+                    Label("下发充电上限 \(apPercent)%", systemImage: "battery.75")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(client.isBusy || client.controlLockRemaining() > 0)
+
+                Text("cmdid 190（官方 `requestForChargingSetContent:`）。"
+                     + "官方给的推荐值是 80% 与 90%（「最佳限值80%/90%」）。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// 预约充电（cmdid 161）—— 可编辑。
+    private var appointmentEditor: some View {
+        LMCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    SectionHeader(text: "设置预约充电")
+                    Spacer(minLength: 0)
+                    Toggle("", isOn: $apEnabled)
+                        .labelsHidden()
+                        .disabled(client.isBusy || client.controlLockRemaining() > 0)
+                }
+
+                HStack(spacing: 14) {
+                    apTimePicker("开始", $apBegin)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    apTimePicker("结束", $apEnd)
+                    Spacer(minLength: 0)
+                }
+
+                Toggle("每天重复", isOn: $apEveryDay)
+                    .font(.callout)
+                    .disabled(client.isBusy || client.controlLockRemaining() > 0)
+
+                Button {
+                    Task { await runAppointment() }
+                } label: {
+                    Label("保存预约（\(apBegin)–\(apEnd) · \(apPercent)%）",
+                          systemImage: "clock.badge.checkmark")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(client.isBusy || client.controlLockRemaining() > 0)
+
+                Text(appointmentNote)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// 预约充电的说明文案。
+    ///
+    /// ★ 抽成 String 计算属性而不是在 `Text(...)` 里连 `+` ——
+    ///   4 段拼接会让 Swift 类型检查器显著变慢（lint R13 的成因）。
+    private var appointmentNote: String {
+        "cmdid 161（官方 `requestForAppointmentContrlCmdID:content:`）。"
+            + "字段沿用服务端 `config[\"3\"]` 的原名回传（读什么写什么）。"
+            + "官方限制：仅支持慢充；开始时间需在当前时间 5 分钟后、12 小时内；"
+            + "开始与结束时间不能相同。"
+    }
+
+    /// 时间选择器（只取时:分）。
+    ///
+    /// 名字带 `ap` 前缀，避免与文件里已有的 `timeBox` 撞名（lint R12）。
+    private func apTimePicker(_ title: String, _ value: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            DatePicker("", selection: Binding(
+                get: { ChargeView.hmFormatter.date(from: value.wrappedValue) ?? Date() },
+                set: { value.wrappedValue = ChargeView.hmFormatter.string(from: $0) }
+            ), displayedComponents: .hourAndMinute)
+            .labelsHidden()
+        }
+    }
+
+    private static let hmFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    // MARK: 动作
+
+    private func runCharging(_ active: Bool) async {
+        let ok = await client.setChargingActive(active)
+        showResult(ok ? (active ? "已下发「立即充电」" : "已下发「结束充电」")
+                      : (client.lastError ?? "下发失败"), ok: ok)
+        if ok { try? await client.refreshStatus() }
+    }
+
+    private func runHealth(_ on: Bool) async {
+        let ok = await client.setHealthyCharging(on)
+        showResult(ok ? (on ? "健康充电已开启" : "健康充电已关闭")
+                      : (client.lastError ?? "下发失败"), ok: ok)
+    }
+
+    private func runSocLimit(_ p: Int) async {
+        let ok = await client.setChargeLimit(p)
+        showResult(ok ? "充电上限已下发 \(p)%" : (client.lastError ?? "下发失败"), ok: ok)
+        if ok { try? await client.refreshCommonConfig() }
+    }
+
+    private func runAppointment() async {
+        let ok = await client.saveAppointmentCharge(
+            beginTime: apBegin,
+            endTime: apEnd,
+            percent: apPercent,
+            enabled: apEnabled,
+            cycles: apEveryDay ? "1,1,1,1,1,1,1" : "0,0,0,0,0,0,0",
+            circulation: apEveryDay
+        )
+        showResult(ok ? "预约充电已保存（\(apBegin)–\(apEnd)）"
+                      : (client.lastError ?? "下发失败"), ok: ok)
+        if ok { try? await client.refreshCommonConfig() }
+    }
+
+    private func showResult(_ text: String, ok: Bool) {
+        toast = text
+        toastIsError = !ok
+    }
+
+    /// 用服务端下发的 `config["3"]` 回填编辑区。
+    ///
+    /// ★ 只在服务端有值时才覆盖 —— 服务端没配过预约时保持占位默认值，
+    ///   而不是把「未设置」写成一堆 00:00 骗用户。
+    private func syncAppointmentFromServer() {
+        guard let s = client.chargeSchedule else { return }
+        if s.beginTime != "--:--" { apBegin = s.beginTime }
+        if s.endTime != "--:--" { apEnd = s.endTime }
+        if let p = s.targetPercent {
+            apPercent = min(max(p, 50), 100)
+        }
+        apEnabled = s.isEnabled
+        apEveryDay = !s.weekdayFlags.isEmpty && s.weekdayFlags.allSatisfy { $0 }
     }
 
     // MARK: - 顶部：电量 + 目标
