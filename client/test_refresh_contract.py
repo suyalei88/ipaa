@@ -297,6 +297,16 @@ def test_lovecar_page() -> None:
     check("代码里没有 DashboardView 残留",
           "DashboardView" not in app and "DashboardView" not in love)
 
+    # ⑧ ★ Car3DConfig.serverJSON 必须标 @MainActor
+    #     LMClient 是 @MainActor 隔离的，而 static func 没有任何隔离推断来源。
+    #     漏了这个标注，CI 编译期会直接报：
+    #       main actor-isolated property 'car3DKey' can not be referenced
+    #       from a non-isolated context
+    #    2026-10-08 真烧过一轮 CI。lint 的 R14 也会拦，这里是双保险。
+    c3d = read("Views/Car3DView.swift")
+    check("Car3DConfig.serverJSON 标了 @MainActor（否则 CI 报 actor 隔离错误）",
+          re.search(r"@MainActor\s*\n\s*static func serverJSON\(", c3d) is not None)
+
 
 def main() -> int:
     print("=" * 64)

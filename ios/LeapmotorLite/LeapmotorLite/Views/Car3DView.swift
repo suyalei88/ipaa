@@ -14,6 +14,14 @@ enum Car3DConfig {
     /// 对应 `index.js` 的 `parseServerJson()` —— 直接吃 `3d/key` 的 `modelParam`。
     ///
     /// 字段名必须与官方一致（`carType` / `year` / `carTypeCode` / `colorCode` / `roofColor`）。
+    ///
+    /// ★ 必须标 `@MainActor`：`LMClient` 整体是 `@MainActor` 隔离的，
+    ///   而这是个 static 方法（默认 non-isolated），直接读 `client.car3DKey`
+    ///   会报 `main actor-isolated property 'car3DKey' can not be referenced
+    ///   from a non-isolated context` —— 这个错误在 CI 上真烧过一轮（2026-10-08）。
+    ///   两处调用方（`Car3DView.body` / `LoveCarView.car3DBody`）本来就在主线程，
+    ///   所以加 `@MainActor` 不需要任何 await。
+    @MainActor
     static func serverJSON(for client: LMClient) -> String {
         let mp = client.car3DKey?.modelParam
         var d: [String: Any] = [

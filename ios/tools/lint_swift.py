@@ -79,6 +79,21 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       而拿到 CI 日志本身就要绕一圈（GitHub 把日志放在 Azure Blob 上），
       所以宁可早拦。
 
+  R14 static func 读了 @MainActor 的 LMClient 却没标 @MainActor
+      ★ 2026-10-08 真烧过一轮 CI（就是「爱车页」那一版）：
+        Car3DView.swift:18:25: error: main actor-isolated property 'car3DKey'
+          can not be referenced from a non-isolated context
+        note: add '@MainActor' to make static method 'serverJSON(for:)'
+          part of global actor 'MainActor'
+      `LMClient` 整个类是 `@MainActor` 隔离的：
+        · `struct X: View` 的成员**没事** —— Xcode 15 SDK 里
+          `SwiftUI.View` 是 `@MainActor @preconcurrency protocol`，
+          View 的所有成员都被推断成 MainActor；
+        · 但 `enum` / 独立的 `static func` **没有任何推断来源**，
+          默认 non-isolated，一读 `client.xxx` 就报错。
+      修法：给那个 static func 加 `@MainActor`（调用方本来就在主线程，
+      所以不需要任何 await）。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -121,6 +136,7 @@ RULES = {
     "R11": "CoreBluetooth delegate 回调里写 @Published 但没保证主线程（编译期无感，运行时崩/不刷新）",
     "R12": "局部变量名与同文件的方法名同名 → 遮蔽方法调用（报「cannot call value of non-function type」）",
     "R13": "Text(...) 里超过 3 个 `+` 拼接 → Swift 类型检查器超时（抽成 String 计算属性）",
+    "R14": "static func 读了 @MainActor 的 LMClient 却没标 @MainActor（CI 编译期直接报 actor 隔离错误）",
 }
 
 # R13 用：Text(...) 参数里允许的最大 `+` 个数。
@@ -492,6 +508,60 @@ def check(path: str, src: str):
             add(m.start(), "R13",
                 f"Text(...) 里有 {plus} 个 `+`（{plus + 1} 段拼接）→ "
                 f"Swift 类型检查器可能超时；抽成 `-> String` 的计算属性再 Text(它)")
+
+    # R14 —— static func 读了 @MainActor 的 LMClient 却没标 @MainActor
+    #
+    # ★ 2026-10-08 真烧过一轮 CI：
+    #     Car3DView.swift:18:25: error: main actor-isolated property 'car3DKey'
+    #       can not be referenced from a non-isolated context
+    #     note: add '@MainActor' to make static method 'serverJSON(for:)'
+    #       part of global actor 'MainActor'
+    #
+    #   背景：`LMClient` 整个类是 `@MainActor` 隔离的。
+    #     · `struct X: View` 的成员**没事** —— Xcode 15 SDK 里
+    #       `SwiftUI.View` 是 `@MainActor @preconcurrency protocol`，
+    #       所以 View 的所有成员都被推断成 MainActor。
+    #     · 但 `enum` / 独立 `static func` **没有任何推断来源**，
+    #       默认 non-isolated，一读 `client.xxx` 就报错。
+    #
+    #   判定：先精确切出这个 `static func` 的**签名 + 函数体**（按花括号配对），
+    #   里面出现 `LMClient` 或 `client.`，且它自己的属性位（`@xxx`）里没有
+    #   `@MainActor`，就报。
+    #   ★ 两个坑都踩过：
+    #     ① 不能用「到下一个 static func 之间的文本」当函数体 ——
+    #        中间会跨过 struct / class 边界，把别的类型的 `LMClient` 也扫进来
+    #        （第一版就这么误报了 LMSession 里的 4 个纯工具函数）。
+    #     ② 匹配属性位时 `@\w+` 后面**不能**用 `\s+` —— `\s` 会吃掉换行，
+    #        于是 `@MainActor` 被当成声明的一部分吞掉，标了也判成没标。
+    #        但也**不能**只写 `[ \t]+`：属性通常单独占一行，
+    #        后面接的是换行符，那样属性位会匹配不到、整条规则从下一行才开始匹配。
+    #        正解：允许属性后跟「可选的换行 + 缩进」。
+    static_decls = re.finditer(
+        r"(?m)^[ \t]*(?P<attrs>(?:@\w+[ \t]*(?:\r?\n[ \t]*)?)*)"
+        r"(?:(?:public|private|internal|fileprivate|open)[ \t]+)*"
+        r"static[ \t]+func[ \t]+(?P<name>[A-Za-z_]\w*)[ \t]*[<(]", code)
+    for m in static_decls:
+        brace = code.find("{", m.end())
+        if brace < 0:
+            continue
+        depth, j = 0, brace
+        while j < len(code):
+            ch = code[j]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        region = code[m.start():j + 1]
+        if "LMClient" not in region and "client." not in region:
+            continue
+        if "@MainActor" in m.group("attrs"):
+            continue
+        add(m.start(), "R14",
+            f"static func `{m.group('name')}` 读了 @MainActor 隔离的 LMClient 却没标 @MainActor "
+            f"→ CI 编译期直接报 actor 隔离错误")
 
     # R10 —— 用了某个系统框架的类型，却没 import 那个框架
     #
