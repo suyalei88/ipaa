@@ -215,9 +215,10 @@ enum LMEndpoints {
         let risk: Risk
 
         enum Group: String, CaseIterable {
-            case lock    = "门锁 / 后备箱"
+            case lock    = "门锁"
+            case trunk   = "后备箱 / 寻车"
+            case window  = "车窗"
             case climate = "空调"
-            case light   = "灯光"
             case power   = "电源"
         }
 
@@ -229,81 +230,155 @@ enum LMEndpoints {
         }
     }
 
-    /// cmdid 表（实测）
-    ///   110 车门锁   {"value":"lock"|"unlock"}     ✅ 确认
-    ///   120 后备箱   {"value":"true"}              🟡 观察（早期抓包注释里也写过「寻车」）
-    ///   170 大灯     {"operate":"off"|"auto"}      🟡 观察
-    ///   230 空调     {"value":"0"|"2"|"5"}         🟡 观察
-    ///   400 上电     {"operation":"on"}            ✅ 确认
+    /// cmdid 表（★ 2026-10-08 第二次修正，之前那张表是错的）
     ///
-    /// ⚠️ 已知但**故意不放进 UI** 的：`130 {"value":"true"|"false"}`。
-    ///    它在抓包里出现过，但没有任何证据说明它开关的是什么 ——
+    /// ── 修正前的错误（务必记住这个教训）──────────────────────────
+    ///   旧表把 `170` 当「大灯」、`230` 当「空调」，还按 `{"value":"0"|"2"|"5"}`
+    ///   做了一张「空调风量 1~9 档」卡。**全是错的**：
+    ///   往 230 发 `{"value":"3"}` 实际会去开车窗，不是调风量。
+    ///
+    /// ── 修正依据（三重证据，互相印证）────────────────────────────
+    ///   ① 官方 RN bundle `index.jsbundle` 明文常量：
+    ///        quickActions   = [{unlock:110},{trunk:130},{horn:120},{ac:170},{windows:230}]
+    ///        signalMappings = {unlock:1298, trunk:1281, windows:1693, ac:1938}
+    ///   ② 抓包双向验证（111 个信号快照）：
+    ///        cmdid 110 {"value":"lock"}   → 1298 0→1        （门锁翻转）
+    ///        cmdid 230 {"value":"2"}      → 1693~1696 0→2   （★ 四个车窗一起动）
+    ///        cmdid 230 {"value":"0"}      → 1693~1696 2→0
+    ///        cmdid 170 {"operate":"auto"} → 1938 0→1        （空调翻转）
+    ///   ③ 官方 IPA 主二进制（204MB 未加密 Mach-O）的字段表：
+    ///        `cmdid carvin oppwd controlSource` + `operate` `manual` `temperature`
+    ///        `windlevel` `operation` `off` `hotcold` `nohotcold` `circle`
+    ///      → 空调（170）的 payload 键就是 `temperature` / `windlevel` / `operate`
+    ///
+    /// ── 最终表 ───────────────────────────────────────────────────
+    ///   110 车门锁   {"value":"lock"|"unlock"}                  ✅ 抓包双向
+    ///   120 鸣笛寻车 {"value":"true"}                           ✅ bundle + 抓包
+    ///   130 后备箱   {"value":"true"|"false"}                   ✅ 抓包双向
+    ///   170 空调     {"operate":"auto"|"off"}                   ✅ 抓包双向
+    ///                {"operate":"manual","windlevel":N,"temperature":T}  🟡 键有证据、组合无样本
+    ///   230 车窗     {"value":"0"|"2"|"5"}                       ✅ 抓包（0=关，2/5=两个开度）
+    ///   400 上电     {"operation":"on"}                          ✅ 抓包
+    ///
+    /// ⚠️ 已知但**故意不放进 UI** 的：`cmdid 130` 之外的兄弟码无 payload 证据，
     ///    对一台真车下发「不知道干什么」的指令是不负责任的。
-    ///    要试的话去「设置 → 诊断 → 未验证 cmdid 探测」，那里有手输 + 二次确认。
     static let commands: [String: Command] = [
-        "lock":       Command(cmdid: 110, state: ["value": "lock"],   title: "锁车",
-                              systemImage: "lock.fill",               group: .lock, risk: .physical),
-        "unlock":     Command(cmdid: 110, state: ["value": "unlock"], title: "解锁",
-                              systemImage: "lock.open.fill",          group: .lock, risk: .physical),
-        "trunk":      Command(cmdid: 120, state: ["value": "true"],   title: "后备箱",
-                              systemImage: "car.rear.and.tire.marks", group: .lock, risk: .physical),
-        "light_off":  Command(cmdid: 170, state: ["operate": "off"],  title: "大灯关",
-                              systemImage: "lightbulb.slash",         group: .light, risk: .low),
-        "light_auto": Command(cmdid: 170, state: ["operate": "auto"], title: "大灯自动",
-                              systemImage: "lightbulb",               group: .light, risk: .low),
-        "hvac_off":   Command(cmdid: 230, state: ["value": "0"],      title: "空调关",
-                              systemImage: "fanblades.slash",         group: .climate, risk: .low),
-        "hvac_low":   Command(cmdid: 230, state: ["value": "2"],      title: "空调低",
-                              systemImage: "fanblades",               group: .climate, risk: .low),
-        "hvac_high":  Command(cmdid: 230, state: ["value": "5"],      title: "空调高",
-                              systemImage: "fanblades.fill",          group: .climate, risk: .low),
-        "hello":      Command(cmdid: 400, state: ["operation": "on"], title: "上电",
-                              systemImage: "power",                   group: .power, risk: .physical),
+        "lock":         Command(cmdid: 110, state: ["value": "lock"],   title: "上锁",
+                                systemImage: "lock.fill",               group: .lock, risk: .physical),
+        "unlock":       Command(cmdid: 110, state: ["value": "unlock"], title: "解锁",
+                                systemImage: "lock.open.fill",          group: .lock, risk: .physical),
+
+        "trunk_open":   Command(cmdid: 130, state: ["value": "true"],   title: "打开后备箱",
+                                systemImage: "shippingbox.fill",        group: .trunk, risk: .physical),
+        "trunk_close":  Command(cmdid: 130, state: ["value": "false"],  title: "关闭后备箱",
+                                systemImage: "shippingbox",             group: .trunk, risk: .physical),
+        "horn":         Command(cmdid: 120, state: ["value": "true"],   title: "鸣笛寻车",
+                                systemImage: "speaker.wave.2.fill",     group: .trunk, risk: .low),
+
+        "window_micro": Command(cmdid: 230, state: ["value": "2"],      title: "微开",
+                                systemImage: "window.vertical.open",    group: .window, risk: .physical),
+        "window_half":  Command(cmdid: 230, state: ["value": "5"],      title: "半开",
+                                systemImage: "window.vertical.open",    group: .window, risk: .physical),
+        "window_close": Command(cmdid: 230, state: ["value": "0"],      title: "关闭",
+                                systemImage: "window.vertical.closed",  group: .window, risk: .physical),
+
+        "ac_on":        Command(cmdid: 170, state: ["operate": "auto"], title: "打开空调",
+                                systemImage: "fanblades.fill",          group: .climate, risk: .low),
+        "ac_off":       Command(cmdid: 170, state: ["operate": "off"],  title: "关闭空调",
+                                systemImage: "fanblades.slash",         group: .climate, risk: .low),
+
+        "hello":        Command(cmdid: 400, state: ["operation": "on"], title: "上电",
+                                systemImage: "power",                   group: .power, risk: .physical),
     ]
 
     /// 首页展示的动作（顺序即 UI 顺序）
+    ///
+    /// ⚠️ 这里**故意不包含** `window_micro` / `window_half` / `window_close`：
+    ///   车控页有一张专门的「车窗」卡（关闭 / 微开 / 半开 三个开度 + 当前上报
+    ///   状态 + 二次确认），把同样三个动作再摆进网格就是同一件事两套 UI。
+    ///   所以网格里 `.window` 分组会自然为空、不渲染。
+    ///
+    ///   空调不一样：网格里只放**开 / 关**（两个互斥动作），
+    ///   风量 / 温度是另一张卡 —— 两者是不同维度的控制，不算重复。
     static let quickActions: [String] = [
-        "lock", "unlock", "trunk", "hvac_off", "hvac_low", "hvac_high",
-        "light_off", "light_auto", "hello",
+        "lock", "unlock", "trunk_open", "trunk_close", "horn",
+        "ac_on", "ac_off", "hello",
     ]
 
     /// 首页「常用」那一排（只放最高频的四个）
-    static let primaryActions: [String] = ["lock", "unlock", "trunk", "hvac_low"]
+    static let primaryActions: [String] = ["lock", "unlock", "horn", "ac_on"]
 
     /// 按分组返回动作 key（保持 commands 的声明顺序）
     static func actions(in group: Command.Group) -> [String] {
         quickActions.filter { commands[$0]?.group == group }
     }
 
-    // MARK: - 空调档位（cmdid 230）
+    // MARK: - 空调（cmdid 170）
 
-    /// 空调 / 风量的 cmdid
-    static let hvacCmdid = 230
+    /// 空调的 cmdid。★ 不是 230 —— 230 是车窗，这是本次修正的核心。
+    static let hvacCmdid = 170
 
-    /// 风量档位的 state payload。`0` = 关。
-    ///
-    /// ★ 背景：抓包里 cmdid 230 **只出现过** `{"value":"0"|"2"|"5"}`，
-    ///   很容易以为空调就三档。但 `vehicle/list` 的 `funcConfig.HVAC.fan`
-    ///   明确写着 `min=1 max=9 unit=gear` —— 说明**风量是 1~9 档**，
-    ///   抓包那三次只是碰巧只按了「低 / 高」。
-    ///
-    /// ⚠️ 边界：这只证明**车支持**这些档位，**没有**证明
-    ///    `{"value":"3"}` 这种 payload 服务端一定接受。
-    ///    所以车控页把 1~9 档单独放在「未验证」卡片里，
-    ///    0 / 2 / 5 三个有抓包证据的仍然放在已验证区。
-    static func hvacState(gear: Int) -> [String: Any] { ["value": String(gear)] }
+    /// 风量档位范围（来自 `funcConfig.HVAC.fan` 的 min/max，实测 1~9）
+    static let hvacFanFallback = Array(1...9)
+    /// 温度范围（来自 `funcConfig.HVAC.temperature`，实测 16~32 ℃）
+    static let hvacTempFallback = Array(16...32)
 
-    /// 温度设定的 state payload —— ⚠️⚠️ **纯猜测，没有样本**。
+    /// 手动模式：一次带上风量 + 温度。
     ///
-    /// 抓包里 cmdid 230 只有 `{"value":"…"}` 一个字段，**没有任何温度字段的样本**。
-    /// 这里的 `temperature` 字段名是照 `funcConfig.HVAC.temperature` 反推的，
-    /// 值域 16~32 °C 同样来自那个字段 —— 但服务端到底认不认这个 key，
-    /// 我们**不知道**。
+    /// ── 字段名的证据（不是猜的）──────────────────────────────────
+    ///   官方 IPA 主二进制里，车控相关的字符串常量是连在一起的一段：
+    ///       operation / off / manual / operate / 26 / out / hotcold /
+    ///       nohotcold / temperature / windlevel / circle
+    ///   其中 `temperature` 与 `windlevel` 就是空调请求的两个键，
+    ///   `manual` 是 `operate` 的第三个取值（另两个是已实测的 `auto` / `off`）。
     ///
-    /// 所以它只作为「诊断 → 未验证 cmdid 探测」里的**预填值**，
-    /// 让用户自己决定要不要试一次；**绝不**接进车控页当正式功能。
-    static func hvacTemperatureGuess(celsius: Int, gear: Int = 2) -> String {
-        #"{"value":"\#(gear)","temperature":"\#(celsius)"}"#
+    /// ⚠️ 边界（必须说清）：**键有证据，组合没有样本**。
+    ///    抓包只录到过 `{"operate":"auto"}` 和 `{"operate":"off"}` ——
+    ///    用户在车上从没调过风量/温度，所以 `manual + windlevel + temperature`
+    ///    这个组合**没有被抓包证实过**。
+    ///    值域（1~9 档 / 16~32 ℃）来自车辆自己上报的 `funcConfig`，是权威的。
+    ///
+    /// 所以车控页把「开关」放在已验证区，把「风量/温度」放在明确标注的
+    /// 未验证卡里，让用户知道自己是在试。
+    static func hvacManualState(gear: Int, temperature: Int) -> [String: Any] {
+        ["operate": "manual",
+         "windlevel": String(gear),
+         "temperature": String(temperature)]
+    }
+
+    // MARK: - 车窗（cmdid 230）
+
+    /// 车窗的 cmdid
+    static let windowCmdid = 230
+
+    /// 车窗开度。
+    ///
+    /// ★ 铁证：抓包里 `cmdid 230 {"value":"2"}` 让 **1693 / 1694 / 1695 / 1696
+    ///   四个信号同时 0→2** —— 四个信号就是四个车窗的位置，
+    ///   所以 230 是「四个车窗一起动」，`{"value":"0"}` 是「全关」。
+    ///
+    /// ⚠️ 2 与 5 谁是「半开」谁是「微开」**没有直接证据**。
+    ///    抓包里两个值都出现过，但没人记录当时按的是哪个按钮。
+    ///    这里的排序依据是「数值越大开得越大」这个最朴素的假设：
+    ///      2 = 微开（小开度）
+    ///      5 = 半开（大开度）
+    ///    如果实测发现反了，改下面两行的 rawValue 即可，别的地方不用动。
+    enum WindowOpening: Int {
+        case close = 0
+        case micro = 2
+        case half  = 5
+
+        var title: String {
+            switch self {
+            case .close: return "关闭"
+            case .micro: return "微开"
+            case .half:  return "半开"
+            }
+        }
+    }
+
+    static func windowState(_ opening: WindowOpening) -> [String: Any] {
+        ["value": String(opening.rawValue)]
     }
 
     // MARK: - cmdid 全集（来自 `sharecar` 的 `rightList`）
@@ -356,10 +431,10 @@ enum LMEndpoints {
                       note: "开关类，但开关的是什么完全未知"),
         UnverifiedCmd(cmdid: 130, state: #"{"value":"false"}"#,
                       note: "同上，反向"),
-        // ★ 2026-10-08 新增两条。都是「有范围依据、但 payload 没样本」的：
-        UnverifiedCmd(cmdid: 230, state: #"{"value":"3"}"#,
-                      note: "风量 3 档 —— 范围来自 funcConfig(fan 1~9)，payload 未验证"),
-        UnverifiedCmd(cmdid: 230, state: hvacTemperatureGuess(celsius: 24),
-                      note: "温度 24 °C —— 字段名 temperature 是按 funcConfig 反推的，未验证"),
+        // ★ 2026-10-08 修正：原来这里挂的是 cmdid 230 的「风量 3 档 / 温度 24 ℃」——
+        //   那两条**挂错 cmdid 了**。230 是车窗，发过去只会动车窗，
+        //   根本调不到风量和温度。已删除，空调的正确入口见车控页的「空调」卡。
+        UnverifiedCmd(cmdid: 230, state: #"{"value":"1"}"#,
+                      note: "车窗开度 1 —— 抓包只见过 0/2/5，1 是否存在未知"),
     ]
 }

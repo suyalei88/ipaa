@@ -295,6 +295,39 @@ enum LMSignalCatalog {
         .init("3262", "车门锁（冗余）", unit: "",
               category: .body, confidence: .confirmed,
               note: "与 1298 同步。两个都读不到才显示「锁态未知」。"),
+
+        // ── ★ 2026-10-08 按真实时间轴复验补上（cmdid ↔ 信号双向对上）──────
+        //
+        //  证据方法：把三份 HAR 的 entry **按 startedDateTime 重排**后再对齐
+        //  （直接按数组下标看会拿到反向的结论 —— 这个坑本轮真踩了一次：
+        //    `cmdid 170 off` 在数组里排在 `auto` 之前，差点把 1938 的极性写反）。
+        //
+        //  复验结果（时间轴顺序，全部实测）：
+        //    05:23:35 CTL 110 unlock → 05:23:37 SIG 1298 1→0
+        //    05:23:42 CTL 110 lock   → 05:23:43 SIG 1298 0→1
+        //    05:23:50 CTL 230 {"value":"2"} → 05:23:53 SIG 1693~1696 同时 0→2
+        //    05:23:57 CTL 230 {"value":"0"} → 05:23:59 SIG 1693~1696 同时 2→0
+        //    06:04:47 CTL 130 true  → 06:04:49 SIG 1281 0→1
+        //    06:05:43 CTL 130 false → 06:05:51 SIG 1281 1→0
+        //    05:24:49 CTL 170 auto  → 05:24:52 SIG 1938 0→1（1943 1→0、1941 4→3）
+        //    05:24:56 CTL 170 off   → 05:24:58 SIG 1938 1→0（1943 0→1）
+
+        .init("1281", "后备箱", unit: "",
+              category: .body, confidence: .confirmed,
+              note: "1 = 开，0 = 关。★ 与 cmdid 130 双向对上：发 {\"value\":\"true\"} 后 0→1，"
+                  + "发 {\"value\":\"false\"} 后 1→0。"),
+        .init("1693", "车窗位置 1", unit: "",
+              category: .body, confidence: .confirmed,
+              note: "实测只取过 0 / 2。★ 与 cmdid 230 双向对上：发 {\"value\":\"2\"} 后 "
+                  + "1693~1696 **四个同时** 0→2，发 {\"value\":\"0\"} 后四个同时回到 0 —— "
+                  + "说明 230 是「四窗一起动」。⚠️ 哪个 id 对应哪个窗（左前/右前/…）未验证。"),
+        .init("1694", "车窗位置 2", unit: "",
+              category: .body, confidence: .confirmed, note: "见 1693。"),
+        .init("1695", "车窗位置 3", unit: "",
+              category: .body, confidence: .confirmed, note: "见 1693。"),
+        .init("1696", "车窗位置 4", unit: "",
+              category: .body, confidence: .confirmed, note: "见 1693。"),
+
         .init("1318", "总里程", unit: "km",
               category: .body, confidence: .confirmed,
               note: "实测 1909，与用户截图逐字一致。"),
@@ -330,6 +363,32 @@ enum LMSignalCatalog {
               category: .climate, confidence: .unknown, note: "见 644。"),
         .init("866", "疑似空调设定 4", unit: "℃",
               category: .climate, confidence: .unknown, note: "见 644。"),
+
+        // ── ★ 2026-10-08 空调开关族（cmdid 170 的对应信号）──────────────
+        //
+        //  时间轴复验：`170 {"operate":"auto"}` → 1938 0→1；`off` → 1938 1→0。
+        //  所以 **1938 = 1 就是「空调开着」**，极性已确定（不是猜的）。
+        .init("1938", "空调开关", unit: "",
+              category: .climate, confidence: .confirmed,
+              note: "1 = 空调开，0 = 空调关。★ 与 cmdid 170 双向对上："
+                  + "发 {\"operate\":\"auto\"} 后 0→1，发 {\"operate\":\"off\"} 后 1→0。"),
+        .init("1943", "空调伴随位 1943", unit: "",
+              category: .climate, confidence: .observed,
+              note: "与 1938 **反相**：1938 0→1 时它 1→0，1938 1→0 时它 0→1。"
+                  + "疑似「关机标志位」或模式位，具体语义未定。"),
+        .init("1941", "空调档位候选 1941", unit: "",
+              category: .climate, confidence: .unknown,
+              note: "开空调那一次从 4 变成 3，只有这一个样本。"
+                  + "可能是风量档或模式码，但**证据不足以当风量用**，未接入 UI。"),
+        .init("1939", "空调伴随位 1939", unit: "",
+              category: .climate, confidence: .unknown,
+              note: "抓包里取过 1。与 170 的关系未建立，未接入 UI。"),
+        .init("1944", "空调伴随位 1944", unit: "",
+              category: .climate, confidence: .unknown,
+              note: "抓包里取过 0 / 7。疑似温度或模式相关，未定，未接入 UI。"),
+        .init("1945", "空调伴随位 1945", unit: "",
+              category: .climate, confidence: .unknown,
+              note: "抓包里取过 0。语义未定，未接入 UI。"),
 
         // ── 时间 / 元数据 ─────────────────────────────────────────────
         .init("1", "采集时间戳", unit: "ms",

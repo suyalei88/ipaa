@@ -20,6 +20,8 @@ struct DashboardView: View {
     @State private var toastIsError = false
     /// 由 .lmClock 每 0.5 秒推一次，用来驱动锁定期倒计时
     @State private var now = Date()
+    /// 待二次确认的快捷动作 key（车控会动车，首页也要确认一次）
+    @State private var quickConfirmKey: String?
 
     private let tiles = [
         GridItem(.flexible(), spacing: 12),
@@ -66,6 +68,18 @@ struct DashboardView: View {
             }
         }
         .overlay(alignment: .bottom) { toastView }
+        .confirmationDialog(quickConfirmTitle,
+                            isPresented: quickConfirmBinding,
+                            titleVisibility: .visible) {
+            Button("确认执行") {
+                let k = quickConfirmKey
+                quickConfirmKey = nil
+                if let k = k { Task { await runQuick(key: k) } }
+            }
+            Button("取消", role: .cancel) { quickConfirmKey = nil }
+        } message: {
+            Text(quickConfirmMessage)
+        }
         .onChange(of: client.lastError) { _, newValue in
             guard let e = newValue else { return }
             showToast(e, isError: true)
@@ -409,7 +423,7 @@ struct DashboardView: View {
                 HStack(spacing: 10) {
                     ForEach(LMEndpoints.primaryActions, id: \.self) { key in
                         if let cmd = LMEndpoints.commands[key] {
-                            quickButton(cmd)
+                            quickButton(key: key, cmd: cmd)
                         }
                     }
                 }
@@ -417,10 +431,10 @@ struct DashboardView: View {
         }
     }
 
-    private func quickButton(_ cmd: LMEndpoints.Command) -> some View {
-        let accent = quickTint(cmd)
+    private func quickButton(key: String, cmd: LMEndpoints.Command) -> some View {
+        let accent = quickTint(for: key)
         return Button {
-            Task { await runQuick(cmd) }
+            quickConfirmKey = key
         } label: {
             VStack(spacing: 6) {
                 Image(systemName: cmd.systemImage).font(.system(size: 20, weight: .semibold))
@@ -435,40 +449,68 @@ struct DashboardView: View {
         .disabled(client.isBusy || client.isControlLocked(at: now))
     }
 
-    private func quickTint(_ cmd: LMEndpoints.Command) -> Color {
-        switch cmd.cmdid {
-        case 110: return cmd.state["value"] as? String == "lock" ? Color.lmGood : Color.lmWarn
-        case 120: return Color.lmTeal
-        case 230: return Color.lmAccent
-        case 170: return Color.lmIndigo
-        default:  return Color.lmAccent
+    /// ★ 2026-10-08 修正：以前这里按 `cmdid` 判色，而 cmdid 的语义刚被整体
+    ///   纠正过（170 从「大灯」改成「空调」、230 从「空调」改成「车窗」），
+    ///   按 cmdid 判色会跟着一起错。改成按 **actionKey** 判，语义才稳定。
+    private func quickTint(for key: String) -> Color {
+        switch key {
+        case "lock":         return Color.lmGood
+        case "unlock":       return Color.lmWarn
+        case "trunk_open":   return Color.lmTeal
+        case "trunk_close":  return Color.lmTeal
+        case "horn":         return Color.lmIndigo
+        case "window_micro": return Color.lmPurple
+        case "window_half":  return Color.lmPurple
+        case "window_close": return Color.lmPurple
+        case "ac_on":        return Color.lmAccent
+        case "ac_off":       return Color.lmAccent2
+        default:             return Color.lmIndigo
         }
     }
 
-    /// 快捷操作：和车控页走同一条链路（含业务码 70 锁定提示）
-    private func runQuick(_ cmd: LMEndpoints.Command) async {
+    /// 快捷操作：和车控页走同一条链路（含业务码 70 锁定提示）。
+    ///
+    /// ★ 2026-10-08 改动：以前「会动物理世界」的动作在首页只弹一句
+    ///   「请到车控页确认后执行」。但 `primaryActions` 里恰好有
+    ///   上锁 / 解锁两个 physical 动作 —— 等于首页 4 个快捷按钮有 2 个
+    ///   点下去什么也不做，只是把你支走。现在改成**在首页直接弹确认框**，
+    ///   确认后照常下发，链路和车控页完全一致（确认文案也复用同一套）。
+    private func runQuick(key: String) async {
         if client.isControlLocked(at: now) {
             showToast("操作密码被锁定，请 \(client.controlLockRemaining(at: now)) 秒后再试", isError: true)
             return
         }
-        // 会动物理世界的动作（车门/后备箱）在首页也拦一道
-        if cmd.risk == .physical {
-            showToast("「\(cmd.title)」会真的动车，请到「车控」页确认后执行", isError: true)
-            return
-        }
-        let ok = await client.control(keyFor(cmd))
+        guard let cmd = LMEndpoints.commands[key] else { return }
+        let ok = await client.control(key)
         showToast(ok ? "\(cmd.title) 成功" : (client.lastError ?? "\(cmd.title) 失败"), isError: !ok)
         if ok { try? await client.refreshStatus() }
     }
 
-    /// 从 cmdid + state 反查 actionKey（首页只放 low risk 的，都能反查出来）
-    private func keyFor(_ cmd: LMEndpoints.Command) -> String {
-        for key in LMEndpoints.quickActions {
-            if let c = LMEndpoints.commands[key], c.cmdid == cmd.cmdid, c.title == cmd.title {
-                return key
-            }
+    // MARK: - 快捷动作的二次确认
+    //
+    // 文案刻意和车控页保持一致 —— 同一个动作在哪个页面点，提示都该一样。
+
+    private var quickConfirmTitle: String {
+        guard let k = quickConfirmKey, let cmd = LMEndpoints.commands[k] else {
+            return "确认下发车控指令？"
         }
-        return LMEndpoints.quickActions.first ?? ""
+        return "确认执行「\(cmd.title)」？"
+    }
+
+    private var quickConfirmMessage: String {
+        guard let k = quickConfirmKey, let cmd = LMEndpoints.commands[k] else {
+            return "将向车辆下发一次真实指令。"
+        }
+        if cmd.risk == .physical {
+            return "cmdid \(cmd.cmdid) 会真的动车门 / 后备箱 / 上电。"
+                + "请确认车辆周围安全、车门和后备箱附近没有人，再执行。"
+        }
+        return "cmdid \(cmd.cmdid)，只改状态（空调），不会夹到人。"
+    }
+
+    private var quickConfirmBinding: Binding<Bool> {
+        Binding(get: { quickConfirmKey != nil },
+                set: { if !$0 { quickConfirmKey = nil } })
     }
 
     private func showToast(_ text: String, isError: Bool) {

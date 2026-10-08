@@ -1323,6 +1323,53 @@ final class LMClient: ObservableObject {
     /// 车门锁状态：true = 已锁
     var isLocked: Bool? { signals["1298"]?.boolValue ?? signals["3262"]?.boolValue }
 
+    // MARK: - 车窗 / 空调（cmdid ↔ 信号 的对应关系已实测）
+
+    /// 四个车窗位置信号的 id（1693~1696）。
+    ///
+    /// ★ 与 cmdid 230 双向对上（复验记录见 `LMSignalCatalog` 的车窗条目）：
+    ///   发 `{"value":"2"}` 时四个信号**同时** 0→2，发 `{"value":"0"}` 时
+    ///   四个同时回到 0 —— 所以 230 是「四窗一起动」，没有单窗接口。
+    ///
+    /// ⚠️ 哪个 id 对应哪个窗（左前 / 右前 / 左后 / 右后）**没有证据**，
+    ///   所以下面一律按 id 顺序展示，绝不编造「左前窗」这种名字。
+    static let windowSignalIds = ["1693", "1694", "1695", "1696"]
+
+    /// 把四个车窗位置信号翻译成人话。
+    ///
+    /// 三种返回：
+    ///   · `nil`                      —— 一个车窗信号都没读到
+    ///   · `"四窗均「微开」"`           —— 四个值相同且能翻译
+    ///   · `"1693 关闭 · 1694 微开 · …"` —— 四个值不一致（逐窗按 id 列出）
+    ///
+    /// ⚠️ 数值 → 文案走 `LMEndpoints.WindowOpening`，而
+    ///    「2 是微开、5 是半开」本身是按开度大小排的**假设**（抓包只录到过
+    ///    0 / 2 / 5，没记录当时按的是哪个按钮）。
+    ///    碰到映射表以外的值（比如 1）时**原样显示数字**，不硬套文案 ——
+    ///    宁可显示「未知(1)」也不假装知道。
+    var windowOpeningText: String? {
+        let pairs = Self.windowSignalIds.compactMap { id -> (String, String)? in
+            guard let v = signals[id]?.doubleValue else { return nil }
+            let n = Int(v.rounded())
+            let text = LMEndpoints.WindowOpening(rawValue: n)?.title ?? "未知(\(n))"
+            return (id, text)
+        }
+        guard !pairs.isEmpty else { return nil }
+        if pairs.count == Self.windowSignalIds.count, Set(pairs.map { $0.1 }).count == 1 {
+            return "四窗均「\(pairs[0].1)」"
+        }
+        return pairs.map { "\($0.0) \($0.1)" }.joined(separator: " · ")
+    }
+
+    /// 空调是否开着。1938：1 = 开，0 = 关。
+    ///
+    /// ★ 极性是实测的，不是猜的：`cmdid 170 {"operate":"auto"}` → 1938 0→1，
+    ///   `{"operate":"off"}` → 1938 1→0。
+    /// ⚠️ 注意它只反映**开关**，不含风量 / 温度 —— 抓包里从没调过风量温度，
+    ///   所以 1941/1943/1944/1945 那几个伴随位到底是什么语义还没定论
+    ///   （见 LMSignalCatalog 里的标注），本 App 不拿它们当风量档用。
+    var hvacOn: Bool? { signals["1938"]?.boolValue }
+
     /// 剩余电量 %（0...100）
     ///
     ///   100003 —— BMS 上报的 SOC，带 1 位小数，最准
