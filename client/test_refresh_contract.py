@@ -313,7 +313,7 @@ def test_location_source() -> None:
 
     背景（2026-10-08 用户报）：官方 App 显示车在淮南，本 App 显示合肥。
     根因：之前拿车机 signalMap 的 `2190/2191` 当位置，而那组坐标在
-    **111 个抓包样本里一个数字都没变**（31.801201 / 117.342718，指向合肥）
+    **60 个抓包样本里一个数字都没变**（31.801201 / 117.342718，指向合肥）
     —— 是静态值，不是实时位置。官方「车辆位置」实际来自 IP 归属地：
         GET https://apptec.leapmotor.cn/ipAnalysis/getAddressByIp
         → {"country":"中国","province":"安徽","city":"淮南"}

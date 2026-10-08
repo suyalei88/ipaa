@@ -647,7 +647,7 @@ struct LoveCarView: View {
                             .foregroundStyle(.secondary)
                         // ★ 主位置 = IP 归属地，与官方 App 的「车辆位置」**完全同源**。
                         //   抓包实测：官方 `ipAnalysis/getAddressByIp` → 安徽 淮南（与官方界面一致）；
-                        //   而车机 signalMap 的 2190/2191 在 111 个样本里一个数字都没变
+                        //   而车机 signalMap 的 2190/2191 在 60 个样本里一个数字都没变
                         //   （31.801201 / 117.342718，指向合肥）—— 那是静态值，只能当附注。
                         if let ip = client.ipAddress, !ip.regionText.isEmpty {
                             Text(ip.regionText)
@@ -737,7 +737,7 @@ struct LoveCarView: View {
 
     private func openInMaps() {
         // ★ 优先按 IP 归属地的城市名搜 —— 与官方「车辆位置」同源。
-        //   车机坐标是静态值（实测 111 个样本不变），直接拿它导航会导到**错误城市**
+        //   车机坐标是静态值（实测 60 个样本不变），直接拿它导航会导到**错误城市**
         //   （用户实车在淮南，坐标却指向合肥）。城市名虽粗，但方向是对的。
         if let ip = client.ipAddress, !ip.regionText.isEmpty {
             let q = ip.regionText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)

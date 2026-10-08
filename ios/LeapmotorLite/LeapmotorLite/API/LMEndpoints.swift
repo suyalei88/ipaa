@@ -291,7 +291,7 @@ enum LMEndpoints {
     ///   ① 官方 RN bundle `index.jsbundle` 明文常量：
     ///        quickActions   = [{unlock:110},{trunk:130},{horn:120},{ac:170},{windows:230}]
     ///        signalMappings = {unlock:1298, trunk:1281, windows:1693, ac:1938}
-    ///   ② 抓包双向验证（111 个信号快照）：
+    ///   ② 抓包双向验证（60 个信号快照）：
     ///        cmdid 110 {"value":"lock"}   → 1298 0→1        （门锁翻转）
     ///        cmdid 230 {"value":"2"}      → 1693~1696 0→2   （★ 四个车窗一起动）
     ///        cmdid 230 {"value":"0"}      → 1693~1696 2→0

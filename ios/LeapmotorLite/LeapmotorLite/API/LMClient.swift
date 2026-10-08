@@ -261,7 +261,7 @@ final class LMClient: ObservableObject {
     ///   实测结论 —— **官方「车辆位置」用的就是这个 IP 归属地**：
     ///     · 抓包 `GET https://apptec.leapmotor.cn/ipAnalysis/getAddressByIp`
     ///       → `{"country":"中国","province":"安徽","city":"淮南"}`，与官方界面完全一致；
-    ///     · 而车机 signalMap 的 `2190/2191` 在 **111 个样本里一个数字都没变**
+    ///     · 而车机 signalMap 的 `2190/2191` 在 **60 个样本里一个数字都没变**
     ///       （31.801201 / 117.342718，指向合肥）—— 那是**静态值**，不是实时位置。
     ///   所以「车辆位置」以 IP 归属地为准，车机坐标降级为附注。
     @Published private(set) var ipAddress: LMIPAddress?
@@ -1350,7 +1350,7 @@ final class LMClient: ObservableObject {
     ///
     /// ★ 为什么进 `refreshAll`：这是**唯一**能复现官方定位结果的来源。
     ///   车机 signalMap 的 `2190/2191` 是静态值，拿它当「车辆位置」必然和官方对不上
-    ///   （实测：111 个样本里坐标一个数字都没变）。
+    ///   （实测：60 个样本里坐标一个数字都没变）。
     ///   接口很轻 —— GET、无鉴权、只回 country/province/city 三个字段，
     ///   每次刷新拉一次不会造成负担。
     private func refreshIPAddress() async {
@@ -1882,7 +1882,7 @@ final class LMClient: ObservableObject {
     /// 「车端已关闭位置数据分享，无法获取车辆实时位置」。
     ///
     /// ★ 2026-10-09：用户看到官方 App 有这句提示，而同期 signalMap 的 `2190/2191`
-    ///   在 111 个抓包样本里一个数字都没变 —— 两者互相印证，车机确实没上报实时位置。
+    ///   在 60 个抓包样本里一个数字都没变 —— 两者互相印证，车机确实没上报实时位置。
     ///
     /// ⚠️ 为什么不直接用 `privacyGPS`：抓包里它是 `0`，而车端**确实**关闭了分享，
     ///   所以「`privacyGPS == 1` → 隐藏」这个旧判断方向存疑（语义可能相反，

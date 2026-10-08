@@ -325,7 +325,7 @@ window.newInit(serverJson, appJson);         // serverJson/appJson 都是 **JSON
 | 来源 | 实测值 | 结论 |
 |---|---|---|
 | `GET apptec.leapmotor.cn/ipAnalysis/getAddressByIp` | `{"province":"安徽","city":"淮南"}` | ✅ **与官方界面一致** —— 官方「车辆位置」用的就是它 |
-| 车机 signalMap `2190`/`2191` | `31.801201` / `117.342718`（指向合肥） | ❌ **111 个样本里一个数字都没变** —— 静态值，不是实时位置 |
+| 车机 signalMap `2190`/`2191` | `31.801201` / `117.342718`（指向合肥） | ❌ **60 个快照里一个数字都没变** —— 静态值，不是实时位置 |
 
 `signal/info/query/distributed` 的 signalMap 里**只有** `2190/2191` 与 `3725/3724` 两组坐标，
 且都长期不变；其余落在坐标范围的 signal（`1204` = 33/37/41、`1349` = 29.5、`100003` = SOC）
