@@ -308,6 +308,61 @@ def test_lovecar_page() -> None:
           re.search(r"@MainActor\s*\n\s*static func serverJSON\(", c3d) is not None)
 
 
+def test_location_source() -> None:
+    """⑨ 定位数据源：车辆位置必须走 IP 归属地（与官方 App 同源）。
+
+    背景（2026-10-08 用户报）：官方 App 显示车在淮南，本 App 显示合肥。
+    根因：之前拿车机 signalMap 的 `2190/2191` 当位置，而那组坐标在
+    **111 个抓包样本里一个数字都没变**（31.801201 / 117.342718，指向合肥）
+    —— 是静态值，不是实时位置。官方「车辆位置」实际来自 IP 归属地：
+        GET https://apptec.leapmotor.cn/ipAnalysis/getAddressByIp
+        → {"country":"中国","province":"安徽","city":"淮南"}
+    下面几条断言把这个修复钉死，防止以后有人「优化」回用车机坐标。
+    """
+    print("\n[9] 定位数据源（IP 归属地，与官方同源）")
+
+    client = read("API/LMClient.swift")
+    models = read("API/LMModels.swift")
+    love = read("Views/LoveCarView.swift")
+    loc = read("Views/LocationView.swift")
+    ep = read("API/LMEndpoints.swift")
+
+    # 端点
+    check("端点表里有 IP 归属地路径", "/ipAnalysis/getAddressByIp" in ep)
+    check("IP 归属地走 tecHost（apptec.leapmotor.cn）",
+          "tecHost" in ep and "apptec.leapmotor.cn" in ep)
+
+    # 模型
+    check("LMIPAddress 有 regionText（省+市，给主位置用）",
+          re.search(r"var regionText: String", models) is not None)
+
+    # 客户端
+    check("LMClient 暴露结构化 ipAddress",
+          re.search(r"var ipAddress: LMIPAddress\?", client) is not None)
+    check("refreshAll 里会拉 IP 归属地", "refreshIPAddress()" in client)
+    check("refreshIPAddress 走 ipAddress 路径",
+          re.search(r"private func refreshIPAddress[\s\S]{0,900}?LMEndpoints\.Path\.ipAddress",
+                    client) is not None)
+
+    # 爱车页地图卡：主位置 = IP 归属地
+    check("爱车页地图卡读 client.ipAddress", "client.ipAddress" in love)
+    check("爱车页地图卡显示 regionText", "ip.regionText" in love)
+    check("打开地图优先用 IP 归属地城市名",
+          re.search(r"func openInMaps\(\)[\s\S]{0,700}?ip\.regionText", love) is not None)
+
+    # 定位页
+    check("定位页有 IP 归属地卡片", "ipLocationCard" in loc)
+    check("定位页卡片读 client.ipAddress", "client.ipAddress" in loc)
+    check("定位页说明了车机坐标可能长期不变", "一个数字都没动" in loc)
+
+    # 车端未分享位置的提示（复刻官方原话）
+    tip = "车端已关闭位置数据分享，无法获取车辆实时位置"
+    check("爱车页复刻了官方「车端已关闭位置数据分享」提示", tip in love)
+    check("定位页复刻了同一句提示", tip in loc)
+    check("该判断用可观测事实（坐标长期不变）而非猜 privacyGPS 语义",
+          re.search(r"var carLocationShareOff[\s\S]{0,700}?coordinateUnchangedFor", client) is not None)
+
+
 def main() -> int:
     print("=" * 64)
     print("续期契约测试（test_refresh_contract）")
@@ -320,6 +375,7 @@ def main() -> int:
     test_request_shape()
     test_car3d_assets()
     test_lovecar_page()
+    test_location_source()
     test_response_shapes()
     print("\n" + "=" * 64)
     if FAILS:

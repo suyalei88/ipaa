@@ -638,19 +638,52 @@ struct LoveCarView: View {
                         Text("车辆位置")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        if let c = client.coordinate {
+                        // ★ 主位置 = IP 归属地，与官方 App 的「车辆位置」**完全同源**。
+                        //   抓包实测：官方 `ipAnalysis/getAddressByIp` → 安徽 淮南（与官方界面一致）；
+                        //   而车机 signalMap 的 2190/2191 在 111 个样本里一个数字都没变
+                        //   （31.801201 / 117.342718，指向合肥）—— 那是静态值，只能当附注。
+                        if let ip = client.ipAddress, !ip.regionText.isEmpty {
+                            Text(ip.regionText)
+                                .font(.callout.weight(.semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        } else if let c = client.coordinate {
                             Text(String(format: "%.5f, %.5f", c.latitude, c.longitude))
                                 .font(.system(.callout, design: .monospaced).weight(.medium))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
                         } else {
-                            Text("暂无坐标").font(.callout).foregroundStyle(.secondary)
+                            Text("暂无位置").font(.callout).foregroundStyle(.secondary)
+                        }
+                        if let c = client.coordinate {
+                            Text(String(format: "车机坐标 %.5f, %.5f", c.latitude, c.longitude))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                         }
                         if let age = client.locationAge {
                             Text(ageText(age)).font(.caption2).foregroundStyle(.secondary)
                         }
                     }
                     Spacer(minLength: 8)
+                }
+
+                if let ip = client.ipAddress, !ip.regionText.isEmpty {
+                    Text("位置取自手机网络归属地，与官方 App 同源")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                // ★ 复刻官方原话（2026-10-09 用户实机看到）：
+                //   「车端已关闭位置数据分享，无法获取车辆实时位置」
+                //   判据是可观测事实（车机在实时上报车况但坐标 >24h 没动），
+                //   不用语义存疑的 privacyGPS，见 LMClient.carLocationShareOff。
+                if client.carLocationShareOff {
+                    Label("车端已关闭位置数据分享，无法获取车辆实时位置",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Color.lmWarn)
                 }
 
                 if client.locationMayBeHidden {
@@ -679,7 +712,7 @@ struct LoveCarView: View {
                             .frame(maxWidth: .infinity, minHeight: 40)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(client.coordinate == nil)
+                    .disabled(client.ipAddress == nil && client.coordinate == nil)
 
                     NavigationLink {
                         LocationView()
@@ -696,6 +729,15 @@ struct LoveCarView: View {
     }
 
     private func openInMaps() {
+        // ★ 优先按 IP 归属地的城市名搜 —— 与官方「车辆位置」同源。
+        //   车机坐标是静态值（实测 111 个样本不变），直接拿它导航会导到**错误城市**
+        //   （用户实车在淮南，坐标却指向合肥）。城市名虽粗，但方向是对的。
+        if let ip = client.ipAddress, !ip.regionText.isEmpty {
+            let q = ip.regionText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+                ?? ip.regionText
+            if let url = URL(string: "https://maps.apple.com/?q=\(q)&z=12") { openURL(url) }
+            return
+        }
         guard let c = client.coordinate else { return }
         let url = URL(string: "https://maps.apple.com/?ll=\(c.latitude),\(c.longitude)&q=我的车&z=17")
         if let url = url { openURL(url) }

@@ -255,6 +255,16 @@ final class LMClient: ObservableObject {
     @Published private(set) var healthyChargingPush: Bool?
     /// 手机侧 IP 归属地文本，例如 `安徽 淮南`（`tecHost` 的 ipAnalysis）
     @Published private(set) var ipAddressText: String?
+    /// 手机侧 IP 归属地的结构化值（省 / 市）。
+    ///
+    /// ★ 2026-10-08 加：用户报「官方 App 定位到车停的位置淮南，本 App 显示合肥」。
+    ///   实测结论 —— **官方「车辆位置」用的就是这个 IP 归属地**：
+    ///     · 抓包 `GET https://apptec.leapmotor.cn/ipAnalysis/getAddressByIp`
+    ///       → `{"country":"中国","province":"安徽","city":"淮南"}`，与官方界面完全一致；
+    ///     · 而车机 signalMap 的 `2190/2191` 在 **111 个样本里一个数字都没变**
+    ///       （31.801201 / 117.342718，指向合肥）—— 那是**静态值**，不是实时位置。
+    ///   所以「车辆位置」以 IP 归属地为准，车机坐标降级为附注。
+    @Published private(set) var ipAddress: LMIPAddress?
     /// 车辆档案里各个接口的加载情况（哪几个成功、哪几个失败），供页面提示用
     @Published private(set) var profileLoadLog: [String] = []
 
@@ -1326,12 +1336,35 @@ final class LMClient: ObservableObject {
                                         host: LMEndpoints.tecHost)
             let env = try? decode(LMIPAddressEnvelope.self, from: any)
             if let d = env?.data, !d.text.isEmpty {
+                ipAddress = d
                 ipAddressText = d.text
                 return "手机侧 IP 归属地：\(d.text)"
             }
             return prettyJSON(any)
         } catch {
             return "失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// 拉取手机侧 IP 归属地（与官方「车辆位置」同源）。
+    ///
+    /// ★ 为什么进 `refreshAll`：这是**唯一**能复现官方定位结果的来源。
+    ///   车机 signalMap 的 `2190/2191` 是静态值，拿它当「车辆位置」必然和官方对不上
+    ///   （实测：111 个样本里坐标一个数字都没变）。
+    ///   接口很轻 —— GET、无鉴权、只回 country/province/city 三个字段，
+    ///   每次刷新拉一次不会造成负担。
+    private func refreshIPAddress() async {
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.ipAddress,
+                                        host: LMEndpoints.tecHost)
+            let env = try? decode(LMIPAddressEnvelope.self, from: any)
+            if let d = env?.data, !d.text.isEmpty {
+                ipAddress = d
+                ipAddressText = d.text
+            }
+        } catch {
+            // 锦上添花，失败不污染 lastError
         }
     }
 
@@ -1348,6 +1381,8 @@ final class LMClient: ObservableObject {
         try? await refreshCommonConfig()
         // 消息未读数同理 —— 它是锦上添花，失败了不该影响车况
         try? await refreshNoticeCount()
+        // 位置同理。★ 这是复现官方「车辆位置」的唯一来源，见 refreshIPAddress 注释。
+        await refreshIPAddress()
     }
 
     // MARK: - 蓝牙钥匙
@@ -1840,6 +1875,25 @@ final class LMClient: ObservableObject {
 
     /// 官方隐私开关（`privacyGPS = 1` 时官方会隐藏位置，我们这边可能读到 0/0）
     var locationMayBeHidden: Bool { privacyGPS }
+
+    /// 车端是否**很可能已关闭位置数据分享** —— 用来复刻官方那句提示
+    /// 「车端已关闭位置数据分享，无法获取车辆实时位置」。
+    ///
+    /// ★ 2026-10-09：用户看到官方 App 有这句提示，而同期 signalMap 的 `2190/2191`
+    ///   在 111 个抓包样本里一个数字都没变 —— 两者互相印证，车机确实没上报实时位置。
+    ///
+    /// ⚠️ 为什么不直接用 `privacyGPS`：抓包里它是 `0`，而车端**确实**关闭了分享，
+    ///   所以「`privacyGPS == 1` → 隐藏」这个旧判断方向存疑（语义可能相反，
+    ///   也可能这个开关根本不在 `commonConfig` 里）。拿不到明确证据前不拿它下结论。
+    ///
+    /// 这里改用**可观测的事实**：车机在实时上报车况（SOC 等一直在变），但坐标超过
+    /// 24 小时没动过 —— 那更可能是它没分享位置，而不是「车恰好一直停着」。
+    /// 阈值取 24 小时（比 `coordinateLooksStale` 的 6 小时保守），减少正常停车误报。
+    var carLocationShareOff: Bool {
+        guard coordinate != nil else { return false }
+        guard let s = coordinateUnchangedFor else { return false }
+        return s > 24 * 3600
+    }
 
     // MARK: - 充电
     //

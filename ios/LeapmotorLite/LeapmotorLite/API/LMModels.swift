@@ -692,6 +692,18 @@ struct LMIPAddress: Decodable {
             .filter { !$0.isEmpty }
             .joined(separator: " ")
     }
+
+    /// `安徽 淮南` —— 省 + 市，用于「车辆位置」主显示。
+    ///
+    /// ★ 为什么不带 `country`：官方 App 的车辆位置只显示到省市，
+    ///   带上「中国」既啰嗦又挤占宽度。省市都缺时退回 `text`。
+    var regionText: String {
+        let r = [province, city]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return r.isEmpty ? text : r
+    }
 }
 
 struct LMIPAddressEnvelope: Decodable {

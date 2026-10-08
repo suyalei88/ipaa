@@ -67,6 +67,7 @@ struct LocationView: View {
             mapArea
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    ipLocationCard
                     addressCard
                     coordinateCard
                     coordFixCard
@@ -207,6 +208,68 @@ struct LocationView: View {
     }
 
     // MARK: - 地址
+
+    // MARK: - IP 归属地（★ 与官方 App「车辆位置」同源）
+
+    /// 官方那个「驻车照片 + 定位 + 鸣笛寻车」卡片里的**位置显示**，
+    /// 抓包实测来自 `GET apptec.leapmotor.cn/ipAnalysis/getAddressByIp`
+    /// —— 返回 `{"province":"安徽","city":"淮南"}`，与官方界面一致。
+    ///
+    /// ★ 为什么把这张卡放在最上面：
+    ///   用户报「官方显示淮南、本 App 显示合肥」。根因是之前拿车机 signalMap 的
+    ///   `2190/2191` 当位置，而那组坐标在 **111 个抓包样本里一个数字都没变**
+    ///   （31.801201 / 117.342718，指向合肥）—— 是静态值，不是实时位置。
+    ///   IP 归属地是唯一能复现官方结果的来源，所以它是**主位置**，
+    ///   车机坐标降级到下面的「坐标」卡里当附注。
+    private var ipLocationCard: some View {
+        LMCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(text: "当前位置（与官方 App 同源）")
+
+                if let ip = client.ipAddress, !ip.text.isEmpty {
+                    HStack(spacing: 10) {
+                        Image(systemName: "location.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(Color.lmTeal)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ip.regionText)
+                                .font(.title3.weight(.semibold))
+                            Text(ip.text)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("取自手机网络的 IP 归属地。官方 App 的「车辆位置」用的就是这个来源 —— "
+                         + "所以它只精确到城市，且跟手机所在网络有关，不一定是车的实际停车点。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    // ★ 复刻官方原话：「车端已关闭位置数据分享，无法获取车辆实时位置」
+                    //   这解释了为什么车机坐标会是静态值 —— 车端压根没在分享位置。
+                    if client.carLocationShareOff {
+                        Label("车端已关闭位置数据分享，无法获取车辆实时位置",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(Color.lmWarn)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text("还没取到 IP 归属地（下拉刷新试试）")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    Task { await client.probeIpAddress() }
+                } label: {
+                    Label("重新获取", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
 
     private var addressCard: some View {
         LMCard(padding: 16) {
@@ -533,11 +596,16 @@ struct LocationView: View {
 
     private var sourceNote: some View {
         Text("""
-        位置来自车机上报的信号 2190/2191（另一组 3725/3724 做交叉校验），不是实时 GPS 跟踪。
+        ★ 主位置（最上面那张卡）来自手机网络的 IP 归属地 —— 和官方 App 的「车辆位置」是同一个接口
+        （apptec.leapmotor.cn/ipAnalysis/getAddressByIp）。它只精确到城市，且取决于手机当前连的网络，
+        不保证等于车的实际停车点。
 
-        ★ 注意：车机「在实时上报」不等于「坐标是新的」。实测发现车况采集时间每秒都在刷新
-        （SOC 也在变），但同一个坐标可以连续几十次上报完全不变 —— 所以上面单独标了
-        「坐标未变化」多久。那个数才是判断定位新不新的依据。
+        下面的坐标来自车机上报的信号 2190/2191（另一组 3725/3724 做交叉校验），不是实时 GPS 跟踪。
+
+        ★ 实测提醒：这组车机坐标**可能长期不变**。在 111 个抓包样本里它一个数字都没动过
+        （31.801201 / 117.342718，指向合肥），而同一时间官方 App 显示的是淮南 ——
+        所以别把它当成「车在哪」的答案，它更像一个静态基准值。要判断新不新，看上面单独标的
+        「坐标未变化」多久：车况采集时间每秒都在刷新，但坐标可以连续几十次完全不变。
 
         车熄火后位置可能长时间不更新；地库里通常没有定位。
         车机坐标属于哪一系（WGS-84 / GCJ-02）无法从协议静态判定，所以给了「坐标校正」三个选项：
