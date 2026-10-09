@@ -7,7 +7,6 @@
 //
 import UIKit
 import Combine
-import SwiftUI
 
 final class LMRootViewController: UIViewController {
 
@@ -57,7 +56,11 @@ final class LMRootViewController: UIViewController {
         if wantMain {
             next = LMMainTabBarController(client: client)
         } else {
-            next = LMHostingController(client: client, title: "登录") { LoginView() }
+            // ★ Phase 1：登录页已迁成原生 UIKit（LMLoginViewController）。
+            //   它不再是 SwiftUI 页，所以要用 LMNavigationController 给一个
+            //   导航栏来承载 title（原来 SwiftUI 版自带 NavigationStack）。
+            next = LMNavigationController(
+                rootViewController: LMLoginViewController(client: client))
         }
 
         if let old = child {

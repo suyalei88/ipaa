@@ -528,6 +528,25 @@ UIKit 侧订阅 `objectWillChange` 就够了。
 - `UIKit/LMHostingController.swift` —— 过渡桥，把未迁移的 SwiftUI 页包成 VC。
 - `UIKit/LMRootViewController.swift` / `LMMainTabBarController.swift` —— 根容器与 5 个 Tab。
 
+**Phase 1（已完成，v1.1.1）**：登录页 `LoginView`（285 行）迁成原生
+`UIKit/LMLoginViewController.swift`，这是整条迁移路线的**样板**。
+
+- 页面继承 `LMBaseViewController`，只覆盖两个钩子：`buildUI()` 搭一次视图树，
+  `render()` 做幂等刷新（登录页的 `render()` 只调 `refreshControls()`，
+  从不 `addSubview`）。
+- 页内状态（手机号 / 验证码 / 倒计时 / 导入文本 / 提示语）**不进 `LMClient`** ——
+  它们是纯 UI 状态，跟车端无关，留在 VC 里更简单。
+- 倒计时用 **`target/selector` 版 `Timer`** 而不是 block 版：
+  block 版收的是 `@Sendable` 闭包，不继承 `@MainActor` 隔离，改 `countdown`
+  会直接编译报 actor 隔离错误；并且必须加进 `RunLoop` 的 `.common` 模式，
+  否则用户一拖动 ScrollView 计时器就停走。
+- `viewDidDisappear` 里 `invalidate()` 停表，避免 Timer 一直持有 self。
+- 三条业务链路原样保留：`sendSMSCode` / `loginWithSMSCode` + `refreshAll` /
+  `adoptLoginResponse`。
+- `LMRootViewController` 的登录分支已从 `LMHostingController { LoginView() }`
+  换成 `LMNavigationController(rootViewController: LMLoginViewController(...))`，
+  该文件不再需要 `import SwiftUI`。
+
 #### ★ 两个必须记住的坑
 
 **① `objectWillChange` 在「赋值之前」触发。**
@@ -547,9 +566,10 @@ UIKit 侧订阅 `objectWillChange` 就够了。
 
 按体量从小到大逐页替换，每迁完一页都要 lint + 契约测试通过、CI 绿：
 
-| 阶段 | 页面 | 行数 |
-|---|---|---|
-| Phase 1 | `LoginView` | 285 |
+| 阶段 | 页面 | 行数 | 状态 |
+|---|---|---|---|
+| Phase 0 | 换壳（AppDelegate + window + 宿主桥） | — | ✅ v1.1.0 |
+| Phase 1 | `LoginView` | 285 | ✅ v1.1.1 |
 | Phase 2 | `SettingsView` | 423 |
 | Phase 3 | `VehicleProfileView` | 522 |
 | Phase 4 | `ControlPanelView` | 686 |
@@ -711,10 +731,10 @@ ios/
         │   ├── LMBaseViewController.swift # 页面基类：订阅 objectWillChange → render()
         │   ├── LMHostingController.swift  # 过渡桥：把未迁移的 SwiftUI 页包成 VC
         │   ├── LMRootViewController.swift # 根容器：登录页 ↔ 主 Tab
-        │   └── LMMainTabBarController.swift # 5 个 Tab
+        │   ├── LMMainTabBarController.swift # 5 个 Tab
+        │   └── LMLoginViewController.swift  # ★ Phase 1：登录页（原生 UIKit，短信验证码 / 导入登录态）
         ├── Views/
         │   ├── Theme.swift              # 配色 + 复用组件（卡片 / 磁贴 / 电量环 / .lmClock）
-        │   ├── LoginView.swift          # 短信验证码登录 / 导入登录态
         │   ├── LoveCarView.swift        # ★ 爱车页（官方爱车页完整复刻：内嵌 3D 车模 + 快捷分页 + 预约充电 + 空调/地图/蓝牙钥匙）
         │   ├── LocationView.swift       # 车辆定位（地图 / 地址 / 导航 / 坐标校正）
         │   ├── ChargeView.swift         # 充电信息（距目标电量还需多久 / 充电判据证据 / 预约充电）

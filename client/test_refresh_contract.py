@@ -637,7 +637,8 @@ def test_uikit_skeleton() -> None:
             pbx = f.read()
         for fn in ("LMAppDelegate.swift", "LMBaseViewController.swift",
                    "LMHostingController.swift", "LMMainTabBarController.swift",
-                   "LMRootViewController.swift", "LMUIKitTheme.swift"):
+                   "LMRootViewController.swift", "LMUIKitTheme.swift",
+                   "LMLoginViewController.swift"):
             check(f"{fn} 已进 Sources（否则 CI 绿但功能静默缺失）",
                   f"{fn} in Sources" in pbx)
         check("旧入口 LeapmotorLiteApp.swift 已从工程移除",
@@ -650,6 +651,100 @@ def test_uikit_skeleton() -> None:
         with open(gen, "r", encoding="utf-8") as f:
             gsrc = f.read()
         check("gen_xcodeproj.py 的 DIR_ORDER 含 UIKit", '"UIKit"' in gsrc)
+
+
+# ============================================================
+# 12. Phase 1：登录页迁成 UIKit
+# ============================================================
+def test_uikit_login() -> None:
+    """⑫ 登录页（Phase 1）已从 SwiftUI 迁成 UIKit。
+
+    这是第一页「真迁移」，所以要把迁移的**验收标准**钉死 ——
+    后面每一页都照这个模板来：
+
+      ① 旧 SwiftUI 文件删掉，且没有任何地方还引用它
+      ② 新 VC 继承 `LMBaseViewController`（否则拿不到 client 与自动刷新）
+      ③ **行为不能丢**：验证码倒计时、数字过滤、导入登录态三条链路都在
+      ④ 根容器换成原生 VC，不再由 `UIHostingController` 托管
+      ⑤ 新文件真的进了 pbxproj 的 Sources
+    """
+    print("\n[12] Phase 1：登录页迁成 UIKit")
+
+    # ---- ① 旧文件删干净 ----
+    check("Views/LoginView.swift 已删除",
+          not os.path.exists(os.path.join(APP, "Views", "LoginView.swift")))
+    old_refs = []
+    for dirpath, dirs, fns in os.walk(APP):
+        dirs.sort()
+        for fn in sorted(fns):
+            if not fn.endswith(".swift"):
+                continue
+            with open(os.path.join(dirpath, fn), "r", encoding="utf-8") as f:
+                if re.search(r"(?m)^\s*(?:struct|final class)\s+LoginView\b", f.read()):
+                    old_refs.append(fn)
+    check("源码里没有 LoginView 类型残留", old_refs == [], f"实际 {old_refs}")
+
+    # ---- ② 新 VC 的骨架 ----
+    vc = read("UIKit/LMLoginViewController.swift")
+    check("LMLoginViewController 继承 LMBaseViewController",
+          re.search(r"final class LMLoginViewController\s*:\s*LMBaseViewController", vc)
+          is not None)
+    check("实现了 buildUI / render 两个钩子",
+          "override func buildUI()" in vc and "override func render()" in vc)
+    check("render 幂等（只调 refreshControls，不重建视图）",
+          re.search(r"override func render\(\)[\s\S]{0,400}?refreshControls\(\)", vc)
+          is not None)
+
+    # ---- ③ 三条行为链路不能丢 ----
+    # 3.1 倒计时
+    check("倒计时用 target/selector 版 Timer（block 版是 @Sendable 闭包，"
+          "不继承 @MainActor 隔离）",
+          re.search(r"Timer\(timeInterval:[\s\S]{0,120}?selector:\s*#selector\(", vc)
+          is not None)
+    check("倒计时加进 RunLoop 的 .common 模式（否则一拖动就停走）",
+          "forMode: .common" in vc)
+    check("离开页面会停表（避免 Timer 一直持有 self）",
+          re.search(r"viewDidDisappear[\s\S]{0,300}?countdownTimer\?\.invalidate\(\)", vc)
+          is not None)
+    # 3.2 输入过滤
+    check("手机号只留数字", vc.count(r"filter(\.isNumber)") >= 2)
+    check("验证码截断到 6 位", re.search(r"prefix\(6\)", vc) is not None)
+    # 3.3 导入登录态
+    check("导入框接了 UITextViewDelegate",
+          re.search(r"extension LMLoginViewController:\s*UITextViewDelegate", vc)
+          is not None)
+    check("导入框变化会刷新按钮可用性",
+          re.search(r"textViewDidChange[\s\S]{0,300}?refreshControls\(\)", vc) is not None)
+    # 3.4 验证码框的 oneTimeCode 是**正确**用法（R8 拦的是操作密码框）
+    check("验证码框用 .oneTimeCode（收短信验证码的正确用法）",
+          "textContentType = .oneTimeCode" in vc)
+
+    # ---- ④ 四条 LMClient 链路都还在 ----
+    for m in ("sendSMSCode", "loginWithSMSCode", "adoptLoginResponse", "refreshAll"):
+        check(f"仍调用 client.{m}", f"client.{m}" in vc)
+
+    # ---- ⑤ 根容器换成原生 VC ----
+    rootvc = read("UIKit/LMRootViewController.swift")
+    check("根容器直接建 LMLoginViewController（不再是 HostingController）",
+          "LMLoginViewController(client: client)" in rootvc)
+    check("根容器不再引用 SwiftUI 的 LoginView()",
+          re.search(r"\{\s*LoginView\(\)\s*\}", rootvc) is None)
+    check("登录页用 LMNavigationController 承载导航栏",
+          re.search(r"LMNavigationController\(\s*\n?\s*rootViewController:\s*LMLoginViewController",
+                    rootvc) is not None)
+
+    # ---- ⑥ 进编译 ----
+    pbx_path = os.path.join(os.path.dirname(APP),
+                            "LeapmotorLite.xcodeproj", "project.pbxproj")
+    if os.path.exists(pbx_path):
+        with open(pbx_path, "r", encoding="utf-8") as f:
+            pbx = f.read()
+        # 用 /* 文件名 */ 精确匹配，避免 "LMLoginViewController.swift"
+        # 里的 "LoginView" 子串造成假阳性
+        check("LMLoginViewController.swift 已进 Sources",
+              "/* LMLoginViewController.swift */" in pbx)
+        check("旧的 LoginView.swift 已从工程移除",
+              "/* LoginView.swift */" not in pbx)
 
 
 def main() -> int:
@@ -669,6 +764,7 @@ def main() -> int:
     test_charging_center()
     test_car3d_layout()
     test_uikit_skeleton()
+    test_uikit_login()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

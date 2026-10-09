@@ -38,7 +38,7 @@ enum LMBuildInfo {
     /// 不要用「自动取当前时间」之类的方式生成 —— 那样每次编译都会变，
     /// 反而没法回答「我手上这个包是哪一次构建的」。
     /// 手工维护一个显式的字符串，才能和「某次交付」一一对应。
-    static let tag = "2026-10-09.4 · UI 框架从 SwiftUI 换成 UIKit（Phase 0：入口改成 AppDelegate + window，未迁移的页面暂由 UIHostingController 托住，行为与上一版一致）"
+    static let tag = "2026-10-09.5 · UIKit 迁移 Phase 1：登录页从 SwiftUI 换成原生 UIKit（LMLoginViewController），其余 4 个 Tab 仍由 UIHostingController 托住，功能与上一版一致"
 
     // MARK: - 从 Bundle 读出的版本
 
