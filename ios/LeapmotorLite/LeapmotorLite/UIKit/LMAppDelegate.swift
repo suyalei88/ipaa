@@ -36,6 +36,12 @@ final class LMAppDelegate: UIResponder, UIApplicationDelegate {
         window.rootViewController = LMRootViewController(client: client)
         // 全局 tint：UIKit 侧按钮 / 开关 / 导航栏的默认着色
         window.tintColor = .lmAccent
+        // ★ 2026-10-09（视觉重设计「碳黑霓虹」）：锁定深色外观。
+        //   这套设计只有深色版本 —— 放开跟随系统的话，浅色下会出现
+        //   「近黑卡片 + 深色文字」，直接糊成一片。
+        //   ⚠️ 想恢复双模式，先把 `LMUIKitTheme` 里的 `static let lm*`
+        //      改成动态色（`UIColor { trait in ... }`），再删掉这一行。
+        window.overrideUserInterfaceStyle = .dark
         window.makeKeyAndVisible()
         self.window = window
 

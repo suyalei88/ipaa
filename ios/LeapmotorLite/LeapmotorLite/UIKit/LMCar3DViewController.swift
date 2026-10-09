@@ -50,7 +50,7 @@ final class LMCar3DViewController: LMBaseViewController {
         title = "3D 看车"
         navigationItem.largeTitleDisplayMode = .never
         // 原页是 `Color(.systemBackground)` 打底，车模直接浮在上面。
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .lmCanvas
 
         // 3D 容器：整块铺满安全区（导航栏之下的内容区）。
         let web = LMCar3DWebView(serverJSON: Car3DConfig.serverJSON(for: client),

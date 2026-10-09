@@ -471,8 +471,8 @@ final class LMControlPanelViewController: LMBaseViewController {
         toastView.isHidden = true
         toastView.translatesAutoresizingMaskIntoConstraints = false
 
-        toastLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        toastLabel.textColor = .white
+        toastLabel.font = LMFont.text(13, weight: .semibold)
+        toastLabel.textColor = .lmCanvas
         toastLabel.numberOfLines = 0
         toastLabel.textAlignment = .center
         toastLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1096,7 +1096,7 @@ private final class LMControlGearButton: UIControl {
     }
 
     func update(selected: Bool, disabled: Bool) {
-        label.textColor = selected ? .white : .label
+        label.textColor = selected ? .lmCanvas : .lmText
         backgroundColor = selected ? .lmAccent : .lmCard
         layer.borderColor = UIColor.lmAccent.withAlphaComponent(selected ? 0 : 0.28).cgColor
         isEnabled = !disabled

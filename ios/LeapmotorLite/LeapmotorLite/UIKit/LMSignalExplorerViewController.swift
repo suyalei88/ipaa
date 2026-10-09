@@ -112,7 +112,7 @@ final class LMSignalExplorerViewController: LMBaseViewController {
         diffCfg.image = UIImage(systemName: "arrow.left.arrow.right")
         diffCfg.imagePadding = 6
         diffCfg.baseBackgroundColor = .lmAccent
-        diffCfg.baseForegroundColor = .white
+        diffCfg.baseForegroundColor = .lmCanvas
         diffCfg.cornerStyle = .medium
         diffCfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14,
                                                         bottom: 10, trailing: 14)
@@ -533,7 +533,7 @@ private final class LMSignalDiffViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "快照对比"
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = .lmCanvas
 
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "关闭", style: .plain, target: self, action: #selector(closeTapped))

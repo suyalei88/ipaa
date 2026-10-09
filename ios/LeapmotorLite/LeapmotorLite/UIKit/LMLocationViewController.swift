@@ -273,7 +273,7 @@ final class LMLocationViewController: LMBaseViewController {
     // MARK: - 无坐标占位
 
     private func buildPlaceholder() {
-        noLocationView.backgroundColor = .systemGroupedBackground
+        noLocationView.backgroundColor = .lmCanvas
 
         let icon = UIImageView(image: UIImage(systemName: "location.slash"))
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 30)
@@ -292,7 +292,7 @@ final class LMLocationViewController: LMBaseViewController {
         var cfg = UIButton.Configuration.filled()
         cfg.title = "刷新车况"
         cfg.baseBackgroundColor = .lmAccent
-        cfg.baseForegroundColor = .white
+        cfg.baseForegroundColor = .lmCanvas
         cfg.cornerStyle = .medium
         placeholderRefreshButton.configuration = cfg
         placeholderRefreshButton.addTarget(self, action: #selector(placeholderRefreshTapped),

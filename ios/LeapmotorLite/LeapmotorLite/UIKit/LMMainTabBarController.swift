@@ -43,7 +43,25 @@ final class LMMainTabBarController: UITabBarController {
         ]
         viewControllers = tabs
 
+        // ★ 视觉重设计：Tab 栏刷成与页面同色的近黑，并去掉顶部投影线 ——
+        //   否则 Tab 栏和内容之间会有一道突兀的横线。
+        //   未选中项压到 lmText3（最弱一档），让选中的薄荷色自己「跳」出来。
+        let tabAp = UITabBarAppearance()
+        tabAp.configureWithOpaqueBackground()
+        tabAp.backgroundColor = .lmCanvas
+        tabAp.shadowColor = .clear
+        for layout in [tabAp.stackedLayoutAppearance,
+                       tabAp.inlineLayoutAppearance,
+                       tabAp.compactInlineLayoutAppearance] {
+            layout.normal.iconColor = .lmText3
+            layout.normal.titleTextAttributes = [.foregroundColor: UIColor.lmText3]
+            layout.selected.iconColor = .lmAccent
+            layout.selected.titleTextAttributes = [.foregroundColor: UIColor.lmAccent]
+        }
+        tabBar.standardAppearance = tabAp
+        tabBar.scrollEdgeAppearance = tabAp
         tabBar.tintColor = .lmAccent
+        tabBar.unselectedItemTintColor = .lmText3
 
         // 原来挂在 `MainTabView` 上的
         // `.task { if client.vehicles.isEmpty { await client.refreshAll() } }`

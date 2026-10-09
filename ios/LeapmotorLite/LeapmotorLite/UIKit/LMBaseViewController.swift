@@ -42,7 +42,22 @@ class LMBaseViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemGroupedBackground
+        view.backgroundColor = .lmCanvas
+
+        // ★ 2026-10-09（视觉重设计「碳黑霓虹」）：整页铺一层辉光底
+        //   （近黑底 + 顶部极淡薄荷径向光晕）。它必须是**最底层**，
+        //   所以在这里、`buildUI()` 之前加上 —— 之后 `makeScrollStack`
+        //   往 `view` 上挂的 scroll 会自然盖在它上面。
+        let backdrop = LMGlowBackdropView()
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(backdrop)
+        view.sendSubviewToBack(backdrop)
+        NSLayoutConstraint.activate([
+            backdrop.topAnchor.constraint(equalTo: view.topAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
 
         buildUI()
 

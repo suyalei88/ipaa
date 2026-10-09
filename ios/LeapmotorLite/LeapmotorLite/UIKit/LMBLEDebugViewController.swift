@@ -247,7 +247,7 @@ final class LMBLEDebugViewController: LMBaseViewController {
         scanCfg.image = UIImage(systemName: "dot.radiowaves.left.and.right")
         scanCfg.imagePadding = 6
         scanCfg.baseBackgroundColor = .lmAccent
-        scanCfg.baseForegroundColor = .white
+        scanCfg.baseForegroundColor = .lmCanvas
         scanCfg.cornerStyle = .medium
         scanCfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
         scanButton.configuration = scanCfg
@@ -498,7 +498,7 @@ final class LMBLEDebugViewController: LMBaseViewController {
         sendCfg.image = UIImage(systemName: "paperplane.fill")
         sendCfg.imagePadding = 6
         sendCfg.baseBackgroundColor = .lmAccent
-        sendCfg.baseForegroundColor = .white
+        sendCfg.baseForegroundColor = .lmCanvas
         sendCfg.cornerStyle = .medium
         sendButton.configuration = sendCfg
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)

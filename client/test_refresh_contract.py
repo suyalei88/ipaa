@@ -1083,6 +1083,108 @@ def test_uikit_full_migration() -> None:
               disk == in_pbx, f"磁盘 {disk} vs 工程 {in_pbx}")
 
 
+def test_dark_theme() -> None:
+    """⑮ 视觉重设计「碳黑霓虹」：设计 token + 深色锁定 + 关键页面落地。
+
+    背景（2026-10-09）：用户要求「开始做视觉重设计」，选定「碳黑霓虹」——
+    近黑底 + 实心深灰卡 + 发丝描边 + 等宽大数字 + 单一薄荷霓虹点缀。
+
+    这组断言钉住四件事：
+      ① 调色板 / 圆角 / 字体三组 token 的**具体值** —— 这是整套设计的根，
+         改错了这里先红，不会等到装机才发现「怎么又变回系统蓝了」
+      ② 深色外观是**锁定**的：这套设计没有浅色版本，放开会白底白字
+      ③ 主色是薄荷 `#00E39A`，不再是系统蓝
+      ④ 爱车页那几个标志性改动真的落地了（等宽大数字 / 圆角方形快捷钮 /
+         SOC 渐变辉光 / 车底辉光）
+
+    ★ 断言纪律（本项目已经踩过四次假阳性）：一律匹配**真实声明形态**，
+      不匹配「某字符串有没有出现在某文件里」。下面注释里出现的 token 名
+      不该让断言变绿。
+    """
+    print("\n[15] 视觉重设计「碳黑霓虹」")
+
+    theme = read("UIKit/LMUIKitTheme.swift")
+    app = read("UIKit/LMAppDelegate.swift")
+    base = read("UIKit/LMBaseViewController.swift")
+    love = read("UIKit/LMLoveCarViewController.swift")
+    tabs = read("UIKit/LMMainTabBarController.swift")
+
+    # ---- ① 调色板：值必须逐位对得上 ----
+    for name, hexv in (("lmCanvas", "0x0A0A0C"),
+                       ("lmCard", "0x131316"),
+                       ("lmCardLine", "0x26262C"),
+                       ("lmAccent", "0x00E39A"),
+                       ("lmAccent2", "0x00B8FF")):
+        check(f"调色板 {name} = {hexv}",
+              re.search(rf"static let {name}\s*=\s*UIColor\(hex: {hexv}\)",
+                        theme) is not None)
+
+    check("主色不再是系统蓝（0.11 / 0.45 / 0.94 已删除）",
+          "0.11, green: 0.45, blue: 0.94" not in theme)
+
+    # ---- ② 圆角整体收方一档 ----
+    for name, val in (("card", 14), ("tile", 12), ("hero", 16)):
+        check(f"LMRadius.{name} = {val}",
+              re.search(rf"static let {name}: CGFloat = {val}\b", theme) is not None)
+
+    # ---- ③ 等宽数字字体 ----
+    check("有等宽数字字体 LMFont.mono（大数字跳动时不抖）",
+          re.search(r"static func mono\(", theme) is not None
+          and "monospacedSystemFont" in theme)
+    check("等宽数字真的用在了磁贴主值上",
+          re.search(r"valueLabel\.font = LMFont\.mono\(", theme) is not None)
+
+    # ---- ④ 深色外观锁定 ----
+    check("窗口锁定深色外观（这套设计没有浅色版本）",
+          re.search(r"overrideUserInterfaceStyle\s*=\s*\.dark", app) is not None)
+
+    # ---- ⑤ 页面底 + 顶部辉光 ----
+    check("页面底色用 lmCanvas（不再是 systemGroupedBackground）",
+          "view.backgroundColor = .lmCanvas" in base)
+    check("基类铺了顶部辉光底 LMGlowBackdropView",
+          "LMGlowBackdropView()" in base)
+    check("辉光底被压到最底层（否则会盖住内容）",
+          "sendSubviewToBack" in base)
+    check("辉光底不吃手势（isUserInteractionEnabled = false）",
+          re.search(r"final class LMGlowBackdropView[\s\S]{0,400}?"
+                    r"isUserInteractionEnabled = false", theme) is not None)
+
+    # ---- ⑥ 卡片发丝描边（近黑底上靠描边分层）----
+    check("卡片带发丝描边",
+          "layer.borderColor = UIColor.lmCardLine.cgColor" in theme)
+    check("导航栏刷成 lmCanvas 并去掉投影线",
+          "ap.backgroundColor = .lmCanvas" in theme and "ap.shadowColor = .clear" in theme)
+    check("Tab 栏刷成 lmCanvas 并去掉投影线",
+          "tabAp.backgroundColor = .lmCanvas" in tabs
+          and "tabAp.shadowColor = .clear" in tabs)
+    check("Tab 未选中项压到 lmText3（让选中项自己跳出来）",
+          "tabBar.unselectedItemTintColor = .lmText3" in tabs)
+
+    # ---- ⑦ 爱车页的标志性改动 ----
+    check("续航大数字用等宽字体",
+          re.search(r"rangeNumberLabel\.font = LMFont\.mono\(", love) is not None)
+    check("续航 Hero 不再是蓝渐变（改成实心卡 + 薄荷洗色）",
+          "rangeHero.backgroundColor = .lmCard" in love
+          and "lmAccent2.withAlphaComponent(0.04)" not in love)
+    check("快捷操作按钮是圆角方形（cornerRadius 17，不再是圆）",
+          "iconCircle.layer.cornerRadius = 17" in love)
+    check("SOC 进度条改成渐变 + 辉光",
+          "fillGradient" in love and "shadowPath" in love)
+    check("SOC 辉光与裁剪拆成两层（同一层会被 masksToBounds 裁掉）",
+          re.search(r"private final class LMSOCBarView[\s\S]{0,900}?fillGradient\.masksToBounds = true",
+                    love) is not None)
+    check("3D 车模底部有辉光",
+          "LMCar3DPedestalView" in love)
+    check("toast 用近黑文字（薄荷底上白字只有约 1.5:1）",
+          "toastLabel.textColor = .lmCanvas" in love)
+
+    # ---- ⑧ 两条新 lint 规则真的注册了 ----
+    lint_src = open(os.path.join(ROOT, "ios", "tools", "lint_swift.py"),
+                    encoding="utf-8").read()
+    check("lint 有 R18（薄荷底白字）", '"R18"' in lint_src)
+    check("lint 有 R19（系统语义背景色）", '"R19"' in lint_src)
+
+
 def main() -> int:
     print("=" * 64)
     print("续期契约测试（test_refresh_contract）")
@@ -1103,6 +1205,7 @@ def main() -> int:
     test_uikit_login()
     test_uikit_settings()
     test_uikit_full_migration()
+    test_dark_theme()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

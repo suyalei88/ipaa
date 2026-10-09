@@ -96,6 +96,7 @@ final class LMLoveCarViewController: LMBaseViewController {
     ///   Auto Layout，`frame` 必须在 `layoutSubviews` 里同步 —— 否则会停在
     ///   `.zero` 上（渐变压根看不见）。见文件末尾 `LMLoveHeroView`。
     private let rangeHero = LMLoveHeroView()
+    private let rangeCaptionLabel = UILabel()
     private let rangeNumberLabel = UILabel()
     private let rangeUnitLabel = UILabel()
     private let lockPill = LMStatusPillView(text: "锁态未知",
@@ -290,18 +291,21 @@ final class LMLoveCarViewController: LMBaseViewController {
     // MARK: - 顶部车辆栏
 
     private func buildTopBar() {
-        vehicleNameLabel.font = .systemFont(ofSize: 22, weight: .semibold)
+        // ★ 视觉重设计：车辆名用比例字体 22 semibold、纯白；
+        //   下面的更新时间压到最弱一档色（lmText3），把层级拉出来。
+        vehicleNameLabel.font = LMFont.text(22, weight: .semibold)
+        vehicleNameLabel.textColor = .lmText
         vehicleNameLabel.numberOfLines = 1
 
         statusClockIcon.image = UIImage(systemName: "clock")
         statusClockIcon.preferredSymbolConfiguration =
             UIImage.SymbolConfiguration(pointSize: 10)
-        statusClockIcon.tintColor = .secondaryLabel
+        statusClockIcon.tintColor = .lmText3
         statusClockIcon.contentMode = .scaleAspectFit
         statusClockIcon.setContentHuggingPriority(.required, for: .horizontal)
 
-        statusUpdateLabel.font = .systemFont(ofSize: 12)
-        statusUpdateLabel.textColor = .secondaryLabel
+        statusUpdateLabel.font = LMFont.text(11.5)
+        statusUpdateLabel.textColor = .lmText3
         statusUpdateLabel.numberOfLines = 1
 
         let statusRow = LMUIKit.hStack(spacing: 5)
@@ -320,7 +324,9 @@ final class LMLoveCarViewController: LMBaseViewController {
         heartButton.accessibilityLabel = "切换车辆"
 
         // 齿轮：原页是切到「设置」Tab（设置页需要 UINavigationController 才能 push 子页）。
-        styleCircleButton(gearButton, icon: "gearshape", tint: .label, size: 38)
+        // ★ 视觉重设计：齿轮从纯白降到 lmText2 —— 薄荷只留给「主操作」，
+        //   两个圆形按钮都亮着会抢掉续航 Hero 的注意力。
+        styleCircleButton(gearButton, icon: "gearshape", tint: .lmText2, size: 38)
         gearButton.addTarget(self, action: #selector(gearTapped), for: .touchUpInside)
         gearButton.accessibilityLabel = "设置"
 
@@ -335,6 +341,13 @@ final class LMLoveCarViewController: LMBaseViewController {
     private func buildCar3D() {
         car3DContainer.translatesAutoresizingMaskIntoConstraints = false
         car3DContainer.heightAnchor.constraint(equalToConstant: car3DHeight).isActive = true
+
+        // ★ 视觉重设计：车底铺一团薄荷辉光，让 3D 车「落」在光上而不是悬空。
+        //   `LMCar3DWebView` 内部已设 `isOpaque = false` + `backgroundColor = .clear`，
+        //   所以这层辉光能从车模下面透出来。
+        let pedestal = LMCar3DPedestalView()
+        pedestal.translatesAutoresizingMaskIntoConstraints = false
+        car3DContainer.addSubview(pedestal)
 
         // 当普通 UIView 加进视图树（不是 push）。
         let web = LMCar3DWebView(serverJSON: Car3DConfig.serverJSON(for: client),
@@ -401,12 +414,25 @@ final class LMLoveCarViewController: LMBaseViewController {
         car3DContainer.addSubview(car3DFailureBox)
 
         // 右上角「全屏」入口
+        // ★ 视觉重设计：从「32×32 灰底圆钮」改成「图标 + 文字」的薄荷胶囊 ——
+        //   原页那个纯图标按钮没有文字，第一次用的人不知道是干嘛的。
         var cfg = UIButton.Configuration.plain()
         cfg.image = UIImage(systemName: "arrow.up.left.and.arrow.down.right")
-        cfg.baseForegroundColor = .label
-        cfg.background.backgroundColor = UIColor.tertiarySystemFill
-        cfg.background.cornerRadius = 16
-        cfg.contentInsets = .zero
+        cfg.title = "全屏看车"
+        cfg.imagePadding = 5
+        cfg.baseForegroundColor = .lmAccent
+        cfg.background.backgroundColor = .lmCard
+        cfg.background.strokeColor = .lmCardLine
+        cfg.background.strokeWidth = 1
+        cfg.background.cornerRadius = 15
+        cfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 11, bottom: 6, trailing: 11)
+        cfg.preferredSymbolConfigurationForImage =
+            UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        cfg.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var out = incoming
+            out.font = LMFont.text(11.5, weight: .semibold)
+            return out
+        }
         car3DFullScreenButton.configuration = cfg
         car3DFullScreenButton.addTarget(self, action: #selector(fullScreenTapped),
                                         for: .touchUpInside)
@@ -415,18 +441,25 @@ final class LMLoveCarViewController: LMBaseViewController {
         car3DContainer.addSubview(car3DFullScreenButton)
 
         // 左下角操作提示胶囊
-        car3DHintBox.backgroundColor = UIColor.tertiarySystemFill
-        car3DHintBox.layer.cornerRadius = 12
+        car3DHintBox.backgroundColor = .lmCard
+        car3DHintBox.layer.cornerRadius = 10
         car3DHintBox.layer.cornerCurve = .continuous
+        car3DHintBox.layer.borderWidth = 1
+        car3DHintBox.layer.borderColor = UIColor.lmCardLine.cgColor
         car3DHintBox.translatesAutoresizingMaskIntoConstraints = false
         let hintRow = LMIconTextRow(icon: "hand.draw",
                                     text: "单指拖动全方位旋转 · 双指缩放",
-                                    tint: .secondaryLabel, size: 11)
+                                    tint: .lmText3, size: 11)
         hintRow.translatesAutoresizingMaskIntoConstraints = false
         car3DHintBox.addSubview(hintRow)
         car3DContainer.addSubview(car3DHintBox)
 
         NSLayoutConstraint.activate([
+            pedestal.centerXAnchor.constraint(equalTo: car3DContainer.centerXAnchor),
+            pedestal.bottomAnchor.constraint(equalTo: car3DContainer.bottomAnchor, constant: -26),
+            pedestal.widthAnchor.constraint(equalToConstant: 252),
+            pedestal.heightAnchor.constraint(equalToConstant: 44),
+
             car3DLoading.centerXAnchor.constraint(equalTo: car3DContainer.centerXAnchor),
             car3DLoading.centerYAnchor.constraint(equalTo: car3DContainer.centerYAnchor),
 
@@ -439,8 +472,6 @@ final class LMLoveCarViewController: LMBaseViewController {
                                                         car3DContainer.trailingAnchor,
                                                       constant: -20),
 
-            car3DFullScreenButton.widthAnchor.constraint(equalToConstant: 32),
-            car3DFullScreenButton.heightAnchor.constraint(equalToConstant: 32),
             car3DFullScreenButton.topAnchor.constraint(equalTo: car3DContainer.topAnchor,
                                                        constant: 10),
             car3DFullScreenButton.trailingAnchor.constraint(equalTo: car3DContainer.trailingAnchor,
@@ -461,58 +492,76 @@ final class LMLoveCarViewController: LMBaseViewController {
     // MARK: - 续航 hero
 
     private func buildRangeHero() {
+        // ★ 视觉重设计：Hero 从「大面积蓝渐变卡」换成「实心深灰卡 + 发丝描边 +
+        //   一层极淡的薄荷洗色」。薄荷是点缀色，只配铺薄薄一层 ——
+        //   原来那样整块铺蓝，在这套近黑设计里会把"点缀"变成"主色"。
         rangeHero.layer.cornerRadius = LMRadius.hero
         rangeHero.layer.cornerCurve = .continuous
         rangeHero.layer.masksToBounds = true
         rangeHero.layer.borderWidth = 1
-        rangeHero.layer.borderColor = UIColor.lmAccent.withAlphaComponent(0.20).cgColor
+        rangeHero.layer.borderColor = UIColor.lmCardLine.cgColor
+        rangeHero.backgroundColor = .lmCard
 
-        // 渐变的 colors / 方向在 LMLoveHeroView 初始化时设好，这里只补尺寸相关的属性。
+        // 渐变的 colors / 方向在 LMLoveHeroView 初始化时设好，这里只补颜色。
         rangeHero.gradient.colors = [
-            UIColor.lmAccent.withAlphaComponent(0.16).cgColor,
-            UIColor.lmAccent2.withAlphaComponent(0.04).cgColor,
+            UIColor.lmAccent.withAlphaComponent(0.13).cgColor,
+            UIColor.lmAccent.withAlphaComponent(0.0).cgColor,
         ]
 
-        rangeNumberLabel.font = .systemFont(ofSize: 42, weight: .bold)
+        // 主数字用等宽字体：续航数字每次刷新都在变，等宽才不会左右抖。
+        rangeNumberLabel.font = LMFont.mono(54, weight: .bold)
+        rangeNumberLabel.textColor = .lmText
         rangeNumberLabel.adjustsFontSizeToFitWidth = true
-        rangeNumberLabel.minimumScaleFactor = 0.6
+        rangeNumberLabel.minimumScaleFactor = 0.55
         rangeNumberLabel.numberOfLines = 1
 
         rangeUnitLabel.text = "km"
-        rangeUnitLabel.font = .systemFont(ofSize: 18, weight: .semibold)
-        rangeUnitLabel.textColor = .secondaryLabel
+        rangeUnitLabel.font = LMFont.mono(15, weight: .semibold)
+        rangeUnitLabel.textColor = .lmText2
 
-        let top = LMUIKit.hStack(spacing: 4, alignment: .lastBaseline)
-        top.addArrangedSubview(rangeNumberLabel)
-        top.addArrangedSubview(rangeUnitLabel)
-        top.addArrangedSubview(LMUIKit.spacer())
-        top.addArrangedSubview(lockPill)
+        rangeCaptionLabel.text = "剩余续航"
+        rangeCaptionLabel.font = LMFont.text(12, weight: .medium)
+        rangeCaptionLabel.textColor = .lmText2
+        rangeCaptionLabel.applyTracking(0.4)
+
+        // 第一行：小标题 + 锁态胶囊。锁态是「当前状态」，与续航同级，放右上角。
+        let captionRow = LMUIKit.hStack(spacing: 6)
+        captionRow.addArrangedSubview(rangeCaptionLabel)
+        captionRow.addArrangedSubview(LMUIKit.spacer())
+        captionRow.addArrangedSubview(lockPill)
+
+        // 第二行：大数字 + 单位（基线对齐）
+        let numberRow = LMUIKit.hStack(spacing: 7, alignment: .lastBaseline)
+        numberRow.addArrangedSubview(rangeNumberLabel)
+        numberRow.addArrangedSubview(rangeUnitLabel)
+        numberRow.addArrangedSubview(LMUIKit.spacer())
 
         socBar.translatesAutoresizingMaskIntoConstraints = false
-        socBar.heightAnchor.constraint(equalToConstant: 7).isActive = true
+        socBar.heightAnchor.constraint(equalToConstant: 8).isActive = true
 
-        socTextLabel.font = .systemFont(ofSize: 12)
-        socTextLabel.textColor = .secondaryLabel
-        rangeAltLabel.font = .systemFont(ofSize: 11)
-        rangeAltLabel.textColor = .tertiaryLabel
+        socTextLabel.font = LMFont.text(11.5)
+        socTextLabel.textColor = .lmText2
+        rangeAltLabel.font = LMFont.text(11)
+        rangeAltLabel.textColor = .lmText3
 
         let bottom = LMUIKit.hStack(spacing: 6)
         bottom.addArrangedSubview(socTextLabel)
         bottom.addArrangedSubview(LMUIKit.spacer())
         bottom.addArrangedSubview(rangeAltLabel)
 
-        let col = LMUIKit.vStack(spacing: 12)
-        col.addArrangedSubview(top)
+        let col = LMUIKit.vStack(spacing: 11)
+        col.addArrangedSubview(captionRow)
+        col.addArrangedSubview(numberRow)
         col.addArrangedSubview(socBar)
         col.addArrangedSubview(bottom)
         col.translatesAutoresizingMaskIntoConstraints = false
         rangeHero.addSubview(col)
 
         NSLayoutConstraint.activate([
-            col.topAnchor.constraint(equalTo: rangeHero.topAnchor, constant: 18),
-            col.leadingAnchor.constraint(equalTo: rangeHero.leadingAnchor, constant: 18),
-            col.trailingAnchor.constraint(equalTo: rangeHero.trailingAnchor, constant: -18),
-            col.bottomAnchor.constraint(equalTo: rangeHero.bottomAnchor, constant: -18),
+            col.topAnchor.constraint(equalTo: rangeHero.topAnchor, constant: 17),
+            col.leadingAnchor.constraint(equalTo: rangeHero.leadingAnchor, constant: 17),
+            col.trailingAnchor.constraint(equalTo: rangeHero.trailingAnchor, constant: -17),
+            col.bottomAnchor.constraint(equalTo: rangeHero.bottomAnchor, constant: -17),
         ])
     }
 
@@ -573,26 +622,29 @@ final class LMLoveCarViewController: LMBaseViewController {
     // MARK: - 车内温度 / 空调
 
     private func buildClimate() {
-        interiorTempLabel.font = .systemFont(ofSize: 30, weight: .semibold)
+        // ★ 视觉重设计：温度改等宽字体 —— 26.0 / 26.5 这种一位小数的数字
+        //   每次刷新宽度都会变，等宽之后整块不会左右抖。
+        interiorTempLabel.font = LMFont.mono(30, weight: .semibold)
+        interiorTempLabel.textColor = .lmText
         interiorUnitLabel.text = "℃"
-        interiorUnitLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        interiorUnitLabel.textColor = .secondaryLabel
+        interiorUnitLabel.font = LMFont.mono(14, weight: .semibold)
+        interiorUnitLabel.textColor = .lmText2
 
-        batteryTempLabel.font = .systemFont(ofSize: 11)
-        batteryTempLabel.textColor = .tertiaryLabel
+        batteryTempLabel.font = LMFont.text(11)
+        batteryTempLabel.textColor = .lmText3
         batteryTempLabel.isHidden = true
 
-        let tempTop = LMUIKit.hStack(spacing: 2, alignment: .lastBaseline)
+        let tempTop = LMUIKit.hStack(spacing: 3, alignment: .lastBaseline)
         tempTop.addArrangedSubview(interiorTempLabel)
         tempTop.addArrangedSubview(interiorUnitLabel)
 
         let left = LMUIKit.vStack(spacing: 4)
         left.addArrangedSubview(tempTop)
-        left.addArrangedSubview(LMUIKit.label("车内温度", size: 12, color: .secondaryLabel))
+        left.addArrangedSubview(LMUIKit.label("车内温度", size: 11, color: .lmText2))
         left.addArrangedSubview(batteryTempLabel)
 
-        hvacStateLabel.font = .systemFont(ofSize: 11)
-        hvacStateLabel.textColor = .secondaryLabel
+        hvacStateLabel.font = LMFont.text(11)
+        hvacStateLabel.textColor = .lmText2
         hvacStateLabel.textAlignment = .center
         fanButton.addTarget(self, action: #selector(fanTapped), for: .touchUpInside)
         let fanCol = LMUIKit.vStack(spacing: 6, alignment: .center)
@@ -601,7 +653,7 @@ final class LMLoveCarViewController: LMBaseViewController {
 
         tempControlButton.addTarget(self, action: #selector(tempControlTapped),
                                     for: .touchUpInside)
-        let tempControlLabel = LMUIKit.label("风量/温度", size: 11, color: .secondaryLabel)
+        let tempControlLabel = LMUIKit.label("风量/温度", size: 11, color: .lmText2)
         tempControlLabel.textAlignment = .center
         let tcCol = LMUIKit.vStack(spacing: 6, alignment: .center)
         tcCol.addArrangedSubview(tempControlButton)
@@ -636,25 +688,28 @@ final class LMLoveCarViewController: LMBaseViewController {
             icon.centerYAnchor.constraint(equalTo: iconBox.centerYAnchor),
         ])
 
-        locationMainLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        locationMainLabel.font = LMFont.text(15, weight: .semibold)
+        locationMainLabel.textColor = .lmText
         locationMainLabel.numberOfLines = 1
         locationMainLabel.adjustsFontSizeToFitWidth = true
         locationMainLabel.minimumScaleFactor = 0.7
 
-        locationCoordLabel.font = .systemFont(ofSize: 11)
-        locationCoordLabel.textColor = .secondaryLabel
+        // ★ 视觉重设计：坐标改等宽 —— 一串数字里某一位变化时，
+        //   等宽字体不会让整行左右"跳"。
+        locationCoordLabel.font = LMFont.mono(11)
+        locationCoordLabel.textColor = .lmText3
         locationCoordLabel.numberOfLines = 1
         locationCoordLabel.adjustsFontSizeToFitWidth = true
         locationCoordLabel.minimumScaleFactor = 0.7
         locationCoordLabel.isHidden = true
 
-        locationAgeLabel.font = .systemFont(ofSize: 11)
-        locationAgeLabel.textColor = .secondaryLabel
+        locationAgeLabel.font = LMFont.text(11)
+        locationAgeLabel.textColor = .lmText3
         locationAgeLabel.isHidden = true
 
         let texts = LMUIKit.vStack(spacing: 3)
-        texts.addArrangedSubview(LMUIKit.label("车辆位置", size: 13, weight: .semibold,
-                                               color: .secondaryLabel))
+        texts.addArrangedSubview(LMUIKit.label("车辆位置", size: 12, weight: .semibold,
+                                               color: .lmText2))
         texts.addArrangedSubview(locationMainLabel)
         texts.addArrangedSubview(locationCoordLabel)
         texts.addArrangedSubview(locationAgeLabel)
@@ -665,8 +720,8 @@ final class LMLoveCarViewController: LMBaseViewController {
         head.addArrangedSubview(LMUIKit.spacer())
 
         ipSourceNote.text = "位置取自手机网络归属地，与官方 App 同源"
-        ipSourceNote.font = .systemFont(ofSize: 11)
-        ipSourceNote.textColor = .secondaryLabel
+        ipSourceNote.font = LMFont.text(11)
+        ipSourceNote.textColor = .lmText3
         ipSourceNote.numberOfLines = 0
         ipSourceNote.isHidden = true
         carShareOffNote.isHidden = true
@@ -736,9 +791,9 @@ final class LMLoveCarViewController: LMBaseViewController {
 
     private func buildRawSignals() {
         signalsToggleButton.setTitle("全部信号（0）", for: .normal)
-        signalsToggleButton.setTitleColor(.secondaryLabel, for: .normal)
-        signalsToggleButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
-        signalsToggleButton.tintColor = .secondaryLabel
+        signalsToggleButton.setTitleColor(.lmText2, for: .normal)
+        signalsToggleButton.titleLabel?.font = LMFont.text(13, weight: .semibold)
+        signalsToggleButton.tintColor = .lmText3
         signalsToggleButton.contentHorizontalAlignment = .leading
         // 让 image 落到标题右侧（对应原页的「标题 + 上下箭头」）
         signalsToggleButton.semanticContentAttribute = .forceRightToLeft
@@ -788,17 +843,19 @@ final class LMLoveCarViewController: LMBaseViewController {
     }
 
     private func buildToast() {
-        toastContainer.layer.cornerRadius = 18
+        // ★ 视觉重设计：toast 用实心薄荷/红底 + **近黑文字**（原来是白字）。
+        //   薄荷底上白字对比度只有 1.5:1，基本看不清；近黑字有 12:1。
+        toastContainer.layer.cornerRadius = 12
         toastContainer.layer.cornerCurve = .continuous
-        toastContainer.layer.shadowColor = UIColor.black.withAlphaComponent(0.12).cgColor
-        toastContainer.layer.shadowRadius = 8
-        toastContainer.layer.shadowOffset = CGSize(width: 0, height: 3)
-        toastContainer.layer.shadowOpacity = 1
+        toastContainer.layer.shadowColor = UIColor.black.cgColor
+        toastContainer.layer.shadowRadius = 16
+        toastContainer.layer.shadowOffset = CGSize(width: 0, height: 6)
+        toastContainer.layer.shadowOpacity = 0.5
         toastContainer.isHidden = true
         toastContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        toastLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        toastLabel.textColor = .white
+        toastLabel.font = LMFont.text(13, weight: .semibold)
+        toastLabel.textColor = .lmCanvas
         toastLabel.textAlignment = .center
         toastLabel.numberOfLines = 0
         toastLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -950,8 +1007,8 @@ final class LMLoveCarViewController: LMBaseViewController {
         }
         let on = client.hvacOn == true
         fanButton.update(icon: on ? "fanblades.fill" : "fanblades",
-                         tint: on ? .lmAccent : .secondaryLabel,
-                         bg: UIColor.lmAccent.withAlphaComponent(on ? 0.14 : 0.06))
+                         tint: on ? .lmAccent : .lmText2,
+                         bg: on ? UIColor.lmAccent.withAlphaComponent(0.16) : .lmCard)
         hvacStateLabel.text = hvacStateText
     }
 
@@ -1338,7 +1395,10 @@ final class LMLoveCarViewController: LMBaseViewController {
         var cfg = UIButton.Configuration.plain()
         cfg.image = UIImage(systemName: icon)
         cfg.baseForegroundColor = tint
+        // ★ 视觉重设计：卡片底 + 发丝描边（近黑底上没描边的圆钮会「飘」）
         cfg.background.backgroundColor = .lmCard
+        cfg.background.strokeColor = .lmCardLine
+        cfg.background.strokeWidth = 1
         cfg.background.cornerRadius = size / 2
         cfg.contentInsets = .zero
         button.configuration = cfg
@@ -1611,7 +1671,10 @@ private final class LMQuickButton: UIControl {
         self.key = key
         super.init(frame: .zero)
 
-        iconCircle.layer.cornerRadius = 28
+        // ★ 视觉重设计：从「圆 + 56pt 玻璃底 + 淡描边」改成「圆角方形 + 卡片底 +
+        //   主色描边」。圆角方形是这套设计里区分「可点操作」与「状态图标」的记号 ——
+        //   圆形在这套语言里表示状态（锁态胶囊、SOC 环）。
+        iconCircle.layer.cornerRadius = 17
         iconCircle.layer.cornerCurve = .continuous
         iconCircle.layer.borderWidth = 1
         iconCircle.translatesAutoresizingMaskIntoConstraints = false
@@ -1620,8 +1683,8 @@ private final class LMQuickButton: UIControl {
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconCircle.addSubview(iconView)
 
-        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        titleLabel.textColor = .label
+        titleLabel.font = LMFont.text(11.5, weight: .medium)
+        titleLabel.textColor = .lmText2
         titleLabel.textAlignment = .center
         titleLabel.numberOfLines = 1
         titleLabel.adjustsFontSizeToFitWidth = true
@@ -1655,9 +1718,9 @@ private final class LMQuickButton: UIControl {
         iconView.image = UIImage(systemName: icon)
         iconView.tintColor = tint
         iconView.preferredSymbolConfiguration =
-            UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold)
+            UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
         iconCircle.backgroundColor = .lmCard
-        iconCircle.layer.borderColor = tint.withAlphaComponent(0.16).cgColor
+        iconCircle.layer.borderColor = tint.withAlphaComponent(0.22).cgColor
         titleLabel.text = title
     }
 
@@ -1678,9 +1741,11 @@ private final class LMChipButton: UIControl {
     init(icon: String, title: String, tint: UIColor) {
         super.init(frame: .zero)
 
-        backgroundColor = tint.withAlphaComponent(0.10)
-        layer.cornerRadius = 16
+        backgroundColor = tint.withAlphaComponent(0.14)
+        layer.cornerRadius = 11
         layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = tint.withAlphaComponent(0.26).cgColor
 
         let iconView = UIImageView(image: UIImage(systemName: icon))
         iconView.tintColor = tint
@@ -1690,7 +1755,7 @@ private final class LMChipButton: UIControl {
 
         let label = UILabel()
         label.text = title
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.font = LMFont.text(13, weight: .semibold)
         label.textColor = tint
 
         let chevron = UIImageView(image: UIImage(systemName: "chevron.right"))
@@ -1760,6 +1825,9 @@ private final class LMCircleIconButton: UIControl {
         iconView.preferredSymbolConfiguration =
             UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
         backgroundColor = bg
+        // ★ 视觉重设计：统一加发丝描边（近黑底上没描边的圆钮会"飘"）
+        layer.borderWidth = 1
+        layer.borderColor = tint.withAlphaComponent(0.28).cgColor
     }
 
     override var isEnabled: Bool {
@@ -1838,8 +1906,10 @@ private final class LMLoveNavCard: UIControl {
         backgroundColor = .lmCard
         layer.cornerRadius = LMRadius.tile
         layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = UIColor.lmCardLine.cgColor
 
-        iconBox.backgroundColor = iconTint.withAlphaComponent(0.12)
+        iconBox.backgroundColor = iconTint.withAlphaComponent(0.14)
         iconBox.layer.cornerRadius = 11
         iconBox.layer.cornerCurve = .continuous
         iconBox.translatesAutoresizingMaskIntoConstraints = false
@@ -1852,12 +1922,13 @@ private final class LMLoveNavCard: UIControl {
         iconBox.addSubview(iconView)
 
         titleLabel.text = title
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.font = LMFont.text(14, weight: .semibold)
+        titleLabel.textColor = .lmText
         titleLabel.numberOfLines = 0
 
         subtitleLabel.text = subtitle
-        subtitleLabel.font = .systemFont(ofSize: 12)
-        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.font = LMFont.text(12)
+        subtitleLabel.textColor = .lmText2
         subtitleLabel.numberOfLines = 1
 
         let texts = LMUIKit.vStack(spacing: 3)
@@ -1900,7 +1971,7 @@ private final class LMLoveNavCard: UIControl {
     func update(icon: String, tint: UIColor, title: String, subtitle: String) {
         iconView.image = UIImage(systemName: icon)
         iconView.tintColor = tint
-        iconBox.backgroundColor = tint.withAlphaComponent(0.12)
+        iconBox.backgroundColor = tint.withAlphaComponent(0.14)
         titleLabel.text = title
         subtitleLabel.text = subtitle
     }
@@ -1914,18 +1985,36 @@ private final class LMLoveNavCard: UIControl {
 
 /// 轨道 + 进度填充两层 `CALayer`。对应原 SwiftUI 里那段手画的 `Capsule`。
 /// 圆角胶囊用 `cornerRadius = 高度 / 2` 得到，宽度变化在 `layoutSubviews` 里同步。
+///
+/// ★ 视觉重设计：填充从「单色实心」换成「主色 → 青色 的横向渐变 + 辉光」。
+/// ★★ 两个容易踩的点：
+///   ① 渐变层的 `frame` 必须跟着填充宽度走，所以它也在 `layoutSubviews` 里同步
+///      （`CAGradientLayer` 不参与 Auto Layout，跟 `LMLoveHeroView` 同款处理）。
+///   ② **阴影和 `masksToBounds` 不能放同一层** —— 开了裁剪，阴影就被裁掉。
+///      所以拆成两层：`fill` 只负责阴影（不裁），`fillGradient` 负责裁剪圆角。
 private final class LMSOCBarView: UIView {
 
     private let track = CALayer()
     private let fill = CALayer()
+    private let fillGradient = CAGradientLayer()
     private var fraction: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
 
-        track.backgroundColor = UIColor.label.withAlphaComponent(0.08).cgColor
-        fill.backgroundColor = UIColor.lmGood.cgColor
+        track.backgroundColor = UIColor.white.withAlphaComponent(0.09).cgColor
         layer.addSublayer(track)
+
+        fillGradient.startPoint = CGPoint(x: 0, y: 0.5)
+        fillGradient.endPoint = CGPoint(x: 1, y: 0.5)
+        fillGradient.colors = [UIColor.lmGood.cgColor, UIColor.lmAccent2.cgColor]
+        fillGradient.masksToBounds = true
+        fill.addSublayer(fillGradient)
+
+        fill.shadowColor = UIColor.lmGood.cgColor
+        fill.shadowOpacity = 0.55
+        fill.shadowRadius = 7
+        fill.shadowOffset = .zero
         layer.addSublayer(fill)
     }
 
@@ -1935,12 +2024,16 @@ private final class LMSOCBarView: UIView {
 
     func set(fraction: CGFloat, tint: UIColor) {
         self.fraction = min(max(fraction, 0), 1)
-        fill.backgroundColor = tint.cgColor
+        fill.shadowColor = tint.cgColor
+        fillGradient.colors = [tint.cgColor, UIColor.lmAccent2.cgColor]
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // 关掉隐式动画：每次数据刷新都重排，否则进度条会「缓慢滑过去」。
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         let h = bounds.height
         let r = h / 2
         track.frame = bounds
@@ -1949,6 +2042,48 @@ private final class LMSOCBarView: UIView {
         let w = max(4, bounds.width * fraction)
         fill.frame = CGRect(x: 0, y: 0, width: w, height: h)
         fill.cornerRadius = r
+        fill.shadowPath = UIBezierPath(roundedRect: fill.bounds, cornerRadius: r).cgPath
+        fillGradient.frame = fill.bounds
+        fillGradient.cornerRadius = r
+        CATransaction.commit()
+    }
+}
+
+// MARK: - 3D 车模底部的辉光
+
+/// 车底那团薄荷辉光。一个椭圆径向渐变，纯装饰。
+///
+/// ★ 为什么单独一个类：`CAGradientLayer` 不参与 Auto Layout，
+///   view 尺寸一变就要手动同步 `frame`（与 `LMLoveHeroView` / `LMChargeHeroView` 同款）。
+private final class LMCar3DPedestalView: UIView {
+
+    private let glow = CAGradientLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+
+        glow.type = .radial
+        glow.colors = [
+            UIColor.lmAccent.withAlphaComponent(0.34).cgColor,
+            UIColor.lmAccent.withAlphaComponent(0.0).cgColor,
+        ]
+        glow.locations = [0, 1]
+        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
+        glow.endPoint = CGPoint(x: 1.0, y: 0.5)
+        layer.addSublayer(glow)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("LMCar3DPedestalView 只能代码创建")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glow.frame = bounds
+        CATransaction.commit()
     }
 }
 

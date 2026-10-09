@@ -8,7 +8,7 @@
 
 **交付物 → [`ios/LeapmotorLite/`](ios/LeapmotorLite/)**（Swift / UIKit，iOS 17+，零第三方依赖）
 
-**当前版本：`1.1.3 (14)`** · 最近更新 2026-10-09 —— UIKit 迁移收尾：全部页面换成原生 UIKit，SwiftUI 清零（[版本历史](#六版本历史)）
+**当前版本：`1.1.4 (15)`** · 最近更新 2026-10-09 —— 视觉重设计「碳黑霓虹」：近黑底 + 发丝描边 + 等宽大数字 + 薄荷霓虹点缀（[版本历史](#六版本历史)）
 
 ---
 
@@ -269,7 +269,8 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 
 | 版本 | tag | 内容 |
 |---|---|---|
-| **1.1.3 (14)** | `2026-10-09.7` | **UIKit 迁移 Phase 3~6（收尾）**：剩余 11 页（爱车 / 定位 / 充电 / 车控 / 车辆档案 / 蓝牙钥匙 / 车控体检 / 信号浏览器 / 算法自检 / BLE 调试台 / 3D 看车）全部换成原生 UIKit，**SwiftUI 页面清零**；过渡桥 `LMHostingController` 与 `Views/` 目录整体删除 |
+| **1.1.4 (15)** | `2026-10-09.8` | **视觉重设计「碳黑霓虹」**：近黑底 + 实心深灰卡 + 发丝描边 + 等宽大数字 + 单一薄荷霓虹点缀；全 App **锁定深色外观**；爱车页完整落地（等宽大数字 / 圆角方形快捷钮 / SOC 渐变辉光 / 车底辉光），其余页随主题层自动换肤；新增 lint `R18`/`R19` |
+| 1.1.3 (14) | `2026-10-09.7` | **UIKit 迁移 Phase 3~6（收尾）**：剩余 11 页（爱车 / 定位 / 充电 / 车控 / 车辆档案 / 蓝牙钥匙 / 车控体检 / 信号浏览器 / 算法自检 / BLE 调试台 / 3D 看车）全部换成原生 UIKit，**SwiftUI 页面清零**；过渡桥 `LMHostingController` 与 `Views/` 目录整体删除 |
 | 1.1.2 (13) | `2026-10-09.6` | UIKit 迁移 Phase 2：设置页换成原生 UIKit；解决「UIKit 页 push SwiftUI 页」的导航栏冲突（`ownsNavigationBar`） |
 | 1.1.1 (12) | `2026-10-09.5` | UIKit 迁移 Phase 1：登录页换成原生 UIKit（`LMLoginViewController`），确立「继承 `LMBaseViewController` + 只覆盖 `buildUI()`/`render()`」的迁移样板 |
 | 1.1.0 (11) | `2026-10-09.4` | UI 框架从 SwiftUI 换成 UIKit（Phase 0 换壳）：入口改成 `AppDelegate` + `window`，未迁移的页面暂由 `UIHostingController` 托住，行为与上一版一致 |
@@ -351,7 +352,7 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `BLE/LMBLEKeyModels.swift` — 钥匙记录 / 行为开关 / 探测结果 / 帧自检
 - `UIKit/LMDiagnosticsViewController.swift` — 车控体检（oppwd / token / 上次请求 / 接口探测 / 未验证 cmdid）
 - `Store/LMLocationProvider.swift` — 本机定位（只用于「距我多远」）
-- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R17，CI 里会跑）
+- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R19，CI 里会跑）
 - `ios/LeapmotorLite/README.md` — 编译 / 使用 / 协议文档（含 §1.8 充电中心）
 
 **逆向与分析**

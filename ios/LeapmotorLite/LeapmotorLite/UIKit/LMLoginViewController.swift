@@ -186,7 +186,7 @@ final class LMLoginViewController: LMBaseViewController {
         var loginCfg = UIButton.Configuration.filled()
         loginCfg.title = "登录"
         loginCfg.baseBackgroundColor = .lmAccent
-        loginCfg.baseForegroundColor = .white
+        loginCfg.baseForegroundColor = .lmCanvas
         loginCfg.cornerStyle = .medium
         smsLoginButton.configuration = loginCfg
         smsLoginButton.addTarget(self, action: #selector(smsLoginTapped), for: .touchUpInside)
@@ -221,7 +221,7 @@ final class LMLoginViewController: LMBaseViewController {
         var cfg = UIButton.Configuration.filled()
         cfg.title = "导入并登录"
         cfg.baseBackgroundColor = .lmAccent
-        cfg.baseForegroundColor = .white
+        cfg.baseForegroundColor = .lmCanvas
         cfg.cornerStyle = .medium
         importButton.configuration = cfg
         importButton.addTarget(self, action: #selector(importTapped), for: .touchUpInside)

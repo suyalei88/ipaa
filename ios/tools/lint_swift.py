@@ -123,6 +123,19 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       与 R15 的区别：R15 是 no member，本条是 cannot override。
       带 `override` 的正当重写不会被拦。
 
+  R18 深色 + 薄荷设计里禁止白字前景
+      ★ 2026-10-09 视觉重设计「碳黑霓虹」：主色从系统蓝换成薄荷 `#00E39A`。
+      原来是「蓝底白字」，换色后白字对比度只剩约 1.5:1 —— 实际是糊的。
+      正确写法 `baseForegroundColor = .lmCanvas`（近黑，约 12:1）。
+      只查 `baseForegroundColor`：`textColor` / `tintColor` 在深色蒙层上
+      写白字是正当用法，一刀切会误报。
+
+  R19 纯深色设计里禁止系统语义背景色
+      ★ 本 App 由 `window.overrideUserInterfaceStyle = .dark` 锁定纯深色，
+      页面底必须 `lmCanvas`、卡片底必须 `lmCard`。
+      混用系统语义色会出现「同一屏两种黑」；一旦有人放开浅色模式，
+      系统色变白而文字仍是硬编码的白 → 白底白字。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -169,6 +182,8 @@ RULES = {
     "R15": "在 UIKit 类型上写了别的类型才有的成员（如 UILabel.isSelectable → 只有真机编译才报）",
     "R16": "UIStackView.Alignment 用了 SwiftUI 的对齐名（firstTextBaseline → firstBaseline）",
     "R17": "UIControl / UIView 子类里声明了父类保留成员名（如 UIControl 子类的 state → cannot override）",
+    "R18": "深色 + 薄荷设计里用白字当按钮前景色（对比度约 1.5:1，应该用 .lmCanvas）",
+    "R19": "纯深色设计里还在用系统语义背景色（浅色模式下会白底白字，应该用 .lmCanvas / .lmCard）",
 }
 
 # R13 用：Text(...) 参数里允许的最大 `+` 个数。
@@ -222,6 +237,39 @@ SWIFTUI_ALIGNMENT_NAMES = {
     "centerFirstTextBaseline": "firstBaseline",
     "centerLastTextBaseline": "lastBaseline",
 }
+
+# R18 用：深色 + 薄荷 设计里禁止白字前景
+#
+# ★ 2026-10-09 视觉重设计「碳黑霓虹」：
+#   主色从系统蓝换成了薄荷 `#00E39A`。原来的按钮是「蓝底 + 白字」，
+#   换成薄荷之后，白字在薄荷上的对比度只有约 **1.5:1** —— 远低于
+#   WCAG AA 要求的 4.5:1，实际效果是「一片糊」。
+#   正确做法是 `baseForegroundColor = .lmCanvas`（近黑，对比度约 12:1）。
+#
+#   ⚠️ 只查 `baseForegroundColor`，**不查** `textColor` / `tintColor` ——
+#      后者在「深色蒙层上的白字」（如地图页的浮层）是正当用法，
+#      一刀切会误报。
+WHITE_FOREGROUND_RE = re.compile(
+    r"\.baseForegroundColor\s*=\s*(?:UIColor\.white|\.white)\b")
+
+# R19 用：纯深色设计里禁止再用系统语义背景色
+#
+# ★ 2026-10-09 视觉重设计：这套设计是**纯深色**（由 `LMAppDelegate` 的
+#   `window.overrideUserInterfaceStyle = .dark` 锁定），页面底必须是
+#   `lmCanvas`、卡片底必须是 `lmCard`。
+#   继续用 `.systemBackground` / `.secondarySystemGroupedBackground` 这类
+#   语义色有两个问题：
+#     ① 深浅模式下取值不同，与硬编码的 `lmCanvas` / `lmText` 混在一起会出现
+#        「同一屏两种黑」的色差；
+#     ② 一旦有人放开浅色模式，系统色变白、而文字仍是硬编码的白 → 白底白字。
+SYSTEM_BACKGROUND_NAMES = [
+    "systemBackground",
+    "secondarySystemBackground",
+    "tertiarySystemBackground",
+    "systemGroupedBackground",
+    "secondarySystemGroupedBackground",
+    "tertiarySystemGroupedBackground",
+]
 
 # R17 用：UIKit 控件家族（它们的子类里不能再声明同名成员）
 UIKIT_CONTROL_FAMILY = {
@@ -789,6 +837,21 @@ def check(path: str, src: str):
                     f"`{m.group(1)}` 是 {hit_base} 子类，`{name}` 是父类保留成员"
                     f"→ 会被判「覆盖父类属性且类型不同」直接编译失败"
                     f"（换个名字，如 `{name}Text`）")
+
+    # R18 —— 薄荷底上不能配白字（对比度约 1.5:1）
+    for m in WHITE_FOREGROUND_RE.finditer(code):
+        add(m.start(), "R18",
+            "按钮前景色写了 `.white`：主色已换成薄荷 `#00E39A`，"
+            "白字在薄荷上对比度只有约 1.5:1（基本看不清）"
+            "→ 改用 `.lmCanvas`（近黑，约 12:1）")
+
+    # R19 —— 纯深色设计里禁止系统语义背景色
+    for name in SYSTEM_BACKGROUND_NAMES:
+        for m in re.finditer(r"\." + re.escape(name) + r"\b", code):
+            add(m.start(), "R19",
+                f"`.{name}` 是系统语义色：本 App 锁定纯深色，页面底要用 "
+                f"`.lmCanvas`、卡片底要用 `.lmCard`"
+                f"（混用会出现两种黑；放开浅色模式则会白底白字）")
 
     return hits
 

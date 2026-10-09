@@ -5,6 +5,8 @@
 
 - 平台：iOS 17+
 - 语言：Swift / UIKit（v1.1.3 起全部页面为原生 UIKit，零 SwiftUI）
+- 视觉：**纯深色「碳黑霓虹」**（v1.1.4，见 §1.10）—— 近黑底 + 发丝描边 +
+  等宽大数字 + 单一薄荷霓虹点缀；由 `window.overrideUserInterfaceStyle = .dark` 锁定
 - 依赖：**零第三方库**（CryptoKit + CommonCrypto，系统自带）
 - 网络：URLSession，全部接口走 HTTPS
   （唯一例外：「3D 看车」由 App 自己在 `127.0.0.1` 起一个只服务内置资源的本地 HTTP 服务，
@@ -655,6 +657,74 @@ UIKit 侧订阅 `objectWillChange` 就够了。
 
 ---
 
+### 1.10 视觉重设计「碳黑霓虹」（✅ 已完成，v1.1.4）
+
+**起因**：UIKit 迁移做完后用户反馈「换了框架但界面没变」—— 那本身是认知差
+（换框架 ≠ 换外观），但接下来明确要求「开始做视觉重设计」。
+先出了 3 版 HTML 样张（`design/lovecar-dark-mockup.html`：
+极夜玻璃 / 深海蓝调 / 碳黑霓虹），用户选定 **碳黑霓虹**。
+
+**设计语言（6 条）**：
+
+| 元素 | 取值 | 为什么 |
+|---|---|---|
+| 页面底 | `#0A0A0C` 近黑 + 顶部极淡薄荷径向光晕 | 纯黑在 OLED 上和卡片糊在一起；光晕给纵深 |
+| 卡片 | `#131316` 实心 + `#26262C` 1pt 发丝描边 | 近黑底上光靠明度差不够，描边才有分层 |
+| 主色 | 薄荷 `#00E39A`（**唯一**强调色） | 只做点缀不铺面 —— 铺面它就变成「主色」而不是点缀了 |
+| 数字 | `LMFont.mono`（SF Mono 等宽） | 续航 / 电量 / 温度会跳动，等宽才不会左右抖 |
+| 圆角 | card 14 / tile 12 / hero 16 | 比原来（18 / 14 / 22）收方一档，配描边得到硬朗感 |
+| 文字 | `lmText` / `lmText2`(46%) / `lmText3`(28%) 三档 | 显式给出，不依赖系统语义色漂移 |
+
+**为什么锁定深色**：这套设计没有浅色版本。`LMAppDelegate` 里
+`window.overrideUserInterfaceStyle = .dark` 一刀锁死。
+好处是 `.label` / `.secondaryLabel` 这些系统语义色恒为「浅色文字」，可以直接用；
+代价是想放开浅色模式，必须先把 `LMUIKitTheme` 里的 `lm*` 常量改成动态色。
+
+**杠杆在哪**：改 `LMUIKitTheme.swift` **一个文件**，13 个页面一起换肤 ——
+`lmAccent` 被引用 93 处、`lmCard` 11 处、`LMRadius` 12 处。
+所以这一版**全部页面**都已经变成深色薄荷风，只是爱车页额外做了逐模块的专属调整。
+
+**爱车页的专属改动**：
+
+| 模块 | 改动 |
+|---|---|
+| 顶部车辆栏 | 车辆名纯白 22pt；更新时间压到 `lmText3`；圆形按钮加描边，齿轮降为 `lmText2`（薄荷只留给主操作） |
+| 3D 车模 | 车底加一团薄荷辉光（`LMCar3DPedestalView`），车「落」在光上；全屏入口从 32pt 纯图标圆钮改成「图标 + 全屏看车」文字胶囊 |
+| 续航 Hero | 大面积蓝渐变 → 实心卡 + 薄荷洗色；大数字 42 → **54pt 等宽**；新增「剩余续航」小标题行，锁态胶囊移到右上 |
+| SOC 条 | 单色实心 → 主色→青色横向渐变 + 辉光（7 → 8pt 高） |
+| 快捷操作 | 圆 56pt → **圆角方形**（半径 17）。这套语言里「圆」表示状态，「圆角方」表示可点操作 |
+| 空调 / 地图 | 温度、坐标改等宽；标签统一 `lmText2` / `lmText3` |
+| toast | 「薄荷底 + 白字」→「薄荷底 + **近黑字**」（白字对比度只有约 1.5:1） |
+| Tab 栏 | 刷成 `lmCanvas` + 去掉投影线 + 未选中项压到 `lmText3` |
+
+**踩到的三个坑**：
+
+- **`masksToBounds` 会裁掉阴影**：SOC 条想同时要「圆角渐变」和「辉光」，
+  同一层做不到 —— 开了裁剪，阴影就没了。拆成两层：`fill` 只负责
+  `shadowPath`（不裁），`fillGradient` 负责圆角裁剪。
+- **白字在薄荷上不可读**：原来全 App 的实心按钮都是「蓝底白字」，
+  主色换成薄荷后对比度掉到约 1.5:1。全量改成 `.lmCanvas` 近黑字（约 12:1），
+  并加 **lint `R18`** 防止回退。
+- **系统语义背景色的「两种黑」**：`.systemBackground`（纯黑）与 `lmCanvas`
+  （`#0A0A0C`）不是一个值，混用会出现「同一屏两种黑」。
+  全部换成 `lmCanvas` / `lmCard`，并加 **lint `R19`**。
+
+**新增的两条 lint**：
+
+| 规则 | 拦什么 |
+|---|---|
+| `R18` | `baseForegroundColor = .white`（薄荷底上不可读）。**只查这一处** —— `textColor` / `tintColor` 在深色蒙层上写白字是正当用法，一刀切会误报 |
+| `R19` | `.systemBackground` / `.secondarySystemGroupedBackground` 等系统语义背景色（放开浅色模式会白底白字） |
+
+两条都做了正反样本验证，含「注释里提到系统色不该命中」这种反样本
+（`blank_comments_and_strings` 会先剥注释再匹配）。
+
+**契约测试**：新增 `[15]`，钉住调色板逐位取值、三档圆角、等宽字体存在且
+用在磁贴主值上、深色锁定、辉光底在最底层且不吃手势、爱车页 7 处标志性改动、
+以及 `R18` / `R19` 已注册。
+
+---
+
 ## 2. 编译 / 打包 IPA
 
 ### 方式 A：一键打包（推荐）
@@ -791,7 +861,9 @@ ios/
         │   └── LMLocationProvider.swift # 本机定位（只用于「距我多远」）
         ├── UIKit/                       # ★ 2026-10-09 UI 全部换成原生 UIKit（迁移已完成，v1.1.3）
         │   ├── LMAppDelegate.swift      # App 入口（@main + window；Info.plist 无 Scene 清单）
-        │   ├── LMUIKitTheme.swift       # UIKit 版主题（UIColor 调色板 + 卡片/磁贴/胶囊/导航 + LMRadius）
+        │   ├── LMUIKitTheme.swift       # ★★ 设计系统「碳黑霓虹」（v1.1.4，见 §1.10）：
+        │   │                            #   调色板(lmCanvas/lmCard/薄荷 lmAccent…) + LMRadius(14/12/16)
+        │   │                            #   + LMFont.mono 等宽数字 + 卡片/磁贴/胶囊/辉光底/导航/控件工厂
         │   ├── LMBaseViewController.swift # ★★ 页面基类：订阅 objectWillChange → 幂等 render()
         │   ├── LMRootViewController.swift # 根容器：登录页 ↔ 主 Tab
         │   ├── LMMainTabBarController.swift # 5 个 Tab（全部原生 UIKit 页，各自套 LMNavigationController）

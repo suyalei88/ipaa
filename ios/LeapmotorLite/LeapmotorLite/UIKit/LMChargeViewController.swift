@@ -302,7 +302,7 @@ final class LMChargeViewController: LMBaseViewController {
         cfg.image = UIImage(systemName: "bolt.fill")
         cfg.imagePadding = 6
         cfg.baseBackgroundColor = .lmGood
-        cfg.baseForegroundColor = .white
+        cfg.baseForegroundColor = .lmCanvas
         cfg.cornerStyle = .medium
         cfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
         chargeButton.configuration = cfg
@@ -387,7 +387,7 @@ final class LMChargeViewController: LMBaseViewController {
         cfg.image = UIImage(systemName: "battery.75")
         cfg.imagePadding = 6
         cfg.baseBackgroundColor = .lmAccent
-        cfg.baseForegroundColor = .white
+        cfg.baseForegroundColor = .lmCanvas
         cfg.cornerStyle = .medium
         cfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
         socApplyButton.configuration = cfg
@@ -439,7 +439,7 @@ final class LMChargeViewController: LMBaseViewController {
         cfg.image = UIImage(systemName: "clock.badge.checkmark")
         cfg.imagePadding = 6
         cfg.baseBackgroundColor = .lmAccent
-        cfg.baseForegroundColor = .white
+        cfg.baseForegroundColor = .lmCanvas
         cfg.cornerStyle = .medium
         cfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
         apSaveButton.configuration = cfg

@@ -26,7 +26,7 @@ final class LMRootViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .lmCanvas
 
         client.objectWillChange
             .receive(on: RunLoop.main)
