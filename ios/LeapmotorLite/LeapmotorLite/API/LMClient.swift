@@ -2291,14 +2291,28 @@ final class LMClient: ObservableObject {
     /// 预约充电的目标电量 %（来自 commonConfig.config["3"].percent）
     var chargeTargetPercent: Int? { chargeSchedule?.targetPercent }
 
-    /// 电池 / 母线电压（V）。信号 `1177`。
+    /// 充电电压 V（信号 `1177`）。
     ///
-    /// ★ 之前标注为「疑似充电功率（×100 W）」，**已被实测推翻**：
-    ///   未充电时它是 732.7（**不为 0**），充电时 736.7 —— 只差 4.0 V。
-    ///   如果它是功率，没充电时必须掉到 0。所以它属于**电压类**量，
-    ///   充电时抬升 4 V 也符合「充电时母线电压上升」。
-    ///   具体是电池包电压还是充电机输出电压仍未定，UI 里别写死。
-    var packVoltageGuessV: Double? {
+    /// ── 证据链（2026-10-09 第三次修订）────────────────────────────
+    ///   ① 实测取值：未充电 **732.7**、充电 **736.7** —— 只差 4.0 V。
+    ///      ★ 老结论「充电功率 ×100 W」早已被这条推翻：功率在没充电时
+    ///      必须掉到 0，而它不为 0。充电时抬升 4 V 正是母线电压的行为。
+    ///   ② ★ **新增决定性证据**：官方本地化表
+    ///      （`LMVLocalizedBundle.bundle/zh-Hans.lproj/Localizable.strings`）
+    ///      里充电中心有一组三个键：
+    ///          `ChargingCnter_Voltage` = 电压
+    ///          `ChargingCnter_Current` = 电流
+    ///          `ChargingCnter_Power`   = 功率
+    ///      → 官方充电中心**确实显示电压 / 电流 / 功率**三项。
+    ///   ③ 130 个信号里，属于「电池电气量」且量纲自洽的**只有 1177/1178 这一对**：
+    ///      1178 没充电时正好 0.0（电流的正确行为），充电时 8.3 A；
+    ///      1177 没充电时 732.7（电压的正确行为，不能为 0）。
+    ///   所以「1177 = 电压、1178 = 电流」是目前唯一自洽的配对。
+    ///
+    ///   ⚠️ 仍未确证：732.7 V 是**电池包电压**还是**充电机输出电压**；
+    ///      也仍未确证官方充电中心读的就是这两个信号（没有充电页的抓包样本）。
+    ///      UI 按「电压」显示，并注明来源信号。
+    var chargeVoltageV: Double? {
         guard let v = signals["1177"]?.doubleValue, v > 0 else { return nil }
         return v
     }
@@ -2307,9 +2321,23 @@ final class LMClient: ObservableObject {
     ///
     /// 实测：充电时 −8.299 / −8.399（负号含义未定，量级 8.3 A），
     ///       未充电时 0.0。这是**唯一一个带物理意义的充电证据**。
+    /// 取绝对值显示 —— 负号最可能是「电流方向」而不是数值本身。
     var chargeCurrentA: Double? {
         guard let v = signals["1178"]?.doubleValue, v != 0 else { return nil }
         return abs(v)
+    }
+
+    /// 充电功率 kW —— **由 1177 × 1178 现算**，不是车端上报的信号。
+    ///
+    /// 依据：官方充电中心有 `ChargingCnter_Power = 功率` 这一项，而 130 个信号里
+    /// **没有任何一个**能当功率用（都逐一排查过：唯一的功率候选 1177 在没充电时
+    /// 不为 0，已被推翻），所以官方的功率极可能就是电压 × 电流现算的。
+    /// 实测量级：736.7 V × 8.399 A ≈ **6.19 kW** —— 与「7 kW 交流慢充」吻合。
+    ///
+    /// ⚠️ 这是**派生值**。UI 必须写清「电压 × 电流估算」，不能当官方数字用。
+    var chargePowerKW: Double? {
+        guard let v = chargeVoltageV, let a = chargeCurrentA else { return nil }
+        return v * a / 1000.0
     }
 
     /// 用「当前 SOC + 当前续航」反推满电续航 km（主标准 3257）。

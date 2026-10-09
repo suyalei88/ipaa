@@ -81,7 +81,7 @@ class SetKeyReq(BaseModel):
 
 
 class ControlReq(BaseModel):
-    action: str                      # lock/unlock/trunk/hello/hvac_off/hvac_low/hvac_high/light_off/light_auto
+    action: str                      # 见 client/leapmotor_client.py 的 CTRL_COMMANDS
     vin: str = ""
     op_password: str = ""
     oppwd: str = ""

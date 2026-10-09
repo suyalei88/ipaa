@@ -1,0 +1,29 @@
+{
+ "data": {
+  "isSupportBigModel": 0,
+  "privacyGPS": 0,
+  "privacyData": 1,
+  "parkingAssistConfig": "1",
+  "vin": "LFZ63AA15TH035113",
+  "config": {
+   "3": {
+    "cycles": "1,1,1,1,1,1,1",
+    "endTime": "15:00",
+    "percent": 90,
+    "isEnable": 1,
+    "recharge": 0,
+    "beginTime": "10:00",
+    "updateTime": "2026-10-07 03:37:42",
+    "circulation": 1
+   },
+   "4": {
+    "mac": "C8C83FF5C48E",
+    "version": "2.0",
+    "updateTime": "2026-09-20 11:02:29"
+   }
+  },
+  "isAiParking": false
+ },
+ "result": 0,
+ "code": 0
+}

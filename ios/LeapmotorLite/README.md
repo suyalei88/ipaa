@@ -111,15 +111,22 @@ GET /app/app-control-service/v3/api/appremotectl/query?msgID=<msgID>
     data == 1 → 成功
 ```
 
-cmdid 表：
+cmdid 表（★ 2026-10-09 校正 —— 原表把 120/170/230/400 的语义全写错了）：
 
-| cmdid | state | 功能 |
-|---|---|---|
-| 110 | `{"value":"lock"}` / `{"value":"unlock"}` | 车门锁 |
-| 120 | `{"value":"true"}` | 后备箱 |
-| 170 | `{"operate":"off"}` / `{"operate":"auto"}` | 大灯 |
-| 230 | `{"value":"0"}` / `"2"` / `"5"` | 空调 |
-| 400 | `{"operation":"on"}` | 上电 |
+| cmdid | state | 功能 | 证据 |
+|---|---|---|---|
+| 110 | `{"value":"lock"}` / `{"value":"unlock"}` | 车门锁 | 抓包双向验证 |
+| 120 | `{"value":"true"}` | **鸣笛寻车**（不是后备箱） | 抓包验证 |
+| 130 | `{"value":"true"}` / `{"value":"false"}` | **后备箱** | 抓包双向验证 |
+| 131 | `{"value":"true"}` / `{"value":"false"}` | **前备箱** | 同族推断，**无样本** |
+| 170 | `{"operate":"off"}` / `{"operate":"auto"}` | **空调**（不是大灯） | 抓包验证 |
+| 230 | `{"value":"0"}` / `"2"` / `"5"` | **车窗**（不是空调） | 抓包验证 |
+| 400 | `{"operation":"on"}` | **哨兵模式**（不是上电） | 抓包验证 |
+
+> 完整 **42 个** cmdid → 官方 selector 全表（反汇编主二进制 cmdid 分派器解出）见
+> `ios/LeapmotorLite/LeapmotorLite/API/LMEndpoints.swift` 的 `remoteCmdids`，
+> 以及 App 内「设置 → 诊断 → 官方 cmdid 全集」。
+> ⚠️ **上电是 410**（`requestForOpenOn3`），但它没有 payload 样本，故意不接。
 
 ### 1.5 登录链路（短信验证码 · 全链路已实测打通）
 
@@ -886,7 +893,7 @@ warnView.isHidden = (cmd.risk != .physical)
 | 值 | 含义 | 感叹号 |
 |---|---|---|
 | `.low` | 只改状态，不会夹到人（空调、车窗、充电上限…） | ❌ |
-| `.physical` | **会开合车门 / 后备箱 / 启动上电** | ✅ |
+| `.physical` | **会开合车门 / 后备箱 / 前备箱** | ✅ |
 
 含义之前只写在代码注释里，界面上没有任何解释 —— 等于只有开发者看得懂。
 这次在车控页页脚（`footnoteText`）补了一句图例。
@@ -1027,6 +1034,120 @@ http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/LFZ63AA15TH035
 
 **要彻底解决，需要一份「官方 App 显示健康充电=开启」时的抓包**
 （重点看 `healthyCharging/control` 的请求体，以及 cmdid 480 的 `appremotectl` 往返）。
+
+---
+
+### 1.12 cmdid 全表与关键词挖掘（✅ 已完成，v1.1.7）
+
+这一轮做的是「**把官方到底有哪些远程指令挖干净**」，产出三样东西。
+
+#### ① 42 个 cmdid 全表（反汇编）
+
+官方主二进制 `leapmotorCarOwner`（204 MB / arm64 / 未加密）里有一个 **cmdid 分派函数**
+（`0x106C5EE00` 起），形态是 `cmp x23, #imm` + 分支的二分查找树；每个分支体里调一个
+`objc_msgSend$requestForXxx:` stub。反解 stub → selector、再回溯 `imm`，就得到映射：
+
+```bash
+python client/ios_all_cmdids.py evidence/leapmotor_main   # 实跑 16 秒
+```
+
+```
+image_base=0x100000000  段=6  section=61
+rebase 指针 583,924   stub 数 42,465   bl 目标数 154,221
+解出 79 个组合 → 44 个 cmdid（剔掉 cmdID / setCmdID: 两条噪声）= 42 个真 cmdid
+```
+
+⚠️ **性能坑**：对全 `__text` 的每个 callsite 做 O(1800) 反扫会退化成几十分钟，
+必须先把窗口限定在分派器所在段（`LO, HI = 0x106C5E000, 0x106C61000`）。
+
+原始输出：`evidence/official/cmdid_table.txt`。
+完整 42 行表见根 [`README.md`](../../README.md#-cmdid-全表42-个反汇编实证)。
+
+#### ② ★ 修一个语义错误：400 是哨兵模式，不是上电
+
+```
+400 → cmp x23, #0x190 → objc_msgSend$requestForCarSentineMode:   ← 哨兵模式
+410 → cmp x23, #0x19A → objc_msgSend$requestForOpenOn3           ← 上电
+```
+
+所以原来那条 `"hello": Command(cmdid: 400, state: ["operation":"on"], title: "上电")`
+**标题是错的**（payload 没错，错的是它被当成上电）。已改成：
+
+- 键名 `hello` → `sentinel`，标题「上电」→「哨兵模式」，图标 `shield.lefthalf.filled`
+- 风险等级 `.physical` → `.low`（哨兵不上电、不动钣金，不该带感叹号）
+- 同步改：爱车页快捷操作第 2 页最后一格、`quickFlip` 判色、`Group.power` 组名、
+  `knownModuleRights` 注释、车控页二次确认文案与页脚图例
+
+> ⚠️ 别把 `moduleRights` 里的 `400` 和 cmdid `400` 混起来 —— 前者是**模块级授权编号**，
+> 后者是指令号，两个命名空间只是数字撞车。
+
+**410（真正的上电）故意不接** —— 它没有 payload 样本，而上电会真的让车「活过来」，
+猜错代价太大。
+
+#### ③ 新增前备箱（131）
+
+`131 = requestForFrunkControl:`，selector 形态与后备箱 `130 = requestForTrunkControl:`
+**完全一致**（都没有 `content` 参数），官方文案里也有成对的
+`RemoteControl_Frunk_CanNotDriving` / `RemoteControl_CloseFrunk_CanNotDriving`
+（说明开、关都支持）。所以 payload 按同族推断为 `{"value":"true"|"false"}`。
+
+⚠️ 但 131 **没有抓包样本**，payload 形状是推断的 —— 已明确标注，并进了车控页页脚的
+「未验证清单」。
+
+#### ④ 充电功率（电压 × 电流）
+
+依据是**官方本地化表**（`LMVLocalizedBundle.bundle/zh-Hans.lproj/Localizable.strings`，
+二进制 plist，已提取为 `evidence/official/LMV_zh-Hans.json`，669 条）里充电中心的一组键：
+
+```
+ChargingCnter_Voltage = 电压
+ChargingCnter_Current = 电流
+ChargingCnter_Power   = 功率
+```
+
+→ 官方充电中心**确实显示电压 / 电流 / 功率**三项。而 130 个信号里属于「电池电气量」
+且量纲自洽的**只有 1177 / 1178 这一对**：
+
+| 信号 | 未充电 | 充电 | 结论 |
+|---|---|---|---|
+| 1177 | 732.7 | 736.7 | 电压（抬升 4.0 V 是母线电压行为；**不是功率**，功率没充电时必须为 0） |
+| 1178 | 0.0 | −8.299 / −8.399 | 电流（负号最可能是方向） |
+
+所以：
+
+- `packVoltageGuessV` → **改名 `chargeVoltageV`**（从「猜测」升级为「有官方证据」）
+- 新增派生值 `chargePowerKW = chargeVoltageV × chargeCurrentA / 1000`
+  —— 实测量级 736.7 V × 8.399 A ≈ **6.19 kW**，与「7 kW 交流慢充」吻合
+- 充电页「待确认的信号」卡 → 升级成「**充电功率（电压 × 电流）**」卡
+  （功率 / 电压 / 电流三行 + 派生说明）
+
+> ⚠️ 功率是**派生值**，UI 必须写清「电压 × 电流估算」，不能当官方数字用。
+> 另外仍未能区分 1177 是**电池包电压**还是**充电机输出电压**（没有充电页抓包样本）。
+
+#### ⑤ 诊断页「官方 cmdid 全集」卡
+
+把 42 条表渲染成**可点击预填**的列表（cmdid + hex + 语义 + 官方 selector + 有/无样本徽章），
+点一行就把 cmdid 填进上面的探测输入框并**滚回输入框**（否则点了没反馈）。
+下面附 `remotePayloadKeyHints`（从 `__cstring` 里车控键扎堆那段挖出的候选字段名），
+长按可复制。
+
+#### ⑥ 顺带修正 Python 侦察端
+
+`client/leapmotor_client.py` 的 `CTRL_COMMANDS` 原来多处错标（120 标「后备箱/寻车」、
+170 标「大灯」、230 标「空调」、400 标「上电」），已按证据改正；
+`app/index.html` 的按钮也从已失效的 `find`/`climate`/`window`/`charge` 改成真实键名。
+
+#### 本节相关的门禁
+
+| 检查 | 内容 |
+|---|---|
+| `client/test_refresh_contract.py` → `[15]` | **v1.1.7 新增 55 条**：42 条表的 id 集合、400 语义、`"hello"` 已消失、前备箱 131 标成无样本、`chargePowerKW` 是现算的、诊断页卡结构、Python 端同步、版本号 |
+| `client/ios_all_cmdids.py` | 反汇编回归：官方换版本时会报红 |
+| `dist/_verify_ipa.py` | 加 `remoteCmdids` / `remotePayloadKeyHints` **符号断言**（证明全表被链接进包）+ 8 条新长串 |
+
+> ★ **断言纪律**：`[15]` 里所有「旧标识已消失」的断言都先过 `code_only()`
+> 剥掉注释 —— 修 bug 的注释里**必然**会写出被修掉的那个名字，
+> 不剥就会把自己的注释当成违规（本项目已经因此假阳性四次）。
 
 ---
 

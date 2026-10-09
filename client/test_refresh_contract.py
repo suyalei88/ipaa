@@ -42,6 +42,47 @@ def read(rel: str) -> str:
         return f.read()
 
 
+def code_only(src: str) -> str:
+    """只保留「代码行」，丢掉整行注释与 `/* */` 块。
+
+    ★ 为什么需要它（这是本文件踩过四次的坑）：
+      断言「旧标识已经消失」时，**修 bug 的注释里必然会写出被修掉的那个名字**
+      —— 例如 `// 原来这里写「会真的动车门 / 后备箱 / 上电」`。
+      直接对原文 `re.search(...) is None` 会被自己的注释骗成 FAIL，
+      然后人就会去改注释而不是改代码，反而把有价值的记录删掉。
+
+      本项目的四次前科：`import SwiftUI`、`pushSwiftUIPage`、`SettingsView()`、
+      `UIApplicationSceneManifest` —— 全部是「注释里写了旧名字」造成的假阳性。
+
+    只处理**整行注释**（`lstrip()` 后以 `//` 开头，含 `///` 文档注释）与
+    `/* ... */` 块；行尾 `// 注释` 不处理 —— 因为 URL 字面量里的 `//`
+    会被误判成注释起点，得不偿失（真正会骗到断言的都是整行注释）。
+    """
+    out: list[str] = []
+    in_block = False
+    for line in src.splitlines():
+        stripped = line.strip()
+        if in_block:
+            if "*/" in stripped:
+                in_block = False
+                rest = stripped.split("*/", 1)[1]
+                if rest.strip():
+                    out.append(rest)
+            continue
+        if stripped.startswith("/*"):
+            if "*/" not in stripped:
+                in_block = True
+                continue
+            rest = stripped.split("*/", 1)[1]
+            if rest.strip():
+                out.append(rest)
+            continue
+        if stripped.startswith("//"):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 # ============================================================
 # 1. 端点契约
 # ============================================================
@@ -1359,6 +1400,175 @@ def test_dark_theme() -> None:
           "OPTIONAL_CHAIN_FLATTEN_RE.finditer" in lint_src)
 
 
+def test_cmdid_table() -> None:
+    """
+    [15] cmdid 全表 + 400 语义纠正 + 前备箱 + 充电功率
+
+    这一轮（v1.1.7）的东西有一个共同特征：**全部是「知识」而不是「逻辑」**。
+    知识类的改动编译器一个字都不会拦 —— 谁把 400 的标题改回「上电」、
+    谁把 42 条表删剩 6 条、谁把「电压 × 电流」换成「车端上报的功率」，
+    CI 全绿，但 App 会开始骗用户。所以在这里钉死。
+
+    ★ 断言纪律（本项目已因假阳性返工四次）：
+      断言盯**真实声明形态**（`"hello": Command(`、`RemoteCmdid(cmdid: 110,`），
+      不盯「某字符串有没有出现在某文件里」—— 注释里必然会写出被修掉的旧名字。
+    """
+    print("\n[15] cmdid 全表 / 400 语义 / 前备箱 / 充电功率")
+
+    ep = read("API/LMEndpoints.swift")
+    client = read("API/LMClient.swift")
+    catalog = read("API/LMSignalCatalog.swift")
+    diag = read("UIKit/LMDiagnosticsViewController.swift")
+    panel = read("UIKit/LMControlPanelViewController.swift")
+    love = read("UIKit/LMLoveCarViewController.swift")
+
+    # 断言「旧标识已消失」时用剥掉注释的版本（否则会被自己的修复注释骗到）。
+    ep_code = code_only(ep)
+    panel_code = code_only(panel)
+    love_code = code_only(love)
+
+    def read_root(rel: str) -> str:
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    # ── 15.1 全表结构存在 ──────────────────────────────────────
+    check("LMEndpoints 有 struct RemoteCmdid",
+          re.search(r"struct\s+RemoteCmdid\s*:\s*Identifiable", ep) is not None)
+    check("LMEndpoints 有 remoteCmdids 全表",
+          re.search(r"static\s+let\s+remoteCmdids\s*:\s*\[RemoteCmdid\]", ep) is not None)
+    check("有按 cmdid 查表的 remoteCmdid(_:) 函数",
+          re.search(r"static\s+func\s+remoteCmdid\s*\(\s*_\s*cmdid\s*:\s*Int\s*\)", ep)
+          is not None)
+
+    # ── 15.2 表里有 42 条，且 id 集合与反汇编结果一致 ─────────────
+    ids = [int(x) for x in re.findall(r"RemoteCmdid\(cmdid:\s*(\d+)", ep)]
+    expected = [110, 111, 120, 130, 131, 150, 160, 161, 170, 171, 180,
+                190, 192, 193, 230, 240, 270, 280, 300, 301, 320, 350,
+                360, 361, 370, 380, 390, 391, 392, 400, 410, 421, 430,
+                440, 470, 480, 500, 501, 600, 700, 710, 720]
+    check("remoteCmdids 恰好 42 条", len(ids) == 42, f"实际 {len(ids)}")
+    check("remoteCmdids 的 id 集合 = 反汇编解出的 42 个",
+          sorted(set(ids)) == expected,
+          f"缺 {sorted(set(expected) - set(ids))} / 多 {sorted(set(ids) - set(expected))}")
+    check("remoteCmdids 没有重复 id", len(set(ids)) == len(ids))
+
+    # ── 15.3 payload 候选键表（诊断页手写 state 的线索）───────────
+    check("LMEndpoints 有 remotePayloadKeyHints",
+          re.search(r"static\s+let\s+remotePayloadKeyHints\s*:\s*\[String\]", ep) is not None)
+    for key in ("windlevel", "temperature", "hotcold", "circle", "percent",
+                "seat_setting", "beginTime"):
+        check(f"payload 键提示里有 {key}", f'"{key}"' in ep)
+
+    # ── 15.4 ★ 400 = 哨兵模式（不是上电），且旧键 hello 已消失 ─────
+    check("commands 里有 sentinel 键",
+          re.search(r'"sentinel"\s*:\s*Command\(', ep) is not None)
+    check("sentinel 的 cmdid 是 400",
+          re.search(r'"sentinel"\s*:\s*Command\(cmdid:\s*400', ep) is not None)
+    check("sentinel 标题是「哨兵模式」（不是「上电」）",
+          re.search(r'"sentinel"\s*:\s*Command\(cmdid:\s*400[\s\S]{0,200}?title:\s*"哨兵模式"',
+                    ep) is not None)
+    check("★ 旧的 \"hello\" 车控键已从代码里消失（注释里允许留记录）",
+          re.search(r'"hello"\s*:\s*Command\(', ep_code) is None)
+    check("quickActions 里是 sentinel 不是 hello",
+          re.search(r"static\s+let\s+quickActions[\s\S]{0,400}?\"sentinel\"", ep_code) is not None
+          and re.search(r"static\s+let\s+quickActions[\s\S]{0,400}?\"hello\"", ep_code) is None)
+    check("爱车页快捷操作第 2 页最后一格是 sentinel",
+          re.search(r'\["horn",\s*"ac_on",\s*"ac_off",\s*"sentinel"\]', love) is not None)
+    check("爱车页判色 case 也改成了 sentinel",
+          re.search(r'case\s+"sentinel"\s*:\s*return\s+\.lmBad', love) is not None)
+
+    # ── 15.5 前备箱（131，同族推断）────────────────────────────
+    check("commands 里有 frunk_open",
+          re.search(r'"frunk_open"\s*:\s*Command\(', ep) is not None)
+    check("commands 里有 frunk_close",
+          re.search(r'"frunk_close"\s*:\s*Command\(', ep) is not None)
+    check("frunk_open 的 cmdid 是 131",
+          re.search(r'"frunk_open"\s*:\s*Command\(cmdid:\s*131', ep) is not None)
+    check("frunk 两个键都在 quickActions 里",
+          re.search(r"static\s+let\s+quickActions[\s\S]{0,400}?\"frunk_open\"[\s\S]{0,80}?\"frunk_close\"",
+                    ep) is not None)
+    check("★ 131 在表里被标成「无 payload 样本」",
+          re.search(r"RemoteCmdid\(cmdid:\s*131[\s\S]{0,200}?hasPayloadSample:\s*false", ep)
+          is not None)
+
+    # ── 15.6 充电电压 / 电流 / 功率 ─────────────────────────────
+    check("LMClient 有 chargeVoltageV",
+          re.search(r"var\s+chargeVoltageV\s*:\s*Double\?", client) is not None)
+    check("LMClient 有 chargePowerKW（派生值）",
+          re.search(r"var\s+chargePowerKW\s*:\s*Double\?", client) is not None)
+    check("chargePowerKW 是「电压 × 电流 / 1000」现算的",
+          re.search(r"chargeVoltageV[\s\S]{0,200}?chargeCurrentA[\s\S]{0,60}?/\s*1000", client)
+          is not None)
+    check("★ 旧的 packVoltageGuessV 已彻底改名（不再存在）",
+          "packVoltageGuessV" not in client)
+    check("chargeVoltageV 的注释里写了官方本地化表证据（ChargingCnter_Voltage）",
+          re.search(r"ChargingCnter_Voltage", client) is not None)
+    check("信号表里 1177 已升级为「充电电压」",
+          re.search(r'\.init\("1177",\s*"充电电压"', catalog) is not None)
+    check("信号表 1178 注里指向 chargePowerKW",
+          re.search(r'\.init\("1178"[\s\S]{0,400}?chargePowerKW', catalog) is not None)
+
+    # ── 15.7 诊断页「官方 cmdid 全集」卡 ────────────────────────
+    check("诊断页有 buildCmdidSection()",
+          re.search(r"func\s+buildCmdidSection\s*\(\s*\)", diag) is not None)
+    check("诊断页把 remoteCmdids 渲染成行",
+          re.search(r"for\s+\w+\s+in\s+LMEndpoints\.remoteCmdids", diag) is not None)
+    check("诊断页有 LMDiagCmdidRow 行控件",
+          re.search(r"final\s+class\s+LMDiagCmdidRow\s*:\s*UIControl", diag) is not None)
+    check("点行会回填输入框（cmdidRowTapped）",
+          re.search(r"func\s+cmdidRowTapped\s*\(", diag) is not None)
+    check("★ 行控件没有用 UIControl 保留名 state 当属性（R17 烧过）",
+          re.search(r"class\s+LMDiagCmdidRow[\s\S]{0,600}?let\s+state\s*:", diag) is None)
+    check("诊断页把 payload 键提示也显示出来",
+          re.search(r"remotePayloadKeyHints\.joined", diag) is not None)
+
+    # ── 15.8 过时文案已清掉（400 不再是上电）────────────────────
+    check("★ 车控页页脚不再写「上电 400」",
+          re.search(r"车窗\s*230、上电\s*400", panel_code) is None)
+    check("车控页页脚改成「哨兵模式 400」",
+          re.search(r"车窗\s*230、哨兵模式\s*400", panel_code) is not None)
+    check("车控页 / 爱车页二次确认文案不再说「上电」",
+          re.search(r"会真的动车门\s*/\s*后备箱\s*/\s*上电", panel_code) is None
+          and re.search(r"会真的动车门\s*/\s*后备箱\s*/\s*上电", love_code) is None)
+    check("车控页动作注释里是「哨兵模式」不是「上电」",
+          re.search(r"门锁\s*/\s*后备箱\s*/\s*前备箱\s*/\s*鸣笛\s*/\s*空调开关\s*/\s*哨兵模式",
+                    panel) is not None)
+
+    # ── 15.9 Python 侦察端同步（client/leapmotor_client.py）──────
+    py = read_root(os.path.join("client", "leapmotor_client.py"))
+    check("CTRL_COMMANDS 里 400 的键是 sentinel",
+          re.search(r'"sentinel"\s*:\s*\(400,', py) is not None)
+    check("CTRL_COMMANDS 里没有 hello 键",
+          re.search(r'"hello"\s*:\s*\(', py) is None)
+    check("CTRL_COMMANDS 里 trunk 指向 130（不是 120）",
+          re.search(r'"trunk_open"\s*:\s*\(130,', py) is not None)
+    check("CTRL_COMMANDS 里 horn 指向 120（不是 130）",
+          re.search(r'"horn"\s*:\s*\(120,', py) is not None)
+    check("CTRL_COMMANDS 里有 frunk_open → 131",
+          re.search(r'"frunk_open"\s*:\s*\(131,', py) is not None)
+    check("旧的 light_off / hvac_low 错标键已删除",
+          re.search(r'"(light_off|hvac_low|hvac_high|light_auto)"\s*:\s*\(', py) is None)
+
+    # ── 15.10 可复现脚本仍在（结论的出处）───────────────────────
+    check("反汇编脚本 client/ios_all_cmdids.py 存在",
+          os.path.isfile(os.path.join(ROOT, "client", "ios_all_cmdids.py")))
+    check("原始输出 evidence/official/cmdid_table.txt 存在",
+          os.path.isfile(os.path.join(ROOT, "evidence", "official", "cmdid_table.txt")))
+    check("官方本地化表 evidence/official/LMV_zh-Hans.json 存在",
+          os.path.isfile(os.path.join(ROOT, "evidence", "official", "LMV_zh-Hans.json")))
+
+    # ── 15.11 版本号已升到 1.1.7 (18) ──────────────────────────
+    plist = read("Support/Info.plist")
+    check("Info.plist 版本 = 1.1.7",
+          re.search(r"CFBundleShortVersionString</key>\s*<string>1\.1\.7</string>", plist)
+          is not None)
+    check("Info.plist build = 18",
+          re.search(r"CFBundleVersion</key>\s*<string>18</string>", plist) is not None)
+    bi = read("LMBuildInfo.swift")
+    check("LMBuildInfo.tag 提到了这一轮的 cmdid 全表",
+          re.search(r'static\s+let\s+tag\s*=\s*"[^"]*cmdid', bi) is not None)
+
+
 def main() -> int:
     print("=" * 64)
     print("续期契约测试（test_refresh_contract）")
@@ -1380,6 +1590,7 @@ def main() -> int:
     test_uikit_settings()
     test_uikit_full_migration()
     test_dark_theme()
+    test_cmdid_table()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

@@ -579,10 +579,13 @@ final class LMLoveCarViewController: LMBaseViewController {
         pagerContent.translatesAutoresizingMaskIntoConstraints = false
         pagerScroll.addSubview(pagerContent)
 
-        // 官方第 1 页：解锁 / 上锁 / 后备箱 / 车窗；第 2 页：鸣笛 / 空调开 / 空调关 / 上电
+        // 官方第 1 页：解锁 / 上锁 / 后备箱 / 车窗；第 2 页：鸣笛 / 空调开 / 空调关 / 哨兵
+        // ★ 2026-10-09：第 2 页最后一格原来是 `hello`（标着「上电」）——
+        //   反汇编证实 cmdid 400 是**哨兵模式**（`requestForCarSentineMode:`），
+        //   上电其实是 410。键名与标题都跟着证据改了，槽位不变。
         let pages: [[String]] = [
             ["lock", "unlock", "trunk_open", "window"],
-            ["horn", "ac_on", "ac_off", "hello"],
+            ["horn", "ac_on", "ac_off", "sentinel"],
         ]
         for keys in pages {
             let pageStack = LMUIKit.hStack(spacing: 8, alignment: .fill)
@@ -1427,7 +1430,9 @@ final class LMLoveCarViewController: LMBaseViewController {
         case "window", "window_micro", "window_half", "window_close": return .lmPurple
         case "ac_on":        return .lmAccent
         case "ac_off":       return .lmAccent2
-        case "hello":        return .lmBad
+        // ★ 2026-10-09：原来是 `hello`（上电）。cmdid 400 已证实是哨兵模式，
+        //   上电是 410 且无 payload 样本、未接。颜色槽位沿用。
+        case "sentinel":     return .lmBad
         default:             return .lmIndigo
         }
     }
@@ -1614,7 +1619,9 @@ final class LMLoveCarViewController: LMBaseViewController {
             return "将向车辆下发一次真实指令。"
         }
         if cmd.risk == .physical {
-            return "cmdid \(cmd.cmdid) 会真的动车门 / 后备箱 / 上电。"
+            // ★ 2026-10-09：cmdid 400 已证实是**哨兵模式**（`.low`），走不到这一支；
+            //   `.physical` 现在只剩真会开合钣金的动作。
+            return "cmdid \(cmd.cmdid) 会真的开合车门 / 后备箱 / 前备箱。"
                 + "请确认车辆周围安全、车门和后备箱附近没有人，再执行。"
         }
         return "cmdid \(cmd.cmdid)，只改状态（空调），不会夹到人。"

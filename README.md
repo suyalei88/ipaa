@@ -8,7 +8,7 @@
 
 **交付物 → [`ios/LeapmotorLite/`](ios/LeapmotorLite/)**（Swift / UIKit，iOS 17+，零第三方依赖）
 
-**当前版本：`1.1.6 (17)`** · 最近更新 2026-10-09 —— 修「驻车照片报下载失败」（车端 OSS 直链是明文 http，被 ATS 拦掉）与「健康充电读取开关状态没反应」（读取全程无反馈、异常被静默吞掉）（[版本历史](#六版本历史)）
+**当前版本：`1.1.7 (18)`** · 最近更新 2026-10-09 —— **反汇编解出官方 42 个 cmdid 全表**；**修 cmdid 400 的语义错误**（400 是哨兵模式，不是上电；上电是未接的 410）；新增**前备箱 131 开/关**、**充电功率（电压 × 电流）**显示、诊断页**「官方 cmdid 全集」可点击预填表**（[版本历史](#六版本历史)）
 
 ---
 
@@ -63,6 +63,79 @@
 chained-fixups 解码，不依赖 lief）。官方换版本时它会报红。
 
 完整记录 → [`evidence/charging/FINDINGS_CHARGING.md`](evidence/charging/FINDINGS_CHARGING.md)
+
+### ★ cmdid 全表（42 个，反汇编实证）
+
+官方主二进制 `leapmotorCarOwner`（204 MB、arm64、未加密）里有一个 **cmdid 分派函数**
+（`0x106C5EE00` 起），形态是 `cmp x23, #imm` + 分支构成的二分查找树；每个分支体里调一个
+`objc_msgSend$requestForXxx:` stub。把 stub 反解成 selector 名、再往前回溯出那个 `imm`，
+就得到完整的 cmdid → selector 映射：
+
+```bash
+python client/ios_all_cmdids.py evidence/leapmotor_main    # 16 秒，解出 42 个
+```
+
+**为什么这张表比 `rightList` 权威**：`rightList` 是服务端下发的**分享授权清单**（29 个），
+少了 15 个（111 / 180 / 240 / 270 / 280 / 300 / 350 / 380 / 390 / 391 / 400 / 501 / 600 / 700 / 710 / 720）。
+本表是从**客户端代码**里解出来的，是「App 能发什么」的完整集合。
+
+| cmdid | 官方 selector | 语义 | 有 state 样本 |
+|---|---|---|---|
+| 110 | `requestForCarLockControl:` | 车门锁 | ✅ |
+| 120 | `requestForCarTracking` | 鸣笛寻车 | ✅ |
+| 130 | `requestForTrunkControl:` | 后备箱 | ✅ |
+| 170 | `requestForAirConditionControl:content:` | 空调 | ✅ |
+| 230 | `requestForWindowControl:` | 车窗 | ✅ |
+| 400 | `requestForCarSentineMode:` | **哨兵模式**（不是上电） | ✅ |
+| 111 | `requestForSlideDoorControl:content:` | 侧滑门 | ❌ |
+| 131 | `requestForFrunkControl:` | **前备箱**（v1.1.7 已接） | ❌ |
+| 150 | `requestForOpenOn3ForAutoPark` | 泊车辅助上电 | ❌ |
+| 160 | `requestForStartPTC` | 电池预热 | ❌ |
+| 161 / 171 / 361 / 392 | `requestForAppointmentContrlCmdID:content:` | 预约充电（四值共用分支体） | ❌ |
+| 180 | `requestForSynPathContent:` | 同步导航路径 | ❌ |
+| 190 | `requestForChargingSetContent:` | 充电上限 | ❌ |
+| 192 | `requestForUnlockChargingGun` | 解锁充电枪 | ❌ |
+| 193 | `requestForBeginOrEndChargingWithContent:` | 立即 / 结束充电 | ❌ |
+| 240 | `requestForSunShadeControl:` | 遮阳帘 | ❌ |
+| 270 | `requestForMusicContent:` | 音乐 | ❌ |
+| 280 | `requestForSeatAdjustCtrlContent:` | 座椅调节 | ❌ |
+| 300 | `requestForSunroofControl:content:` | 天窗 | ❌ |
+| 301 | `requestForSeatHeatingContent:` | 座椅加热 | ❌ |
+| 320 | `requestForSteeringWheelHeatControl:` | 方向盘加热 | ❌ |
+| 350 | `requestForAutoParkProcessControl:` | 泊车辅助 | ❌ |
+| 360 | `requestForOneKeyPrepareCarContent:` | 一键备车 | ❌ |
+| 370 | `requestForSeatWindContent:` | 座椅通风 | ❌ |
+| 380 | `requestForFuelHeatControl:` | 燃油加热器 | ❌ |
+| 390 / 391 | `requestForDownloadFOTA:` / `requestForInstallFOTA:` | FOTA 下载 / 安装 | ❌ |
+| **410** | `requestForOpenOn3` | **上电**（无样本，故意不接） | ❌ |
+| 421 | `requestForLineCall` | 直进直出 | ❌ |
+| 430 | `requestResetBLEController` | 重置蓝牙钥匙 | ❌ |
+| 440 | `requestForMirrorHeatingControl:` | 后视镜加热 | ❌ |
+| 470 | `requestFor6SeatControl:` | 六座座椅控制 | ❌ |
+| 480 | `requestForChargingHealthControl:` | 健康充电 | ❌ |
+| 500 / 501 | `requestForFridgeControl:content:` / `…setCmdID:` | 车载冰箱（501 带子指令） | ❌ |
+| 600 | `requestForChildControl:content:` | 儿童锁 | ❌ |
+| 700 | `requestForOxygenControl:` | 森野氧舱 | ❌ |
+| 710 | `requestForWakeUpCarControl` | 唤醒车辆 | ❌ |
+| 720 | `requestForWelcomeControl:` | 上车迎宾 | ❌ |
+
+> ⚠️ **语义清楚 ≠ 可以直接下发**。`state` 的字段形状没有样本的，一律只进
+> App 内「设置 → 诊断 → 官方 cmdid 全集」（可点击预填 + payload 候选字段名提示），
+> 不放到车控页当正常按钮。
+
+### 官方本地化表（挖关键词的入口）
+
+官方 `leapmotorCarOwner.app/LMVLocalizedBundle.bundle/zh-Hans.lproj/Localizable.strings`
+是**二进制 plist**，669 条。它是「官方有哪些功能」最直接的一份清单：
+
+| 前缀 | 条数 | 内容 |
+|---|---|---|
+| `CarHome_*` | 101 | 爱车页全部功能名（`SentinelMode`=哨兵模式 / `CarStandby`=一键备车 / `Welcome`=上车迎宾 / `LineCall`=直进直出 / `Frunk`=前备箱 / `SkyLight`=天窗 / `Sunshade`=遮阳帘 / `Slide`=侧滑门 / `Oxygen`=森野氧舱 / `BatteryPreheate`=电池预热 / `CarPhoto`=驻车照片） |
+| `RemoteControl_*` | 54 | **全是「车辆行驶中/已启动，XX 无法操作」的前置校验文案** —— 反推出官方支持的全部远程功能 |
+| `ChargingCenter_*` | 41 | `Voltage`=电压 / `Current`=电流 / `Power`=功率 / `BindPile`=绑桩 / `OptimalLimit90` / `UnlockGun`=解锁充电枪 |
+| `LMV_AC_*` | — | `circleIn`=内循环 / `circleOut`=外循环 / `cold` / `hot` / `soonCold`=极速降温 / `soonHot`=极速升温 / `autoWind`=快速除味 / `timingACOut`=定时空调 |
+
+已提取为可读 JSON：`evidence/official/LMV_zh-Hans.json`。
 
 ---
 
@@ -214,22 +287,28 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 | 车控二进制响应（`LMVCloudBinaryPacket`） | ⚠️ 未解析（当前接口都返回 JSON） |
 | `cmdid 130`（后备箱） | ✅ **已实现**（车控页「打开/关闭后备箱」）。语义靠**双向实测**确认：发 `{"value":"true"}` → signal `1281` 0→1；发 `false` → 1→0 |
 | `cmdid 171` / `361` / `392`（预约族另三个码） | ⚠️ 反汇编确认它们与 161 共用分支体，但**没接** —— 用 161 就够了，多接只会增加不确定性 |
-| `cmdid 131` / `150` / `160` / `192` / `220` / `240` / `301` / `320` / `340` / `360` / `370` / `410` / `420` / `421` / `430` / `440` / `470` / `500` | ⚠️ 在 `rightList` 里（29 个），但**没有 payload 样本**，故意不接。车辆档案页把它们列成路线图（绿=已实现、灰=故意未做） |
+| `cmdid 131` / `150` / `160` / `192` / `220` / `240` / `301` / `320` / `340` / `360` / `370` / `410` / `420` / `421` / `430` / `440` / `470` / `500` | ⚠️ 在 `rightList` 里（29 个），但**没有 payload 样本**，故意不接。车辆档案页把它们列成路线图（绿=已实现、灰=故意未做）。**例外：131（前备箱）v1.1.7 已接** —— 见下 |
 
-### 本 App 已实现的 cmdid（10 个）
+### 本 App 已实现的 cmdid（11 个）
 
 | cmdid | 功能 | 证据来源 |
 |---|---|---|
 | 110 | 门锁（开/锁） | 抓包双向（signal `1298`） |
 | 120 | 鸣笛寻车 | 抓包 |
 | 130 | 后备箱（开/关） | 抓包双向（signal `1281`） |
+| 131 | 前备箱（开/关） | ⚠️ **反汇编 + 同族推断**（`requestForFrunkControl:`，与 130 形态一致），**无 payload 样本** |
 | 170 | 空调（开/关/auto） | 抓包双向（signal `1938`） |
 | 230 | 车窗（开度 0/2/5） | 抓包双向（signal `1693~1696` 四窗同动） |
-| 400 | 上电 | 抓包（走 `moduleRights`，不在 `rightList`） |
+| 400 | **哨兵模式**（★ 原写「上电」，v1.1.7 纠正） | 抓包（`{"operation":"on"}`）+ 反汇编 `requestForCarSentineMode:` |
 | **190** | **充电上限** | **反汇编**（无抓包样本） |
 | **193** | **立即 / 结束充电** | **反汇编**（无抓包样本） |
 | **480** | **健康充电开关** | **反汇编** + 查询接口实测 |
 | **161** | **预约充电** | **反汇编** + `config["3"]` 字段名实测 |
+
+> ★ **上电是 410**（`requestForOpenOn3`），不是 400。410 没有 payload 样本，
+> 故意不接 —— 上电会真的让车「活过来」，猜错代价太大。
+> 400 与 410 的区分来自 v1.1.7 对官方主二进制 cmdid 分派器的**全量反汇编**
+> （`client/ios_all_cmdids.py`，一次解出 **42 个** cmdid → selector）。
 
 ### state 字段的分级证据（不混为一谈）
 
@@ -269,6 +348,7 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 
 | 版本 | tag | 内容 |
 |---|---|---|
+| **1.1.7 (18)** | `2026-10-09.11` | **反汇编解出官方 cmdid 全表（42 个）**：把主二进制里那个 `cmp x23, #imm` 二分派发器整段扫完，反解 `__objc_stubs` 得到 cmdid → 官方 selector 映射（`client/ios_all_cmdids.py`，16 秒跑完，原始输出落盘 `evidence/official/cmdid_table.txt`）。**据此修一个语义错误**：`400` 是**哨兵模式**（`requestForCarSentineMode:`），不是「上电」——原代码 `"hello": Command(cmdid: 400, title: "上电")` 是错的，改成 `sentinel` / 「哨兵模式」/ `risk: .low`；**上电是 410**（`requestForOpenOn3`），无 payload 样本故不接。新增**前备箱 131 开/关**（`requestForFrunkControl:`，payload 按 130 同族推断）。新增**充电功率**显示 —— 依据是官方本地化表里充电中心的 `ChargingCnter_Voltage / _Current / _Power` 三键；`packVoltageGuessV` 改名 `chargeVoltageV`，新增派生值 `chargePowerKW = 1177 × 1178 / 1000`（≈6.19 kW，与 7 kW 交流慢充吻合）。诊断页新增**「官方 cmdid 全集」卡**（42 行可点击预填 + payload 候选字段名提示）。顺带校正 Python 侦察端的 `CTRL_COMMANDS`（原来 120 标后备箱、170 标大灯、230 标空调、400 标上电，全错）与 `app/index.html` 的按钮。 |
 | **1.1.6 (17)** | `2026-10-09.10` | **修两个用户报的 bug**：①「驻车照片获取报下载失败」—— 车端返回的 OSS 直链**是明文 `http://`**，而 `NSAllowsArbitraryLoads=false` 时 ATS 会直接掐掉这条请求；修法是给 `aliyuncs.com` 开一条**窄口径**明文例外 + 代码优先把 scheme 换成 https 再试（OSS 支持 https，且 scheme 不参与签名），失败回退原地址，并把真实原因显示出来。②「健康充电读取开关状态没反应」—— `refreshHealthyCharging()` 把异常整个吞掉（`catch { return nil }`），且成功时值没变界面也不会动，点下去毫无反馈；现在把「读取中 / 服务端原始值 + 读取时间 / 出错原因」都写进卡片，并在动作前后各显式 `render()` 一次。
 | **1.1.5 (16)** | `2026-10-09.9` | **定位与驻车照片**：定位页撤掉「当前位置（IP 归属地）」卡，改成**本机 GPS 位置**与**车辆位置**并列显示；新增**驻车照片**（`chassis/query` → `data.fileUrl`，地下停车场俯视哨兵照，点缩略图可全屏看车位号）；修**健康充电显示错误**（根因是 `deviceId` 每次启动都随机生成，而 `queryPushState` 按 `carvin + deviceId` 查设备状态 —— 服务端把本机当陌生设备，一律回 `false`）；车控页补上右上角感叹号的图例说明 |
 | **1.1.4 (15)** | `2026-10-09.8` | **视觉重设计「碳黑霓虹」**：近黑底 + 实心深灰卡 + 发丝描边 + 等宽大数字 + 单一薄荷霓虹点缀；全 App **锁定深色外观**；爱车页完整落地（等宽大数字 / 圆角方形快捷钮 / SOC 渐变辉光 / 车底辉光），其余页随主题层自动换肤；新增 lint `R18`/`R19` |
@@ -370,6 +450,9 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `client/test_coord_vectors.py` — ★ 坐标系换算回归（独立实现比对 + 回头读 Swift 源码文本）
 - `client/test_refresh_contract.py` — ★ 契约测试（续期 / 3D / 爱车页 / 定位 / 充电中心）
 - `client/ios_charge_cmdid.py` — ★ 充电 cmdid 可复现脚本（纯 stdlib 解 chained fixups）
+- `client/ios_all_cmdids.py` — ★ v1.1.7：**全量** cmdid 反汇编脚本（一次解出 42 个 cmdid → selector，16 秒）
+- `evidence/official/cmdid_table.txt` — 42 个 cmdid 的原始反汇编输出
+- `evidence/official/LMV_zh-Hans.json` — 官方 669 条中文本地化表（挖关键词的入口）
 - `client/ios_sym.py` / `ios_cfref.py` / `ios_clsmeth.py` / `ios_scan_login.py` — Mach-O / ObjC 逆向工具
 - `client/objc_parse.py` / `macho_util.py` / `macho.py` — Mach-O / ObjC 基础解析
 - `ios/tools/macho_xref.py` / `macho_xref_cfstring.py` — 字符串交叉引用查找

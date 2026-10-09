@@ -714,7 +714,11 @@ final class LMControlPanelViewController: LMBaseViewController {
         if let cmd = LMEndpoints.commands[key] {
             title = "确认执行「\(cmd.title)」？"
             if cmd.risk == .physical {
-                message = "cmdid \(cmd.cmdid) 会真的动车门 / 后备箱 / 上电。"
+                // ★ 2026-10-09：原来这里写「会真的动车门 / 后备箱 / 上电」——
+                //   反汇编证实 cmdid 400 是**哨兵模式**（不是上电），而哨兵
+                //   已经改成 `.low` 风险走不到这一支；现在 `.physical` 里只剩
+                //   门锁 / 后备箱 / 前备箱这些真会开合钣金的动作。
+                message = "cmdid \(cmd.cmdid) 会真的开合车门 / 后备箱 / 前备箱。"
                     + "请确认车辆周围安全、车门和后备箱附近没有人，再执行。"
             } else {
                 message = "cmdid \(cmd.cmdid)，只改状态（空调开关），不会夹到人。"
@@ -771,7 +775,7 @@ final class LMControlPanelViewController: LMBaseViewController {
 
     // MARK: - 业务链路（一个都不能少）
 
-    /// 通用车控：`client.control(key)`（门锁 / 后备箱 / 鸣笛 / 空调开关 / 上电）
+    /// 通用车控：`client.control(key)`（门锁 / 后备箱 / 前备箱 / 鸣笛 / 空调开关 / 哨兵模式）
     private func run(key: String) async {
         pendingAction = key
         render()
@@ -870,16 +874,23 @@ final class LMControlPanelViewController: LMBaseViewController {
         //   那个标记是自己加的物理动作警示（`LMControlActionTile.warnView`），
         //   含义只写在代码注释里，界面上没有任何解释，等于只有开发者看得懂。
         //   这里补一句图例。
+        // ★ 2026-10-09 二次修订：脚注里的「上电 400」是错的。反汇编官方主二进制
+        //   的 cmdid 分派器证实 `400 = requestForCarSentineMode:`（哨兵模式），
+        //   真正的上电是 `410 = requestForOpenOn3`，而 410 没有 payload 样本、没接。
+        //   所以这里改成「哨兵模式 400」，并把新接的前备箱 131 列进未验证清单。
         "⚠️ 右上角带感叹号的按钮 = 会让车**真的动起来**的操作"
-        + "（开合车门 / 后备箱 / 启动上电），按之前先确认周围没人、没有障碍物；"
-        + "不带感叹号的是只改状态的（空调、车窗、充电上限这类）。\n"
-        + "指令下发后会轮询结果。部分功能需要车辆处于对应状态（例如上电前要先解锁）。"
+        + "（开合车门 / 后备箱 / 前备箱），按之前先确认周围没人、没有障碍物；"
+        + "不带感叹号的是只改状态的（空调、车窗、充电上限、哨兵模式这类）。\n"
+        + "指令下发后会轮询结果。部分功能需要车辆处于对应状态（例如开后备箱前要先解锁）。"
         + "同一账号在官方 App 与本 App 之间不要频繁交叉操作。\n"
-        + "已抓包双向验证的：门锁 110、后备箱 130、鸣笛 120、空调开关 170、车窗 230、上电 400。\n"
-        + "未验证的只有两处：① 空调风量 / 温度的 payload 组合（字段名和档位范围都有据，"
+        + "已抓包双向验证的：门锁 110、后备箱 130、鸣笛 120、空调开关 170、车窗 230、哨兵模式 400。\n"
+        + "未验证的有三处：① 空调风量 / 温度的 payload 组合（字段名和档位范围都有据，"
         + "但没人调过，所以没有样本）；② 车窗的「2 = 微开 / 5 = 半开」哪个是哪个"
-        + "（两个值都录到了，但没记录当时按的是哪个按钮）。"
-        + "这两处试的时候留意车有没有真的响应。"
+        + "（两个值都录到了，但没记录当时按的是哪个按钮）；"
+        + "③ 前备箱 131 —— 官方 selector（`requestForFrunkControl:`）与后备箱 130 同族，"
+        + "payload 按同族推断为 `{\"value\":\"true\"|\"false\"}`，但没有抓包样本。"
+        + "这三处试的时候留意车有没有真的响应。"
+        + "「设置 → 诊断」里有官方 42 个 cmdid 的全集表，可以逐个试。"
     }
 }
 

@@ -53,14 +53,17 @@
     <div class="grid">
       <button class="btn danger" onclick="ctrl('unlock')">解锁</button>
       <button class="btn acc" onclick="ctrl('lock')">锁车</button>
-      <button class="btn" onclick="ctrl('find')">寻车</button>
-      <button class="btn" onclick="ctrl('trunk')">后备箱</button>
-      <button class="btn" onclick="ctrl('climate',{on:true})">开空调</button>
-      <button class="btn" onclick="ctrl('climate',{on:false})">关空调</button>
-      <button class="btn" onclick="ctrl('window',{open:true})">开车窗</button>
-      <button class="btn" onclick="ctrl('window',{open:false})">关车窗</button>
-      <button class="btn" onclick="ctrl('charge',{start:true})">开始充电</button>
-      <button class="btn" onclick="ctrl('charge',{start:false})">停止充电</button>
+      <button class="btn" onclick="ctrl('horn')">鸣笛寻车</button>
+      <button class="btn" onclick="ctrl('trunk_open')">开后备箱</button>
+      <button class="btn" onclick="ctrl('trunk_close')">关后备箱</button>
+      <button class="btn" onclick="ctrl('frunk_open')">开前备箱</button>
+      <button class="btn" onclick="ctrl('frunk_close')">关前备箱</button>
+      <button class="btn" onclick="ctrl('ac_auto')">开空调</button>
+      <button class="btn" onclick="ctrl('ac_off')">关空调</button>
+      <button class="btn" onclick="ctrl('window_open')">开车窗</button>
+      <button class="btn" onclick="ctrl('window_half')">车窗半开</button>
+      <button class="btn" onclick="ctrl('window_close')">关车窗</button>
+      <button class="btn" onclick="ctrl('sentinel')">哨兵模式</button>
     </div>
   </div>
 

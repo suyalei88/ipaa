@@ -175,15 +175,18 @@ final class LMChargeViewController: LMBaseViewController {
         tint: .lmPurple, sub: "3260 ÷ SOC 反推")
     private let rangeHoursNote = UILabel()
 
-    // MARK: - 控件：充电判据证据 / 待确认信号
+    // MARK: - 控件：充电判据证据 / 充电功率
 
     private let evidenceCard = LMCardView(padding: 16, spacing: 10)
     private let evidenceStack = UIStackView()
     private let guessCard = LMCardView(padding: 16, spacing: 10)
-    private let guess1177Row = LMChargeKVRow(key: "1177")
-    private let guess1177Note = UILabel()
-    private let guess1178Row = LMChargeKVRow(key: "1178")
-    private let guess1178Note = UILabel()
+    /// ★ 2026-10-09：这张卡从「待确认的信号」升级成「充电功率」——
+    ///   官方本地化表里有 `ChargingCnter_Voltage / _Current / _Power`
+    ///   三个键，说明官方充电中心确实显示电压 / 电流 / 功率。
+    private let powerRow = LMChargeKVRow(key: "充电功率")
+    private let voltageRow = LMChargeKVRow(key: "电压（1177）")
+    private let currentRow = LMChargeKVRow(key: "电流（1178）")
+    private let powerNote = UILabel()
 
     // MARK: - 导航栏
 
@@ -668,33 +671,34 @@ final class LMChargeViewController: LMBaseViewController {
     // MARK: - 待确认信号
 
     private func buildGuessCard() {
-        let icon = UIImageView(image: UIImage(systemName: "questionmark.diamond.fill"))
-        icon.tintColor = .lmWarn
+        let icon = UIImageView(image: UIImage(systemName: "bolt.badge.automatic.fill"))
+        icon.tintColor = .lmAccent
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 12)
         icon.setContentHuggingPriority(.required, for: .horizontal)
-        let title = LMUIKit.label("待确认的信号（别当官方数字用）", size: 13, weight: .semibold)
+        let title = LMUIKit.label("充电功率（电压 × 电流）", size: 13, weight: .semibold)
         let head = LMUIKit.hStack(spacing: 6)
         head.addArrangedSubview(icon)
         head.addArrangedSubview(title)
         guessCard.contentStack.addArrangedSubview(head)
 
-        guess1177Note.text = "★ 之前标成「充电功率 ×100 W」，已被实测推翻："
-            + "没充电时它是 732.7，而功率在没充电时必须为 0。"
-            + "充电时 736.7、高出 4 V，符合「充电时母线电压抬升」，"
-            + "所以它是电压类量。具体是电池包电压还是充电机输出电压仍未定。"
-        guess1178Note.text = "原始值是负的（−8.3 ~ −8.4），负号含义未定；未充电时正好是 0.0。"
-            + "已在「充电状态判据」里当电流证据用。"
-        for l in [guess1177Note, guess1178Note] {
-            l.font = .systemFont(ofSize: 11)
-            l.textColor = .secondaryLabel
-            l.numberOfLines = 0
-        }
-        guessCard.contentStack.addArrangedSubview(guess1177Row)
-        guessCard.contentStack.addArrangedSubview(guess1177Note)
-        guessCard.contentStack.addArrangedSubview(guess1178Row)
-        guessCard.contentStack.addArrangedSubview(guess1178Note)
+        // ★ 2026-10-09：证据升级 —— 以前这张卡叫「待确认的信号（别当官方数字用）」，
+        //   因为 1177 只知道是「电压类量」、1178 只知道是「电流类量」。
+        //   现在官方本地化表给出了充电中心的三个键，电压/电流这对配对就立住了。
+        powerNote.text = "官方充电中心有「电压 / 电流 / 功率」三项"
+            + "（本地化表 ChargingCnter_Voltage / _Current / _Power）。"
+            + "车端上报的信号里只有 1177（电压）与 1178（电流）这一对量纲自洽，"
+            + "功率按「电压 × 电流」现算 —— 它是**派生值**，不是车端直接给的数字。"
+        powerNote.font = .systemFont(ofSize: 11)
+        powerNote.textColor = .secondaryLabel
+        powerNote.numberOfLines = 0
+
+        guessCard.contentStack.addArrangedSubview(powerRow)
+        guessCard.contentStack.addArrangedSubview(voltageRow)
+        guessCard.contentStack.addArrangedSubview(currentRow)
+        guessCard.contentStack.addArrangedSubview(powerNote)
         guessCard.contentStack.addArrangedSubview(LMUIKit.label(
-            "剩下没定的是 1177 的具体含义。「设置 → 诊断 → 信号浏览器」可以抓两次快照做对比。",
+            "「设置 → 诊断 → 信号浏览器」可以抓两次快照做对比，"
+            + "验证 1177 是否随充电抬升、1178 是否随插枪跳到非零。",
             size: 11, color: .tertiaryLabel))
     }
 
@@ -1005,22 +1009,32 @@ final class LMChargeViewController: LMBaseViewController {
     }
 
     private func renderGuess() {
-        if let v = client.packVoltageGuessV {
-            guess1177Row.isHidden = false
-            guess1177Note.isHidden = false
-            guess1177Row.update(String(format: "%.1f V", v))
+        let v = client.chargeVoltageV
+        let a = client.chargeCurrentA
+        let p = client.chargePowerKW
+
+        // 功率在最上面（用户最关心的那个数），下面两行是它的两个因子。
+        if let p {
+            powerRow.isHidden = false
+            powerRow.update(String(format: "%.2f kW", p))
         } else {
-            guess1177Row.isHidden = true
-            guess1177Note.isHidden = true
+            powerRow.isHidden = true
         }
-        if let a = client.chargeCurrentA {
-            guess1178Row.isHidden = false
-            guess1178Note.isHidden = false
-            guess1178Row.update(String(format: "%.2f A", a))
+        if let v {
+            voltageRow.isHidden = false
+            voltageRow.update(String(format: "%.1f V", v))
         } else {
-            guess1178Row.isHidden = true
-            guess1178Note.isHidden = true
+            voltageRow.isHidden = true
         }
+        if let a {
+            currentRow.isHidden = false
+            currentRow.update(String(format: "%.2f A", a))
+        } else {
+            currentRow.isHidden = true
+        }
+        // 两个信号都没有时，整张卡只剩标题 + 说明，那就把说明也收起来，
+        // 免得用户对着一堆读不到的值发愣。
+        powerNote.isHidden = (v == nil && a == nil)
     }
 
     // MARK: - 动作（全部走原页那套 client.xxx，参数一字不改）

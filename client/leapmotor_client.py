@@ -273,22 +273,36 @@ class Endpoints:
     mqtt_token: str = "/mqtt/token/applyToken"                               # mqtt-center.leapmotor.cn
 
 
-# 车控命令:  cmdid -> (state 模板, 说明)
-#   110 车门锁       {"value":"lock"|"unlock"}      [已确认]
-#   120 后备箱/寻车   {"value":"true"}               [抓包观察]
-#   170 大灯         {"operate":"off"|"auto"}        [抓包观察]
-#   230 空调         {"value":"0"|"2"|"5"}           [抓包观察]
-#   400 上电/hello   {"operation":"on"}              [已确认]
+# 车控命令:  key -> (cmdid, state 模板)
+#
+# ★ 2026-10-09 全面校正。原表多处 cmdid 语义是错的 —— 120 不是「后备箱/寻车」、
+#   170 不是「大灯」、230 不是「空调」、400 不是「上电」。现按**反汇编官方主二进制的
+#   cmdid 分派器**（复现：`python client/ios_all_cmdids.py evidence/leapmotor_main`）
+#   与抓包双向验证的结果改正：
+#
+#   110 车门锁     {"value":"lock"|"unlock"}    [抓包双向验证]
+#   120 鸣笛寻车   {"value":"true"}             [抓包验证]
+#   130 后备箱     {"value":"true"|"false"}     [抓包双向验证]
+#   131 前备箱     {"value":"true"|"false"}     [同族推断，**无样本**]
+#   170 空调       {"operate":"off"|"auto"}     [抓包验证]
+#   230 车窗       {"value":"0"|"2"|"5"}        [抓包验证]
+#   400 哨兵模式   {"operation":"on"}           [抓包验证]  ← 不是上电
+#
+#   ⚠️ 410 才是上电（`requestForOpenOn3`），但它**没有 payload 样本**，故意不接。
 CTRL_COMMANDS = {
     "lock":          (110, {"value": "lock"}),
     "unlock":        (110, {"value": "unlock"}),
-    "trunk":         (120, {"value": "true"}),
-    "light_off":     (170, {"operate": "off"}),
-    "light_auto":    (170, {"operate": "auto"}),
-    "hvac_off":      (230, {"value": "0"}),
-    "hvac_low":      (230, {"value": "2"}),
-    "hvac_high":     (230, {"value": "5"}),
-    "hello":         (400, {"operation": "on"}),
+    "horn":          (120, {"value": "true"}),
+    "trunk_open":    (130, {"value": "true"}),
+    "trunk_close":   (130, {"value": "false"}),
+    "frunk_open":    (131, {"value": "true"}),
+    "frunk_close":   (131, {"value": "false"}),
+    "ac_off":        (170, {"operate": "off"}),
+    "ac_auto":       (170, {"operate": "auto"}),
+    "window_close":  (230, {"value": "0"}),
+    "window_half":   (230, {"value": "2"}),
+    "window_open":   (230, {"value": "5"}),
+    "sentinel":      (400, {"operation": "on"}),
 }
 
 
@@ -525,10 +539,14 @@ class LeapmotorClient:
         return False
 
     # 便捷方法
-    def lock(self, vin: str, **kw):    return self.ctl("lock", vin, **kw)
-    def unlock(self, vin: str, **kw):  return self.ctl("unlock", vin, **kw)
-    def trunk(self, vin: str, **kw):   return self.ctl("trunk", vin, **kw)
-    def hello(self, vin: str, **kw):   return self.ctl("hello", vin, **kw)
+    def lock(self, vin: str, **kw):         return self.ctl("lock", vin, **kw)
+    def unlock(self, vin: str, **kw):       return self.ctl("unlock", vin, **kw)
+    def horn(self, vin: str, **kw):         return self.ctl("horn", vin, **kw)
+    def trunk_open(self, vin: str, **kw):   return self.ctl("trunk_open", vin, **kw)
+    def trunk_close(self, vin: str, **kw):  return self.ctl("trunk_close", vin, **kw)
+    def frunk_open(self, vin: str, **kw):   return self.ctl("frunk_open", vin, **kw)
+    def frunk_close(self, vin: str, **kw):  return self.ctl("frunk_close", vin, **kw)
+    def sentinel(self, vin: str, **kw):     return self.ctl("sentinel", vin, **kw)
 
 
 def _try_b64(txt: str):

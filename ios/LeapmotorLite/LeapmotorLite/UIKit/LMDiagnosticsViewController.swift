@@ -41,6 +41,10 @@ final class LMDiagnosticsViewController: LMBaseViewController {
 
     private var copied = false
 
+    /// 本页的滚动容器。只在 `buildUI()` 里赋一次，用于「点 cmdid 全集某一行 →
+    /// 把页面滚回上面的输入框」。
+    private weak var pageScroll: UIScrollView?
+
     /// 锁定期倒计时用的「当前时刻」。原页靠 `.lmClock` 每 0.5 秒推一次 ——
     /// ★ 没有它，`下发` 按钮的 disabled 条件（依赖 `isControlLocked(at: now)`）
     ///   会冻在进入页面那一刻：锁定期到期后按钮永远不重新启用。
@@ -247,6 +251,28 @@ final class LMDiagnosticsViewController: LMBaseViewController {
     另：这一页的请求同样算「操作密码」的尝试次数，密码错 3 次会被服务端锁 5 分钟。
     """)
 
+    // MARK: - 控件：官方 cmdid 全集
+
+    /// ★ 2026-10-09 新增。官方主二进制的 cmdid 分派器被反汇编解出 **42 个**
+    ///   cmdid → selector 映射（`client/ios_all_cmdids.py`），这张卡把它们全部
+    ///   列出来，点一行就把 cmdid 填进上面的输入框 —— 这样「官方有哪些远程指令」
+    ///   这件事在 App 里自己就能查，不用再翻证据文件。
+    private let cmdidHeader = LMSectionHeaderLabel("官方 cmdid 全集（42 个）")
+    private let cmdidCard = LMCardView(spacing: 8)
+    private let cmdidStack = LMUIKit.vStack(spacing: 6)
+    private let cmdidFooter = LMUIKit.footnote("""
+    这张表是从**官方客户端代码**里解出来的（反汇编 cmdid 分派器，复现命令见
+    README），所以它是「官方 App 能发什么」的完整集合，比服务端下发的
+    分享授权清单（`rightList`，只有 29 个）更全。
+
+    · 「有样本」= 抓包里见过这条 cmdid 的 state，语义 + 字段形状都实锤。
+    · 「无样本」= selector 名确证、**语义清楚**，但 state 的字段形状没有样本。
+      下发前请自己想清楚 payload —— 下面的「候选字段名」是官方二进制里
+    车控 payload 键扎堆那一段挖出来的，可以当线索，但**键名 ≠ 知道取值**。
+
+    ⚠️ 点一行只是**填数字**，不会发送。发送要点上面的「下发这条指令」并二次确认。
+    """)
+
     // MARK: - 控件：复制
 
     private let copyCard = LMCardView()
@@ -261,7 +287,8 @@ final class LMDiagnosticsViewController: LMBaseViewController {
         title = "车控体检"
         navigationItem.largeTitleDisplayMode = .always
 
-        let (_, stack) = makeScrollStack(spacing: 18, inset: 16)
+        let (scroll, stack) = makeScrollStack(spacing: 18, inset: 16)
+        pageScroll = scroll
 
         buildPasswordSection()
         stack.addArrangedSubview(passwordHeader)
@@ -295,6 +322,11 @@ final class LMDiagnosticsViewController: LMBaseViewController {
         stack.addArrangedSubview(rawHeader)
         stack.addArrangedSubview(rawCard)
         stack.addArrangedSubview(rawFooter)
+
+        buildCmdidSection()
+        stack.addArrangedSubview(cmdidHeader)
+        stack.addArrangedSubview(cmdidCard)
+        stack.addArrangedSubview(cmdidFooter)
 
         buildCopySection()
         stack.addArrangedSubview(copyCard)
@@ -474,6 +506,33 @@ final class LMDiagnosticsViewController: LMBaseViewController {
         rawResultLabel.numberOfLines = 0
         enableCopy(rawResultLabel)
         rawCard.contentStack.addArrangedSubview(rawResultLabel)
+    }
+
+    /// 官方 cmdid 全集：42 行可点击（点一下把 cmdid 填回上面的输入框）。
+    ///
+    /// ★ 内容**完全是静态的**（`LMEndpoints.remoteCmdids` 是编译期常量），
+    ///   所以这里 `addArrangedSubview` 一次性搭完，`render()` 里一个字都不用改 ——
+    ///   幂等渲染的铁律是「`render()` 不 `addSubview`」，静态内容不进 `render()`。
+    private func buildCmdidSection() {
+        cmdidCard.contentStack.addArrangedSubview(LMUIKit.label(
+            "点一行 = 把 cmdid 填进上面的输入框（state 要自己写，不会自动发送）。",
+            size: 11, color: .secondaryLabel))
+
+        for item in LMEndpoints.remoteCmdids {
+            let row = LMDiagCmdidRow(item: item)
+            row.addTarget(self, action: #selector(cmdidRowTapped(_:)), for: .touchUpInside)
+            cmdidStack.addArrangedSubview(row)
+        }
+        cmdidCard.contentStack.addArrangedSubview(cmdidStack)
+
+        cmdidCard.contentStack.addArrangedSubview(LMUIKit.label(
+            "payload 候选字段名（官方二进制里车控键扎堆的那一段）",
+            size: 11, color: .secondaryLabel))
+        let keys = LMUIKit.label(
+            LMEndpoints.remotePayloadKeyHints.joined(separator: " · "),
+            size: 11, color: .lmText2)
+        enableCopy(keys)
+        cmdidCard.contentStack.addArrangedSubview(keys)
     }
 
     private func buildCopySection() {
@@ -745,6 +804,27 @@ final class LMDiagnosticsViewController: LMBaseViewController {
         rawState = sender.stateText
         rawCmdField.text = rawCmdId
         rawStateField.text = rawState
+        scrollToRawCard()
+    }
+
+    /// cmdid 全集里点一行：只填 cmdid，**不填 state**（state 没有样本，猜不得）。
+    /// 填完把页面滚回输入框，否则用户点了没反馈（输入框在屏幕上方之外）。
+    @objc private func cmdidRowTapped(_ sender: LMDiagCmdidRow) {
+        rawCmdId = String(sender.cmdid)
+        rawState = ""
+        rawCmdField.text = rawCmdId
+        rawStateField.text = rawState
+        scrollToRawCard()
+    }
+
+    /// 把「未验证 cmdid」输入卡滚进可视区。
+    ///
+    /// `convert(_:to:)` 转成 ScrollView 的 bounds 坐标系（已含 contentOffset），
+    /// 正是 `scrollRectToVisible` 期望的坐标系。
+    private func scrollToRawCard() {
+        guard let scroll = pageScroll else { return }
+        let rect = rawCard.convert(rawCard.bounds, to: scroll)
+        scroll.scrollRectToVisible(rect.insetBy(dx: 0, dy: -16), animated: true)
     }
 
     @objc private func sendRawTapped() {
@@ -1474,6 +1554,98 @@ private final class LMDiagUnverifiedRow: UIControl {
 
     required init?(coder: NSCoder) {
         fatalError("LMDiagUnverifiedRow 只能代码创建")
+    }
+
+    override var isHighlighted: Bool {
+        didSet { alpha = isHighlighted ? 0.55 : 1 }
+    }
+}
+
+// MARK: - 一行「官方 cmdid」（点一下填入）
+
+/// cmdid + hex + 语义 + 官方 selector + 有无样本徽章。
+/// 数据源是 `LMEndpoints.remoteCmdids`（反汇编解出的 42 条全表）。
+///
+/// ★ 属性不能叫 `state` / `frame` 这类 `UIControl` 保留名（R17）——
+///   父类有 `state: UIControl.State`，同名同类型不同会直接编译失败。
+private final class LMDiagCmdidRow: UIControl {
+
+    let cmdid: Int
+
+    init(item: LMEndpoints.RemoteCmdid) {
+        self.cmdid = item.cmdid
+        super.init(frame: .zero)
+
+        // ── 第一行：cmdid + hex + 中文语义 + 样本徽章
+        let cmdLabel = UILabel()
+        cmdLabel.text = "\(item.cmdid)"
+        cmdLabel.font = .monospacedSystemFont(ofSize: 13, weight: .semibold)
+        cmdLabel.textColor = .lmText
+        cmdLabel.setContentHuggingPriority(.required, for: .horizontal)
+        cmdLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let hexLabel = UILabel()
+        hexLabel.text = item.hex
+        hexLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        hexLabel.textColor = .tertiaryLabel
+        hexLabel.setContentHuggingPriority(.required, for: .horizontal)
+        hexLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let nameLabel = UILabel()
+        nameLabel.text = item.name
+        nameLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        nameLabel.textColor = .lmText
+        nameLabel.lineBreakMode = .byTruncatingTail
+
+        let badge = UILabel()
+        badge.text = item.hasPayloadSample ? "有样本" : "无样本"
+        badge.font = .systemFont(ofSize: 10, weight: .medium)
+        badge.textColor = item.hasPayloadSample ? .lmGood : .secondaryLabel
+        badge.setContentHuggingPriority(.required, for: .horizontal)
+        badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let top = LMUIKit.hStack(spacing: 6)
+        top.addArrangedSubview(cmdLabel)
+        top.addArrangedSubview(hexLabel)
+        top.addArrangedSubview(nameLabel)
+        top.addArrangedSubview(LMUIKit.spacer())
+        top.addArrangedSubview(badge)
+
+        // ── 第二行：官方 selector（等宽小字，前缀就是语义，尾巴截断没关系）
+        let selLabel = UILabel()
+        selLabel.text = item.selector
+        selLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        selLabel.textColor = .secondaryLabel
+        selLabel.numberOfLines = 1
+        selLabel.lineBreakMode = .byTruncatingTail
+
+        let fillLabel = UILabel()
+        fillLabel.text = "填入 →"
+        fillLabel.font = .systemFont(ofSize: 10)
+        fillLabel.textColor = .lmAccent
+        fillLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        let bottom = LMUIKit.hStack(spacing: 6)
+        bottom.addArrangedSubview(selLabel)
+        bottom.addArrangedSubview(fillLabel)
+
+        let col = LMUIKit.vStack(spacing: 2)
+        col.addArrangedSubview(top)
+        col.addArrangedSubview(bottom)
+        col.isUserInteractionEnabled = false
+        col.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(col)
+
+        NSLayoutConstraint.activate([
+            col.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            col.leadingAnchor.constraint(equalTo: leadingAnchor),
+            col.trailingAnchor.constraint(equalTo: trailingAnchor),
+            col.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("LMDiagCmdidRow 只能代码创建")
     }
 
     override var isHighlighted: Bool {

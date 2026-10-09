@@ -772,8 +772,12 @@ final class LMVehicleProfileViewController: LMBaseViewController {
         row.addArrangedSubview(icon)
         row.addArrangedSubview(name)
         if id == 400 {
+            // ★ 2026-10-09 更正：原来这里写「= 上电，本 App 已实现」——**错了**。
+            //   `moduleRights` 里的 400 是**模块级授权编号**，跟 cmdid 400 只是
+            //   数字撞车；cmdid 400 反汇编证实是**哨兵模式**（上电是 410，未接）。
+            //   两个命名空间互不相干，所以这里不再硬套任何功能名。
             row.addArrangedSubview(
-                LMUIKit.label("= 上电，本 App 已实现", size: 11, color: .lmGood))
+                LMUIKit.label("模块级授权编号（与同名 cmdid 无关）", size: 11, color: .secondaryLabel))
         }
         row.addArrangedSubview(LMUIKit.spacer())
         return row

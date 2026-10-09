@@ -283,10 +283,12 @@ enum LMEndpoints {
 
         enum Group: String, CaseIterable {
             case lock    = "门锁"
-            case trunk   = "后备箱 / 寻车"
+            case trunk   = "后备箱 / 前备箱 / 寻车"
             case window  = "车窗"
             case climate = "空调"
-            case power   = "电源"
+            /// ★ 2026-10-09：原来叫「电源」，但 400 被证明是哨兵模式、不是上电，
+            ///   组里现在只有哨兵这一项，名字跟着证据改。
+            case power   = "电源 / 哨兵"
         }
 
         enum Risk: Equatable {
@@ -322,13 +324,16 @@ enum LMEndpoints {
     ///   110 车门锁   {"value":"lock"|"unlock"}                  ✅ 抓包双向
     ///   120 鸣笛寻车 {"value":"true"}                           ✅ bundle + 抓包
     ///   130 后备箱   {"value":"true"|"false"}                   ✅ 抓包双向
+    ///   131 前备箱   {"value":"true"|"false"}                   🟡 同族推断（selector 已证）
     ///   170 空调     {"operate":"auto"|"off"}                   ✅ 抓包双向
     ///                {"operate":"manual","windlevel":N,"temperature":T}  🟡 键有证据、组合无样本
     ///   230 车窗     {"value":"0"|"2"|"5"}                       ✅ 抓包（0=关，2/5=两个开度）
-    ///   400 上电     {"operation":"on"}                          ✅ 抓包
+    ///   400 哨兵模式 {"operation":"on"}                          ✅ 抓包（★ 2026-10-09 语义改正）
     ///
-    /// ⚠️ 已知但**故意不放进 UI** 的：`cmdid 130` 之外的兄弟码无 payload 证据，
-    ///    对一台真车下发「不知道干什么」的指令是不负责任的。
+    /// ⚠️ 已知但**故意不放进 UI** 的：除 131 外，其余兄弟码的 payload **形状**无证据
+    ///    （cmdid 本身与语义已由 `RemoteCmdid` 表 + 反汇编确证，缺的只是 state 字段）。
+    ///    对一台真车下发「语义已知但 payload 靠猜」的指令仍是不负责任的 ——
+    ///    这类命令统一放进诊断页的「cmdid 全集」卡，由用户自己决定要不要试。
     static let commands: [String: Command] = [
         "lock":         Command(cmdid: 110, state: ["value": "lock"],   title: "上锁",
                                 systemImage: "lock.fill",               group: .lock, risk: .physical),
@@ -338,6 +343,17 @@ enum LMEndpoints {
         "trunk_open":   Command(cmdid: 130, state: ["value": "true"],   title: "打开后备箱",
                                 systemImage: "shippingbox.fill",        group: .trunk, risk: .physical),
         "trunk_close":  Command(cmdid: 130, state: ["value": "false"],  title: "关闭后备箱",
+                                systemImage: "shippingbox",             group: .trunk, risk: .physical),
+        // ★ 2026-10-09 新增：前备箱（cmdid 131 = 官方 `requestForFrunkControl:`）。
+        //   payload 是**同族推断**：130 后备箱实测 `{"value":"true"|"false"}`，
+        //   131 的 selector 形态与它完全一致（同样没有 content 参数），
+        //   官方文案里也有成对的 `RemoteControl_Frunk_CanNotDriving` /
+        //   `RemoteControl_CloseFrunk_CanNotDriving`（说明开/关都支持）。
+        //   ⚠️ 但 131 **没有抓包样本**，payload 形状是推断的 —— 真机若报错，
+        //      说明它要的是别的字段（键簇里有 `operation` / `enable` / `open`）。
+        "frunk_open":   Command(cmdid: 131, state: ["value": "true"],   title: "打开前备箱",
+                                systemImage: "shippingbox.fill",        group: .trunk, risk: .physical),
+        "frunk_close":  Command(cmdid: 131, state: ["value": "false"],  title: "关闭前备箱",
                                 systemImage: "shippingbox",             group: .trunk, risk: .physical),
         "horn":         Command(cmdid: 120, state: ["value": "true"],   title: "鸣笛寻车",
                                 systemImage: "speaker.wave.2.fill",     group: .trunk, risk: .low),
@@ -354,8 +370,20 @@ enum LMEndpoints {
         "ac_off":       Command(cmdid: 170, state: ["operate": "off"],  title: "关闭空调",
                                 systemImage: "fanblades.slash",         group: .climate, risk: .low),
 
-        "hello":        Command(cmdid: 400, state: ["operation": "on"], title: "上电",
-                                systemImage: "power",                   group: .power, risk: .physical),
+        // ★★ 2026-10-09 **修一个语义错误**：这一条原来是
+        //     `"hello": Command(cmdid: 400, state: ["operation":"on"], title: "上电")`
+        //   —— **400 不是上电，是哨兵模式**。
+        //
+        //   证据：反汇编官方主二进制的 cmdid 分派器（`0x106C5EE00`），
+        //   `cmp x23, #0x190`（400）落到的分支体调的是
+        //     `objc_msgSend$requestForCarSentineMode:`（哨兵模式），
+        //   而**上电是 410** —— `cmp x23, #0x19A` → `requestForOpenOn3`。
+        //   复现：`python client/ios_all_cmdids.py evidence/leapmotor_main`
+        //
+        //   所以：`{"operation":"on"}` 这条抓包是**开哨兵**，不是上电。
+        //   标签按证据改正；410（真正的上电）**没有 payload 样本**，故意不接。
+        "sentinel":     Command(cmdid: 400, state: ["operation": "on"], title: "哨兵模式",
+                                systemImage: "shield.lefthalf.filled",  group: .power, risk: .low),
     ]
 
     /// 首页展示的动作（顺序即 UI 顺序）
@@ -368,8 +396,8 @@ enum LMEndpoints {
     ///   空调不一样：网格里只放**开 / 关**（两个互斥动作），
     ///   风量 / 温度是另一张卡 —— 两者是不同维度的控制，不算重复。
     static let quickActions: [String] = [
-        "lock", "unlock", "trunk_open", "trunk_close", "horn",
-        "ac_on", "ac_off", "hello",
+        "lock", "unlock", "trunk_open", "trunk_close", "frunk_open", "frunk_close",
+        "horn", "ac_on", "ac_off", "sentinel",
     ]
 
     /// 首页「常用」那一排（只放最高频的四个）
@@ -534,12 +562,13 @@ enum LMEndpoints {
     ///   （实测 `"190,192,170,193,171,150,370,470,130,131,230,110,430,410,160,161,480,360,240,361,120,340,440,220,320,420,421,301,500"`）。
     ///
     /// ⚠️ 这个字段本身的语义是「**这一条分享授权**允许对方用哪些指令」，
-    ///    不是「这台车支持的全部指令」。但它是我们手上最全的编号空间清单，
-    ///    所以拿来当「还差哪些没做」的路线图。
+    ///    不是「这台车支持的全部指令」。
     ///
-    /// ⚠️ 注意 `400`（上电，本 App 已实现）**不在**这个列表里 ——
-    ///    它走的是响应里的另一个字段 `moduleRights: "100,200,400"`（模块级权限）。
-    ///    所以「已实现 5 个 cmdid」里只有 4 个能在 rightList 里对上。
+    /// ★★ 2026-10-09：**已经有更权威的 `remoteCmdids`（42 个，来自反汇编）**，
+    ///    这张 `rightList` 只保留作历史对照 —— 新增功能请查 `remoteCmdids`。
+    ///    注意 `400`（哨兵模式，本 App 已实现）**不在**这个列表里 ——
+    ///    它走的是响应里的另一个字段 `moduleRights: "100,200,400"`（模块级权限），
+    ///    两个 400 只是数字撞车，互不相干。
     static let allKnownCmdids: [Int] = [
         110, 120, 130, 131, 150, 160, 161, 170, 171, 190, 192, 193,
         220, 230, 240, 301, 320, 340, 360, 361, 370, 410, 420, 421,
@@ -547,8 +576,172 @@ enum LMEndpoints {
     ]
 
     /// `moduleRights` 里的模块级权限（实测 "100,200,400"）。
-    /// `400` 对应「上电」，是唯一一个不在 `allKnownCmdids` 里的已实现 cmdid。
+    ///
+    /// ★ 2026-10-09 更正：这里原来写「`400` 对应上电」——**错了**。
+    ///   `400` 是 **哨兵模式**（`requestForCarSentineMode:`），上电是 `410`。
+    ///   两个 400 只是**数字撞车**：一个是模块权限编号、一个是 cmdid，互不相干。
     static let knownModuleRights: [Int] = [100, 200, 400]
+
+    // MARK: - ★★ cmdid 全表（2026-10-09 反汇编解出，42 个）
+
+    /// 官方主二进制里 cmdid 分派器的**完整** cmdid → 官方 selector 映射。
+    ///
+    /// ── 怎么来的（可复现）─────────────────────────────────────────
+    ///   官方 `leapmotorCarOwner` 主二进制（204 MB、arm64、未加密）里有一个
+    ///   cmdid 分派函数（`0x106C5EE00` 起），形态是 `cmp x23, #imm` + 分支
+    ///   构成的二分查找树；每个分支体里调一个 `objc_msgSend$requestForXxx:`
+    ///   stub。把 stub 反解成 selector 名，再往前回溯出那个 `imm`，就得到映射。
+    ///
+    ///       python client/ios_all_cmdids.py evidence/leapmotor_main
+    ///
+    ///   2026-10-09 实跑：**42 个** cmdid（另有 2 条 `cmp` 落在无关函数上，
+    ///   是噪声，已剔除）。原始输出落盘 `evidence/official/cmdid_table.txt`。
+    ///
+    /// ── 为什么它比 `rightList` 更权威 ────────────────────────────
+    ///   `rightList` 是**服务端下发的分享授权清单**（29 个），少了 15 个
+    ///   —— 如 111 侧滑门、180 同步路径、240 遮阳帘、270 音乐、280 座椅调节、
+    ///   300 天窗、350 泊车辅助、380 燃油加热、390/391 FOTA、400 哨兵、
+    ///   501 冰箱、600 儿童锁、700 氧舱、710 唤醒、720 迎宾。
+    ///   而这张表是从**客户端代码**里解出来的，是「App 能发什么」的完整集合。
+    ///
+    /// ── 证据等级（务必分清）──────────────────────────────────────
+    ///   `hasPayloadSample == true`  → 抓包里有真实 state 样本（见 `commands` 表）
+    ///   `hasPayloadSample == false` → selector 名确证（**语义清楚**），
+    ///                                 但 state 的字段形状没有样本
+    ///
+    /// ⚠️ 语义清楚 ≠ 可以直接下发：state 靠猜的指令一律只进诊断页的探测工具。
+    struct RemoteCmdid: Identifiable {
+        let cmdid: Int
+        /// 官方 selector（反汇编解出）
+        let selector: String
+        /// 语义（中文，来自 selector 名 + 官方本地化表交叉印证）
+        let name: String
+        /// 抓包里有没有这条 cmdid 的 state 样本
+        let hasPayloadSample: Bool
+
+        var id: Int { cmdid }
+        var hex: String { String(format: "0x%X", cmdid) }
+    }
+
+    static let remoteCmdids: [RemoteCmdid] = [
+        // ── 有 state 样本（本 App 已实现）──────────────────────────
+        RemoteCmdid(cmdid: 110, selector: "requestForCarLockControl:",
+                    name: "车门锁", hasPayloadSample: true),
+        RemoteCmdid(cmdid: 120, selector: "requestForCarTracking",
+                    name: "鸣笛寻车", hasPayloadSample: true),
+        RemoteCmdid(cmdid: 130, selector: "requestForTrunkControl:",
+                    name: "后备箱", hasPayloadSample: true),
+        RemoteCmdid(cmdid: 170, selector: "requestForAirConditionControl:content:",
+                    name: "空调", hasPayloadSample: true),
+        RemoteCmdid(cmdid: 230, selector: "requestForWindowControl:",
+                    name: "车窗", hasPayloadSample: true),
+        RemoteCmdid(cmdid: 400, selector: "requestForCarSentineMode:",
+                    name: "哨兵模式", hasPayloadSample: true),
+        // ── 语义已确证、state 无样本 ───────────────────────────────
+        RemoteCmdid(cmdid: 111, selector: "requestForSlideDoorControl:content:",
+                    name: "侧滑门", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 131, selector: "requestForFrunkControl:",
+                    name: "前备箱", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 150, selector: "requestForOpenOn3ForAutoPark",
+                    name: "泊车辅助上电", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 160, selector: "requestForStartPTC",
+                    name: "电池预热", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 161, selector: "requestForAppointmentContrlCmdID:content:",
+                    name: "预约充电", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 171, selector: "requestForAppointmentContrlCmdID:content:",
+                    name: "预约充电（同族）", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 180, selector: "requestForSynPathContent:",
+                    name: "同步导航路径", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 190, selector: "requestForChargingSetContent:",
+                    name: "充电上限", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 192, selector: "requestForUnlockChargingGun",
+                    name: "解锁充电枪", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 193, selector: "requestForBeginOrEndChargingWithContent:",
+                    name: "立即 / 结束充电", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 240, selector: "requestForSunShadeControl:",
+                    name: "遮阳帘", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 270, selector: "requestForMusicContent:",
+                    name: "音乐", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 280, selector: "requestForSeatAdjustCtrlContent:",
+                    name: "座椅调节", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 300, selector: "requestForSunroofControl:content:",
+                    name: "天窗", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 301, selector: "requestForSeatHeatingContent:",
+                    name: "座椅加热", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 320, selector: "requestForSteeringWheelHeatControl:",
+                    name: "方向盘加热", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 350, selector: "requestForAutoParkProcessControl:",
+                    name: "泊车辅助", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 360, selector: "requestForOneKeyPrepareCarContent:",
+                    name: "一键备车", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 361, selector: "requestForAppointmentContrlCmdID:content:",
+                    name: "预约充电（同族）", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 370, selector: "requestForSeatWindContent:",
+                    name: "座椅通风", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 380, selector: "requestForFuelHeatControl:",
+                    name: "燃油加热器", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 390, selector: "requestForDownloadFOTA:",
+                    name: "FOTA 下载", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 391, selector: "requestForInstallFOTA:",
+                    name: "FOTA 安装", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 392, selector: "requestForAppointmentContrlCmdID:content:",
+                    name: "预约充电（同族）", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 410, selector: "requestForOpenOn3",
+                    name: "上电", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 421, selector: "requestForLineCall",
+                    name: "直进直出", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 430, selector: "requestResetBLEController",
+                    name: "重置蓝牙钥匙", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 440, selector: "requestForMirrorHeatingControl:",
+                    name: "后视镜加热", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 470, selector: "requestFor6SeatControl:",
+                    name: "六座座椅控制", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 480, selector: "requestForChargingHealthControl:",
+                    name: "健康充电", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 500, selector: "requestForFridgeControl:content:",
+                    name: "车载冰箱", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 501, selector: "requestForFridgeControl:content:setCmdID:",
+                    name: "车载冰箱（带子指令）", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 600, selector: "requestForChildControl:content:",
+                    name: "儿童锁", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 700, selector: "requestForOxygenControl:",
+                    name: "森野氧舱", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 710, selector: "requestForWakeUpCarControl",
+                    name: "唤醒车辆", hasPayloadSample: false),
+        RemoteCmdid(cmdid: 720, selector: "requestForWelcomeControl:",
+                    name: "上车迎宾", hasPayloadSample: false),
+    ]
+
+    static func remoteCmdid(_ cmdid: Int) -> RemoteCmdid? {
+        remoteCmdids.first { $0.cmdid == cmdid }
+    }
+
+    /// 官方车控 payload 里出现过的**候选字段名**（从主二进制 `__cstring` 挖的）。
+    ///
+    /// 位置：`__cstring` 的 `0x10AA204xx ~ 0x10AA213xx` 这一段是「车控 payload 键」
+    /// 扎堆的地方 —— `windlevel` / `temperature` / `hotcold` 这几个**已确认的空调键**
+    /// 就在同一段里，所以这一段的其它短串大概率也是同类用途。
+    ///
+    /// ⚠️ 知道键名 ≠ 知道「哪个 cmdid 用哪个键、取值是什么」。
+    ///    这张表只作为诊断页手写 state 时的提示，**不要**据此猜着下发。
+    static let remotePayloadKeyHints: [String] = [
+        // 通用开关
+        "value", "operation", "operate", "enable", "status", "switch",
+        // 空调（windlevel / temperature / hotcold 已确认）
+        "manual", "off", "out", "hotcold", "nohotcold", "temperature",
+        "windlevel", "circle", "air_condition",
+        // 充电（percent / recharge / cycles / circulation 已确认）
+        "percent", "recharge", "cycles", "circulation", "beginTime", "endTime",
+        // 座椅 / 加热
+        "seat_setting", "ventilation", "childSeatVentilation", "childSeatAfterCtr",
+        "steeringWheelHeatCtrl", "rearMirrorHeating", "ptcon",
+        "left_front", "right_front", "left_rear", "right_rear",
+        "left_third", "right_third",
+        "secondRowDriverSide", "secondRowPassengerSide",
+        // 其他
+        "wshld", "syn_path", "set_id", "days", "mac", "datacontent",
+        "on3", "finish", "reset", "control",
+    ]
 
     // MARK: - 未验证 cmdid（诊断页探测用）
 

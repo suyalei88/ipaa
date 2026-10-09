@@ -1,0 +1,101 @@
+image_base=0x100000000  段=6  section=61
+解析 chained fixups …
+  rebase 指针 583924 个
+扫 __objc_stubs …
+  stub 数 42465
+扫 __text 里的 bl（一次过）…
+  bl 目标数 154221
+解 cmdid …
+  解出 79 个 (callsite, cmdid) 组合
+
+==============================================================================
+★★ cmdid → selector（共 44 个 cmdid）
+==============================================================================
+      1 0x0001  acSetting  dictionaryWithObjects:forKeys:count:  inforModel  integerValue  lmv_localizedString:bundleName:  numberWithInteger:  registerAlertTip:forCheckConditionState:  registerAlertTip:forState:  registerListenCarStateSuccessBlock:  serviceByProtocol:singleton:  setCheckConditionBlock:  setDataContent:  setNeedRecord:  setShowLoadingAlertForCarState:  setWaitCarStateTimeout:  shareMiddleWare  stringWithFormat:
+      9 0x0009  carInforTimer  cmdID  startTimer
+    110 0x006E  requestForCarLockControl:
+    111 0x006F  requestForSlideDoorControl:content:
+    120 0x0078  requestForCarTracking
+    130 0x0082  requestForTrunkControl:
+    131 0x0083  requestForFrunkControl:
+    150 0x0096  requestForOpenOn3ForAutoPark
+    160 0x00A0  requestForStartPTC
+    161 0x00A1  requestForAppointmentContrlCmdID:content:
+    170 0x00AA  requestForAirConditionControl:content:
+    171 0x00AB  requestForAppointmentContrlCmdID:content:
+    180 0x00B4  requestForSynPathContent:
+    190 0x00BE  requestForChargingSetContent:
+    192 0x00C0  requestForUnlockChargingGun
+    193 0x00C1  requestForBeginOrEndChargingWithContent:
+    230 0x00E6  requestForWindowControl:
+    240 0x00F0  requestForSunShadeControl:
+    270 0x010E  requestForMusicContent:
+    280 0x0118  requestForSeatAdjustCtrlContent:
+    300 0x012C  requestForSunroofControl:content:
+    301 0x012D  requestForSeatHeatingContent:
+    320 0x0140  requestForSteeringWheelHeatControl:
+    350 0x015E  requestForAutoParkProcessControl:
+    360 0x0168  requestForOneKeyPrepareCarContent:
+    361 0x0169  requestForAppointmentContrlCmdID:content:
+    370 0x0172  requestForSeatWindContent:
+    380 0x017C  requestForFuelHeatControl:
+    390 0x0186  requestForDownloadFOTA:
+    391 0x0187  requestForInstallFOTA:
+    392 0x0188  requestForAppointmentContrlCmdID:content:
+    400 0x0190  requestForCarSentineMode:
+    410 0x019A  requestForOpenOn3
+    421 0x01A5  requestForLineCall
+    430 0x01AE  requestResetBLEController
+    440 0x01B8  requestForMirrorHeatingControl:
+    470 0x01D6  requestFor6SeatControl:
+    480 0x01E0  requestForChargingHealthControl:
+    500 0x01F4  requestForFridgeControl:content:
+    501 0x01F5  requestForFridgeControl:content:  setCmdID:
+    600 0x0258  requestForChildControl:content:
+    700 0x02BC  requestForOxygenControl:
+    710 0x02C6  requestForWakeUpCarControl
+    720 0x02D0  requestForWelcomeControl:
+
+==============================================================================
+★★ 车控/远程类 selector → cmdid
+==============================================================================
+  cmdID                                                      [9]
+  requestFor6SeatControl:                                    [470]
+  requestForAirConditionControl:content:                     [170]
+  requestForAppointmentContrlCmdID:content:                  [161, 171, 361, 392]
+  requestForAutoParkProcessControl:                          [350]
+  requestForBeginOrEndChargingWithContent:                   [193]
+  requestForCarLockControl:                                  [110]
+  requestForCarSentineMode:                                  [400]
+  requestForCarTracking                                      [120]
+  requestForChargingHealthControl:                           [480]
+  requestForChargingSetContent:                              [190]
+  requestForChildControl:content:                            [600]
+  requestForDownloadFOTA:                                    [390]
+  requestForFridgeControl:content:                           [500, 501]
+  requestForFrunkControl:                                    [131]
+  requestForFuelHeatControl:                                 [380]
+  requestForInstallFOTA:                                     [391]
+  requestForLineCall                                         [421]
+  requestForMirrorHeatingControl:                            [440]
+  requestForMusicContent:                                    [270]
+  requestForOneKeyPrepareCarContent:                         [360]
+  requestForOpenOn3                                          [410]
+  requestForOpenOn3ForAutoPark                               [150]
+  requestForOxygenControl:                                   [700]
+  requestForSeatAdjustCtrlContent:                           [280]
+  requestForSeatHeatingContent:                              [301]
+  requestForSeatWindContent:                                 [370]
+  requestForSlideDoorControl:content:                        [111]
+  requestForStartPTC                                         [160]
+  requestForSteeringWheelHeatControl:                        [320]
+  requestForSunShadeControl:                                 [240]
+  requestForSunroofControl:content:                          [300]
+  requestForSynPathContent:                                  [180]
+  requestForTrunkControl:                                    [130]
+  requestForUnlockChargingGun                                [192]
+  requestForWakeUpCarControl                                 [710]
+  requestForWelcomeControl:                                  [720]
+  requestForWindowControl:                                   [230]
+  requestResetBLEController                                  [430]
+  setCmdID:                                                  [501]
