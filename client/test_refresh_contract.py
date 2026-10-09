@@ -615,8 +615,20 @@ def test_uikit_skeleton() -> None:
     tabs = read("UIKit/LMMainTabBarController.swift")
     for name in ("爱车", "定位", "充电", "车控", "设置"):
         check(f"Tab 里有「{name}」", f'"{name}"' in tabs)
-    check("被托管的页保留了 NavigationStack（否则内部跳转静默失效）",
-          tabs.count("NavigationStack {") == 5)
+    # ★ Phase 2：设置页已迁成 UIKit，它那一行不再是托管页 ——
+    #   必须由 LMNavigationController 提供导航栏（否则它没法 push 那 7 个子页），
+    #   所以「保留 NavigationStack」的只剩 4 个还没迁的 Tab。
+    check("还没迁的 4 个托管页各自保留了 NavigationStack（否则内部跳转静默失效）",
+          tabs.count("NavigationStack {") == 4)
+    check("设置 Tab 已是原生 UIKit 页",
+          "LMSettingsViewController(client: client)" in tabs)
+    check("设置 Tab 由 LMNavigationController 承载（push 子页的前提）",
+          "LMNavigationController(" in tabs)
+    # ★ 不能用 `"SettingsView()" not in tabs` —— 本文件注释里为了解释
+    #   「为什么不能再 NavigationLink { SettingsView() }」必然写出这个词，
+    #   裸串断言会自己踩自己。这里匹配**真实的托管形态**。
+    check("设置 Tab 不再是 SwiftUI 托管页",
+          re.search(r"NavigationStack\s*\{\s*SettingsView\(\)", tabs) is None)
 
     rootvc = read("UIKit/LMRootViewController.swift")
     check("根容器按 session?.isValid 切换",
@@ -777,6 +789,122 @@ def test_uikit_login() -> None:
           re.search(r"\.titleLabel\?\.font\s*=", vc) is None)
 
 
+def test_uikit_settings() -> None:
+    """⑬ 设置页（Phase 2）已从 SwiftUI 迁成 UIKit。
+
+    这是第一个「带表单 + 带子页跳转」的页面，比登录页多两类风险：
+
+      A. **操作密码的输入语义不能变** —— 这是「车控报密码错误」的主战场：
+         密码框不能挂 `.oneTimeCode`、只滤数字但不截断、切明文后必须重赋 text。
+      B. **子页跳转不能断** —— 设置页要 push 7 个还没迁移的 SwiftUI 页，
+         其中 `BLEKeyView` / `DiagnosticsView` 内部还有 `NavigationLink`，
+         所以必须走 `ownsNavigationBar: true`（自带 NavigationStack + 补返回键）。
+
+    ⚠️ 写断言时注意：**盯被测对象，不要盯字符串是否出现在文件里**。
+       本文件的注释里为了解释「为什么不能用 .oneTimeCode / prefix(8)」
+       必然会写出这两个词，用 `"oneTimeCode" not in vc` 这种写法会自己踩自己。
+       所以下面一律用正则匹配**真实调用**（`textContentType = .oneTimeCode`、
+       `.prefix(8)`），不匹配裸词。
+    """
+    print("\n[13] Phase 2：设置页迁成 UIKit")
+
+    # ---- ① 旧文件删干净 ----
+    check("Views/SettingsView.swift 已删除",
+          not os.path.exists(os.path.join(APP, "Views", "SettingsView.swift")))
+    old_refs = []
+    for dirpath, dirs, fns in os.walk(APP):
+        dirs.sort()
+        for fn in sorted(fns):
+            if not fn.endswith(".swift"):
+                continue
+            with open(os.path.join(dirpath, fn), "r", encoding="utf-8") as f:
+                if re.search(r"(?m)^\s*(?:struct|final class)\s+SettingsView\b", f.read()):
+                    old_refs.append(fn)
+    check("源码里没有 SettingsView 类型残留", old_refs == [], f"实际 {old_refs}")
+
+    # ---- ② 新 VC 的骨架 ----
+    vc = read("UIKit/LMSettingsViewController.swift")
+    check("LMSettingsViewController 继承 LMBaseViewController",
+          re.search(r"final class LMSettingsViewController\s*:\s*LMBaseViewController", vc)
+          is not None)
+    check("实现了 buildUI / render 两个钩子",
+          "override func buildUI()" in vc and "override func render()" in vc)
+    check("render 幂等（条件行用 isHidden 折叠，不重建视图）",
+          vc.count(".isHidden = ") >= 6)
+    check("行数会变的两块内容用指纹去重（不是每次 render 都重建）",
+          "rebuildIfNeeded" in vc and "ObjectIdentifier" in vc)
+
+    # ---- ③ 操作密码：输入语义不能变（「车控报密码错误」的主战场）----
+    check("操作密码框用 .password",
+          "textContentType = .password" in vc)
+    check("没有把 .oneTimeCode 挂到操作密码框上（会静默替换用户输入）",
+          re.search(r"textContentType\s*=\s*\.oneTimeCode", vc) is None)
+    check("只滤数字但不截断（不能再静默吃掉输入）",
+          "\\.isNumber" in vc and re.search(r"\.prefix\(8\)", vc) is None)
+    check("有「已输入 N 位」提示（任何一环出问题用户都能自己看出来）",
+          '"已输入"' in vc and '"0 位"' in vc)
+    check("超范围只警告不硬拦",
+          "官方操作密码一般是 4~6 位" in vc)
+    check("可临时明文查看（切 isSecureTextEntry 后重赋 text，否则一打字就清空）",
+          "isSecureTextEntry = !revealPassword" in vc
+          and re.search(r"isSecureTextEntry = !revealPassword[\s\S]{0,400}?text = saved", vc)
+          is not None)
+    check("现场算 oppwd 并回解（用户肉眼能判断发出去的明文对不对）",
+          "encryptOppwd" in vc and "decryptOppwd" in vc and "oppwdKeyIV" in vc)
+    check("保存操作密码走 client.adopt(session:)（写 Keychain）",
+          "client.adopt(session:" in vc)
+
+    # ---- ④ 其余行为链路 ----
+    for name, needle in (
+        ("立即续期 accessToken", "refreshSessionIfNeeded(force: true)"),
+        ("刷新车辆列表", "client.loadVehicles()"),
+        ("切换选中车辆并刷新", "client.select(vehicle:"),
+        ("退出登录", "client.signOut()"),
+        ("未读消息角标", "noticeCount"),
+        ("本 App 构建信息", "LMBuildInfo.displayText"),
+        ("JWT exp 解析（提示 token 何时过期）", "timeIntervalSince1970: exp"),
+        ("续期日志", "tokenRefreshLog"),
+    ):
+        check(f"仍保留：{name}", needle in vc)
+
+    # ---- ⑤ 7 个子页跳转入口都在 ----
+    for page in ("VehicleProfileView", "LocationView", "ChargeView", "BLEKeyView",
+                 "SignalExplorerView", "DiagnosticsView", "SelfTestView"):
+        check(f"设置页仍能跳到 {page}", f"{page}()" in vc)
+
+    # ---- ⑥ 导航架构：push 出去的 SwiftUI 页必须自带 NavigationStack ----
+    check("push 子页时打开 ownsNavigationBar"
+          "（否则 BLEKeyView / DiagnosticsView 内部跳转静默失效）",
+          "ownsNavigationBar: true" in vc)
+    check("push 子页时补了返回键（NavigationStack 作为栈底本来没有）",
+          "onBack:" in vc and "popViewController(animated: true)" in vc)
+    host = read("UIKit/LMHostingController.swift")
+    check("宿主在 ownsNavigationBar 模式下藏掉外层 UIKit 导航栏（否则双导航栏）",
+          "setNavigationBarHidden(true" in host)
+    check("宿主离开时恢复外层导航栏（否则返回后设置页也没栏了）",
+          "setNavigationBarHidden(false" in host)
+
+    # ---- ⑦ 爱车页那个齿轮入口 ----
+    lovecar = read("Views/LoveCarView.swift")
+    check("爱车页齿轮改成切「设置」Tab"
+          "（UIKit 页没法塞进 SwiftUI 的 NavigationStack）",
+          "lmSelectSettingsTab" in lovecar)
+    tabs = read("UIKit/LMMainTabBarController.swift")
+    check("Tab 容器实现了切到设置 Tab",
+          "func selectSettingsTab()" in tabs and "lmSelectSettingsTab" in tabs)
+
+    # ---- ⑧ 进编译 ----
+    pbx_path = os.path.join(os.path.dirname(APP),
+                            "LeapmotorLite.xcodeproj", "project.pbxproj")
+    if os.path.exists(pbx_path):
+        with open(pbx_path, "r", encoding="utf-8") as f:
+            pbx = f.read()
+        check("LMSettingsViewController.swift 已进 Sources",
+              "/* LMSettingsViewController.swift */" in pbx)
+        check("旧的 SettingsView.swift 已从工程移除",
+              "/* SettingsView.swift */" not in pbx)
+
+
 def main() -> int:
     print("=" * 64)
     print("续期契约测试（test_refresh_contract）")
@@ -795,6 +923,7 @@ def main() -> int:
     test_car3d_layout()
     test_uikit_skeleton()
     test_uikit_login()
+    test_uikit_settings()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

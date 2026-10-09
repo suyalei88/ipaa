@@ -547,6 +547,36 @@ UIKit 侧订阅 `objectWillChange` 就够了。
   换成 `LMNavigationController(rootViewController: LMLoginViewController(...))`，
   该文件不再需要 `import SwiftUI`。
 
+**Phase 2（已完成，v1.1.2）**：设置页 `SettingsView`（423 行 SwiftUI `Form`）迁成
+`UIKit/LMSettingsViewController.swift`。这是第一页「带表单 + 带子页跳转」的页面，
+多解决了一个**架构问题**：
+
+- **表单语义**：`Form` 换成一列 `LMCardView` 卡片；条件行（密码位数警告 / oppwd
+  预览 / 保存结果）用 `UIStackView` 的 `isHidden` 折叠，**不重建视图** ——
+  这是 `render()` 幂等约定在表单页的落地方式。
+- **只有两块内容例外**：车辆列表和续期日志的行数是动态的，用「内容指纹」
+  （`rebuildIfNeeded` + `ObjectIdentifier`）判断，指纹没变就整块跳过；
+  这两块里没有输入控件，重建不会打断用户输入。
+- ★★ **「UIKit 页 push SwiftUI 页」的导航栏冲突**（本轮新暴露的问题）：
+  设置页要 push 的 7 个页面还是 SwiftUI，其中 `BLEKeyView`（4 处）、
+  `DiagnosticsView`（1 处）内部有 `NavigationLink` —— 它**必须有
+  `NavigationStack` 祖先**才能工作。
+  - 直接 push 进 UIKit 导航栈 → 那些内部跳转**静默失效**（点了没反应，不报错）
+  - 给它们套 `NavigationStack` 再 push → **两根导航栏叠在一起**
+  解法：给 `LMHostingController` 加 `ownsNavigationBar` 开关 —— 内容外面套
+  `NavigationStack`，同时藏掉外层 UIKit 导航栏（`viewWillAppear` 藏、
+  `viewWillDisappear` 恢复），并在 SwiftUI 那根栏里补一个「返回」按钮
+  （`NavigationStack` 作为栈底本来没有返回键，不补用户进去就出不来）。
+- **爱车页右上角的齿轮**原来是 `NavigationLink { SettingsView() }`。设置页迁成
+  UIKit 之后这条路走不通（见上），改成发 `Notification.Name.lmSelectSettingsTab`
+  切到设置 Tab —— 设置本来就是独立 Tab，切 Tab 比 push 更自然。
+- 操作密码的输入语义逐条保留：`.password`（**不是** `.oneTimeCode`，那会静默替换
+  用户输入）、只滤数字不截断、位数提示、可临时明文查看（切 `isSecureTextEntry`
+  后**必须重赋 `text`**，否则 UIKit 会在下一次输入时清空）。
+- Tab 容器里设置那一行从 `LMHostingController { NavigationStack { SettingsView() } }`
+  换成 `LMNavigationController(rootViewController: LMSettingsViewController(...))` ——
+  原生页需要 `UINavigationController` 才能 push 子页。
+
 #### ★ 两个必须记住的坑
 
 **① `objectWillChange` 在「赋值之前」触发。**
@@ -570,7 +600,7 @@ UIKit 侧订阅 `objectWillChange` 就够了。
 |---|---|---|---|
 | Phase 0 | 换壳（AppDelegate + window + 宿主桥） | — | ✅ v1.1.0 |
 | Phase 1 | `LoginView` | 285 | ✅ v1.1.1 |
-| Phase 2 | `SettingsView` | 423 |
+| Phase 2 | `SettingsView` | 423 | ✅ v1.1.2 |
 | Phase 3 | `VehicleProfileView` | 522 |
 | Phase 4 | `ControlPanelView` | 686 |
 | Phase 5 | `LocationView` | 763 |
@@ -732,7 +762,8 @@ ios/
         │   ├── LMHostingController.swift  # 过渡桥：把未迁移的 SwiftUI 页包成 VC
         │   ├── LMRootViewController.swift # 根容器：登录页 ↔ 主 Tab
         │   ├── LMMainTabBarController.swift # 5 个 Tab
-        │   └── LMLoginViewController.swift  # ★ Phase 1：登录页（原生 UIKit，短信验证码 / 导入登录态）
+        │   ├── LMLoginViewController.swift  # ★ Phase 1：登录页（原生 UIKit，短信验证码 / 导入登录态）
+        │   └── LMSettingsViewController.swift # ★ Phase 2：设置页（原生 UIKit，会话 / 操作密码 / 车辆 / 诊断 / 设备）
         ├── Views/
         │   ├── Theme.swift              # 配色 + 复用组件（卡片 / 磁贴 / 电量环 / .lmClock）
         │   ├── LoveCarView.swift        # ★ 爱车页（官方爱车页完整复刻：内嵌 3D 车模 + 快捷分页 + 预约充电 + 空调/地图/蓝牙钥匙）
@@ -744,7 +775,6 @@ ios/
         │   ├── SignalExplorerView.swift # 信号浏览器 + 快照 A/B 对比
         │   ├── DiagnosticsView.swift    # 车控体检 + 官方接口探测
         │   ├── Car3DView.swift          # 3D 看车（WKWebView 驱动官方查看器）
-        │   ├── SettingsView.swift       # 设置
         │   └── SelfTestView.swift       # 算法自检
         ├── Car3D/                       # ★ 官方 3D 车模离线包（folder 引用，17 MB / 63 文件）
         │   ├── index.html               #   官方查看器入口（未改动）

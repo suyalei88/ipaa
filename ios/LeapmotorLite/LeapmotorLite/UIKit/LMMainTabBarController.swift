@@ -31,11 +31,20 @@ final class LMMainTabBarController: UITabBarController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // ★ 每个 Tab 里保留 `NavigationStack`：
-        //   这些 SwiftUI 页内部有 `NavigationLink`（设置页跳诊断页等），
+        // ★ 还没迁移的 Tab 里保留 `NavigationStack`：
+        //   这些 SwiftUI 页内部有 `NavigationLink`（车控页跳诊断页等），
         //   拿掉 NavigationStack 会让那些跳转静默失效。
-        //   所以这一层**不要**再套 `UINavigationController`，否则会出现双导航栏。
-        viewControllers = [
+        //   所以这些行**不要**再套 `UINavigationController`，否则会出现双导航栏。
+        //
+        // ★ 已经迁成 UIKit 的页面（如设置页）反过来：必须由
+        //   `LMNavigationController` 提供导航栏，否则它没法 push 子页面。
+        let settingsTab = LMNavigationController(
+            rootViewController: LMSettingsViewController(client: client))
+        settingsTab.tabBarItem = UITabBarItem(title: "设置",
+                                              image: UIImage(systemName: "gearshape.fill"),
+                                              selectedImage: nil)
+
+        let tabs: [UIViewController] = [
             LMHostingController(client: client, title: "爱车", tabImage: "car.fill") {
                 NavigationStack { LoveCarView() }
             },
@@ -48,10 +57,9 @@ final class LMMainTabBarController: UITabBarController {
             LMHostingController(client: client, title: "车控", tabImage: "slider.horizontal.3") {
                 NavigationStack { ControlPanelView() }
             },
-            LMHostingController(client: client, title: "设置", tabImage: "gearshape.fill") {
-                NavigationStack { SettingsView() }
-            },
+            settingsTab,
         ]
+        viewControllers = tabs
 
         tabBar.tintColor = .lmAccent
 
@@ -63,5 +71,34 @@ final class LMMainTabBarController: UITabBarController {
                 await self?.client.refreshAll()
             }
         }
+
+        // 爱车页右上角的齿轮现在发这个通知来切到设置 Tab（见 LoveCarView）。
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(selectSettingsTab),
+                                               name: .lmSelectSettingsTab,
+                                               object: nil)
     }
+
+    @objc private func selectSettingsTab() {
+        guard let tabs = viewControllers,
+              let idx = tabs.firstIndex(where: { $0.tabBarItem.title == "设置" })
+        else { return }
+        selectedIndex = idx
+    }
+}
+
+// MARK: - 跨页面切 Tab
+
+extension Notification.Name {
+    /// 让 SwiftUI 页面也能切到「设置」Tab。
+    ///
+    /// ★ 为什么需要它：设置页迁成 UIKit 之后，爱车页那个齿轮不能再
+    ///   `NavigationLink { SettingsView() }` —— UIKit 页需要
+    ///   `UINavigationController` 才能 push 子页（设置页要 push 7 个页面），
+    ///   塞进 SwiftUI 的 `NavigationStack` 会变成「双导航栏 + 子页打不开」。
+    ///   设置本来就是独立 Tab，改成切 Tab 更自然。
+    ///
+    /// 等爱车页也迁成 UIKit 之后，这里可以直接换成
+    /// `tabBarController?.selectedIndex = …`，通知就可以删掉。
+    static let lmSelectSettingsTab = Notification.Name("LMSelectSettingsTab")
 }

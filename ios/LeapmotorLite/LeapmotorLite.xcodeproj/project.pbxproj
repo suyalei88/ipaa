@@ -31,7 +31,6 @@
 		C990ACEEF612FBECF2853C0E /* LocationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2232B272CB878B5367BDDB8 /* LocationView.swift */; };
 		10A3B02F7E0803331B2AD39D /* LoveCarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 697A2E04EE1DD337750026C1 /* LoveCarView.swift */; };
 		D2A095BDDF9A875C86BBFEB5 /* SelfTestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D1F81B894F702F257C5CD1 /* SelfTestView.swift */; };
-		9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D451076F292E7189C3B2DBC6 /* SettingsView.swift */; };
 		4815462BBC23FF3D6F58FF3C /* SignalExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */; };
 		7905221120FBB9DB8B74B787 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E662A36FCA7763CF25013E50 /* Theme.swift */; };
 		05A447C52CA2430F6F6B19ED /* VehicleProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B27BA33ED81A8DE1763FDF4 /* VehicleProfileView.swift */; };
@@ -41,6 +40,7 @@
 		46B834BC9BB2373FDCC927DA /* LMLoginViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ED72FA4384F26F2FB6D53AD /* LMLoginViewController.swift */; };
 		74225BA13E8010E16998FC7F /* LMMainTabBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803FD9E96EFDF53016C36C03 /* LMMainTabBarController.swift */; };
 		97884F5C4C98BA65442C030C /* LMRootViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3098D495851FFCC2B715C7B /* LMRootViewController.swift */; };
+		E018284E8A7D9F7DD90E6DDE /* LMSettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761B80A33357B25A2886B612 /* LMSettingsViewController.swift */; };
 		23A632DAAB363EE785E48727 /* LMUIKitTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C98F53D43B5A65319871877 /* LMUIKitTheme.swift */; };
 		3536AB1A6C5543A2E0592118 /* Car3DServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E9CE8A163F3F5C2EC25D8A /* Car3DServer.swift */; };
 		5D48FAE9F25FB3812A5FE6D2 /* LMBuildInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6437AB04BA5CC332625C9638 /* LMBuildInfo.swift */; };
@@ -74,7 +74,6 @@
 		A2232B272CB878B5367BDDB8 /* LocationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationView.swift; sourceTree = "<group>"; };
 		697A2E04EE1DD337750026C1 /* LoveCarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoveCarView.swift; sourceTree = "<group>"; };
 		14D1F81B894F702F257C5CD1 /* SelfTestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfTestView.swift; sourceTree = "<group>"; };
-		D451076F292E7189C3B2DBC6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalExplorerView.swift; sourceTree = "<group>"; };
 		E662A36FCA7763CF25013E50 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5B27BA33ED81A8DE1763FDF4 /* VehicleProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehicleProfileView.swift; sourceTree = "<group>"; };
@@ -84,6 +83,7 @@
 		2ED72FA4384F26F2FB6D53AD /* LMLoginViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMLoginViewController.swift; sourceTree = "<group>"; };
 		803FD9E96EFDF53016C36C03 /* LMMainTabBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMMainTabBarController.swift; sourceTree = "<group>"; };
 		B3098D495851FFCC2B715C7B /* LMRootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMRootViewController.swift; sourceTree = "<group>"; };
+		761B80A33357B25A2886B612 /* LMSettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMSettingsViewController.swift; sourceTree = "<group>"; };
 		4C98F53D43B5A65319871877 /* LMUIKitTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMUIKitTheme.swift; sourceTree = "<group>"; };
 		00E9CE8A163F3F5C2EC25D8A /* Car3DServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Car3DServer.swift; sourceTree = "<group>"; };
 		6437AB04BA5CC332625C9638 /* LMBuildInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LMBuildInfo.swift; sourceTree = "<group>"; };
@@ -191,7 +191,6 @@
 				A2232B272CB878B5367BDDB8 /* LocationView.swift */,
 				697A2E04EE1DD337750026C1 /* LoveCarView.swift */,
 				14D1F81B894F702F257C5CD1 /* SelfTestView.swift */,
-				D451076F292E7189C3B2DBC6 /* SettingsView.swift */,
 				16C3E05407FB31B576C550F5 /* SignalExplorerView.swift */,
 				E662A36FCA7763CF25013E50 /* Theme.swift */,
 				5B27BA33ED81A8DE1763FDF4 /* VehicleProfileView.swift */,
@@ -208,6 +207,7 @@
 				2ED72FA4384F26F2FB6D53AD /* LMLoginViewController.swift */,
 				803FD9E96EFDF53016C36C03 /* LMMainTabBarController.swift */,
 				B3098D495851FFCC2B715C7B /* LMRootViewController.swift */,
+				761B80A33357B25A2886B612 /* LMSettingsViewController.swift */,
 				4C98F53D43B5A65319871877 /* LMUIKitTheme.swift */,
 			);
 			path = UIKit;
@@ -317,7 +317,6 @@
 				C990ACEEF612FBECF2853C0E /* LocationView.swift in Sources */,
 				10A3B02F7E0803331B2AD39D /* LoveCarView.swift in Sources */,
 				D2A095BDDF9A875C86BBFEB5 /* SelfTestView.swift in Sources */,
-				9DCBB53D7BE7B951E21874BE /* SettingsView.swift in Sources */,
 				4815462BBC23FF3D6F58FF3C /* SignalExplorerView.swift in Sources */,
 				7905221120FBB9DB8B74B787 /* Theme.swift in Sources */,
 				05A447C52CA2430F6F6B19ED /* VehicleProfileView.swift in Sources */,
@@ -327,6 +326,7 @@
 				46B834BC9BB2373FDCC927DA /* LMLoginViewController.swift in Sources */,
 				74225BA13E8010E16998FC7F /* LMMainTabBarController.swift in Sources */,
 				97884F5C4C98BA65442C030C /* LMRootViewController.swift in Sources */,
+				E018284E8A7D9F7DD90E6DDE /* LMSettingsViewController.swift in Sources */,
 				23A632DAAB363EE785E48727 /* LMUIKitTheme.swift in Sources */,
 				3536AB1A6C5543A2E0592118 /* Car3DServer.swift in Sources */,
 				5D48FAE9F25FB3812A5FE6D2 /* LMBuildInfo.swift in Sources */,

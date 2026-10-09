@@ -195,8 +195,15 @@ struct LoveCarView: View {
                 .accessibilityLabel("切换车辆")
             }
 
-            NavigationLink {
-                SettingsView()
+            Button {
+                // ★ 2026-10-09（UIKit 迁移 Phase 2）：原来这里是
+                //   `NavigationLink { SettingsView() }`。
+                //   设置页已迁成 UIKit 的 `LMSettingsViewController`，
+                //   而 UIKit 页需要 `UINavigationController` 才能 push 子页，
+                //   塞进 SwiftUI 的 NavigationStack 会变成「双导航栏 + 子页打不开」。
+                //   设置本来就是独立 Tab，所以改成切到那个 Tab —— 更自然，
+                //   也保证「设置 → 车辆档案 / 诊断 …」那 7 个入口都能用。
+                NotificationCenter.default.post(name: .lmSelectSettingsTab, object: nil)
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 17, weight: .medium))
