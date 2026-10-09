@@ -11,7 +11,17 @@ import CoreLocation
 // MARK: - 配置
 
 struct LMConfig {
-    var deviceId: String        = "ios_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+    /// 设备标识。
+    ///
+    /// ★★ 2026-10-09 修（用户报「健康充电官方是开的、本 App 显示已关闭」）：
+    ///   以前这里写的是「每次启动现生成一个 UUID」——
+    ///     `var deviceId = "ios_" + UUID().uuidString...`
+    ///   但 `healthyCharging/queryPushState` 这类接口是拿 `carvin + deviceId`
+    ///   去查「**这台设备**的状态」的。deviceId 每次启动都变，服务端就永远
+    ///   把本机当成一台从没绑定过的新设备，凡是有设备维度的状态一律回默认值
+    ///   （false / 0）—— 健康充电开关正是这么被读成「已关闭」的。
+    ///   现在改成：**首次生成后持久化**，同一台手机永远是同一个 deviceId。
+    var deviceId: String        = LMConfig.stableDeviceId
     var deviceType: String      = "iOS"
     var acceptLanguage: String  = "zh-Hans-CN;q=1, en-CN;q=0.9"
     var source: String          = "leapmotor"
@@ -26,6 +36,27 @@ struct LMConfig {
 
     /// 复用官方抓包里的 deviceId 可以避免部分风控；留空则自动生成
     static let capturedDeviceId = "ios_ee45b9d830bb126d431e998943a7797a"
+
+    /// 稳定的设备标识 —— **首次生成后落盘，之后永远复用**。
+    ///
+    /// 为什么必须稳定（2026-10-09）：`healthyCharging/queryPushState`、
+    /// 部分分享/绑定类接口都按 `deviceId` 区分设备。随机 UUID 会让服务端
+    /// 每次都认成新设备，带设备维度的状态就全读成默认值（false / 0）——
+    /// 用户报的「官方健康充电是开的、本 App 显示已关闭」正是这个表现。
+    ///
+    /// 首次默认取 `capturedDeviceId`（官方抓包里的那个，服务端认过），
+    /// 而不是现造一个随机串 —— 新造的串在服务端是陌生设备，读不到真实状态。
+    /// 存 `UserDefaults` 而不是 Keychain：这不是凭据，丢了也只是重新认一次设备，
+    /// 不值得为它引入 Keychain 的复杂度。
+    static let stableDeviceId: String = {
+        let key = "lm.deviceId"
+        if let saved = UserDefaults.standard.string(forKey: key),
+           saved.hasPrefix("ios_"), saved.count > 8 {
+            return saved
+        }
+        UserDefaults.standard.set(capturedDeviceId, forKey: key)
+        return capturedDeviceId
+    }()
     /// 抓包里的 SM4 设备指纹
     static let capturedSMDeviceId =
         "B1rFqR82E2Z7do2KhMDKziLEuIcoEt4wY8QTy7/43ImlKMu591xoe/c8kgMPsTk4" +
@@ -236,6 +267,18 @@ final class LMClient: ObservableObject {
     @Published private(set) var parkingProbe: LMParkingProbe?
     /// 车况配置里的隐私开关（privacyGPS = 1 时官方会隐藏位置）
     @Published private(set) var privacyGPS = false
+
+    // MARK: - 驻车照片（★ 2026-10-09 用户要求「找出驻车照片」）
+
+    /// 驻车照片（哨兵照）。`nil` = 还没取 / 取失败。
+    /// 来源与证据见 `LMParkingSnap` 的注释。
+    @Published private(set) var parkingSnap: LMParkingSnap?
+    /// 正在拉取（给 UI 转菊花）
+    @Published private(set) var parkingSnapLoading = false
+    /// 上一次拉取的失败原因（成功时为 nil）
+    @Published private(set) var parkingSnapError: String?
+    /// 已经下载好的图片数据（内存缓存，避免每次进页都重新下）
+    @Published private(set) var parkingSnapImageData: Data?
 
     // MARK: - 车辆档案（★ 2026-10-08 抓包审计补上的数据源）
 
@@ -1139,10 +1182,12 @@ final class LMClient: ObservableObject {
     ///    说明**那个坐标不是实时的**。
     ///    当时怀疑官方「车辆位置」页走的是另一个接口（`chassis/query`）。
     ///
-    /// ★★ 同一天**已用真实抓包证伪**：`chassis/query` 返回的是 OSS 上的
-    ///    `ChassisPicture/prod/<VIN>` —— 一张**底盘图片**，跟定位无关。
-    ///    而且把主二进制里所有 `/v3/api/` 路径 + 所有 signalMap 样本都扫了一遍：
-    ///    官方**没有**别的定位接口，坐标只可能来自 signalMap 的 2190/2191。
+    /// ★★ 2026-10-09 **更正**：以前这里写的是「一张底盘图片，跟定位无关」——
+    ///    **错的**。它确实是 `ChassisPicture/prod/<VIN>`，但那张图是
+    ///    **地下停车场俯视哨兵照**（能看到车位号 / 通道 / 周边环境），
+    ///    就是官方「驻车拍照」那张图。见 `LMParkingSnap` 的注释与
+    ///    `refreshParkingSnap()`。
+    ///    「跟定位无关」这半句仍然成立：它不返回经纬度，坐标只来自 signalMap。
     ///
     /// 所以这个探测现在只用于「留个证据 / 万一车型不同」。
     /// 探测失败是预期内的，不要污染 lastError。
@@ -1158,6 +1203,66 @@ final class LMClient: ObservableObject {
                 latitude: LMParkingProbe.pick(any, keys: LMParkingProbe.latKeys),
                 longitude: LMParkingProbe.pick(any, keys: LMParkingProbe.lngKeys))
         } catch {
+            return nil
+        }
+    }
+
+    // MARK: - 驻车照片（`chassis/query`）
+
+    /// 拉取驻车照片的直链 + 上传时间。
+    ///
+    /// 只做「拿 fileUrl」这一步，**不下载图片** —— 下载留给 UI 层，
+    /// 因为 `LMClient` 只依赖 Foundation，不想为了一个 UIImage 引入 UIKit。
+    ///
+    /// ⚠️ 两个已知限制（如实标注，不假装能做）：
+    ///   1. 车端**没上传过**驻车照片时，`fileUrl` 可能为空 —— 这时返回 nil，
+    ///      UI 要显示「车端还没有驻车照片」，而不是空图；
+    ///   2. OSS 直链带 `Expires` 签名，过期后必须重新调接口换一条新链，
+    ///      所以这里**每次都是现拉**，不做长期缓存。
+    @discardableResult
+    func refreshParkingSnap() async -> LMParkingSnap? {
+        guard let vin = selectedVehicle?.vin else { return nil }
+        parkingSnapLoading = true
+        parkingSnapError = nil
+        defer { parkingSnapLoading = false }
+        do {
+            let any = try await request(method: "GET",
+                                        path: LMEndpoints.Path.chassis,
+                                        params: ["vin": vin])
+            let env = try? decode(LMEnvelope<LMParkingSnapData>.self, from: any)
+            let snap = LMParkingSnap(fileUrl: env?.data?.fileUrl,
+                                     uploadTimeMillis: env?.data?.uploadTime)
+            if let snap {
+                // 直链变了说明换了新图，旧的内存缓存要丢掉
+                if parkingSnap?.fileUrl != snap.fileUrl { parkingSnapImageData = nil }
+                parkingSnap = snap
+            } else {
+                parkingSnap = nil
+                parkingSnapError = "车端没有可用的驻车照片（接口没返回 fileUrl）"
+            }
+            return parkingSnap
+        } catch {
+            parkingSnap = nil
+            parkingSnapError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// 下载驻车照片本体（带内存缓存）。`fileUrl` 为 nil 时直接返回 nil。
+    @discardableResult
+    func downloadParkingSnapImage() async -> Data? {
+        if let d = parkingSnapImageData { return d }
+        guard let url = parkingSnap?.fileUrl.flatMap(URL.init(string:)) else { return nil }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard !data.isEmpty else {
+                parkingSnapError = "图片下载回来是空的"
+                return nil
+            }
+            parkingSnapImageData = data
+            return data
+        } catch {
+            parkingSnapError = "图片下载失败：\(error.localizedDescription)"
             return nil
         }
     }
@@ -1346,27 +1451,12 @@ final class LMClient: ObservableObject {
         }
     }
 
-    /// 拉取手机侧 IP 归属地（与官方「车辆位置」同源）。
-    ///
-    /// ★ 为什么进 `refreshAll`：这是**唯一**能复现官方定位结果的来源。
-    ///   车机 signalMap 的 `2190/2191` 是静态值，拿它当「车辆位置」必然和官方对不上
-    ///   （实测：60 个样本里坐标一个数字都没变）。
-    ///   接口很轻 —— GET、无鉴权、只回 country/province/city 三个字段，
-    ///   每次刷新拉一次不会造成负担。
-    private func refreshIPAddress() async {
-        do {
-            let any = try await request(method: "GET",
-                                        path: LMEndpoints.Path.ipAddress,
-                                        host: LMEndpoints.tecHost)
-            let env = try? decode(LMIPAddressEnvelope.self, from: any)
-            if let d = env?.data, !d.text.isEmpty {
-                ipAddress = d
-                ipAddressText = d.text
-            }
-        } catch {
-            // 锦上添花，失败不污染 lastError
-        }
-    }
+    // ★ 2026-10-09 删掉了原来的 `refreshIPAddress()`（轮询版）。
+    //   用户已要求撤掉「当前位置（IP 归属地）」那一套，UI 上不再显示它，
+    //   再每次刷新都发这个请求就是纯浪费。
+    //   需要这个数据时走上面的 `probeIpAddress()` —— 它同样会把结果写进
+    //   `ipAddress` / `ipAddressText`，只是由调用方显式触发（诊断页在用）。
+    //   留一个未被引用的 private 方法会被编译器报 unused，所以是删不是留。
 
     func refreshAll() async {
         do {
@@ -1381,8 +1471,11 @@ final class LMClient: ObservableObject {
         try? await refreshCommonConfig()
         // 消息未读数同理 —— 它是锦上添花，失败了不该影响车况
         try? await refreshNoticeCount()
-        // 位置同理。★ 这是复现官方「车辆位置」的唯一来源，见 refreshIPAddress 注释。
-        await refreshIPAddress()
+        // ★ 2026-10-09：IP 归属地**不再进轮询**。
+        //   用户已要求撤掉「当前位置（IP 归属地）」那一套，页面上没有任何地方
+        //   再显示它了，没必要每次刷新都多发一个请求。
+        //   方法和属性都保留 —— 诊断页要看得手动点「探测」（`probeIpAddress()`），
+        //   那条路径有独立的抓包样本，留着当排查工具。
         // 健康充电开关状态（只读查询）。充电中心页要用它显示开关的当前值。
         _ = await refreshHealthyCharging()
     }

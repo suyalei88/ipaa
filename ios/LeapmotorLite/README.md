@@ -725,6 +725,182 @@ UIKit 侧订阅 `objectWillChange` 就够了。
 
 ---
 
+### 1.11 定位与驻车照片（✅ 已完成，v1.1.5）
+
+这一节记两件事，都是用户直接提的：
+① 定位页撤掉「当前位置（IP 归属地）」，改成**本机 GPS** + **车辆位置**并列；
+② 找出并接上**驻车照片**。另外附带修了健康充电显示错误、补了车控感叹号的图例。
+
+#### 为什么撤掉 IP 归属地
+
+| 时间 | 结论 |
+|---|---|
+| 2026-10-08 | 用户报「官方显示淮南、本 App 显示合肥」→ 当时把主位置**改成 IP 归属地**（`GET apptec.leapmotor.cn/ipAnalysis/getAddressByIp`），依据是车机 signalMap 的 `2190/2191` 在 60 个抓包样本里一个数字都没变过 |
+| **2026-10-09** | 用户**要求撤掉**：「把当前位置取消掉 改回之前的」+「把车辆定位内部加入本机 GPS 位置和车辆位置同时加入」 |
+
+撤掉的理由（这次想清楚了）：
+
+- IP 归属地是「服务端认为**手机连的网**在哪」—— **不是**手机 GPS，**更不是**车的位置；
+- 只精确到城市；WiFi 走专线、开代理、用热点都会把它指到别的城市；
+- 它出现在「车辆定位」页**最上面**，很容易被当成「车在哪」。
+
+现在的规则：
+
+| 位置 | 来源 | 精度 |
+|---|---|---|
+| **我的位置（本机 GPS）** | `CLLocationManager`（`Store/LMLocationProvider.swift`） | 米级 |
+| **车辆位置** | 车机 signalMap `2190/2191`（`3725/3724` 交叉校验） | 车机上报值，可能长期不变 |
+
+改动清单：
+
+- `UIKit/LMLocationViewController.swift`：删 `ipHeader` / `ipCard` / `buildIPCard()` / `renderIP()` / `probeIPTapped()` 与全部 ip 控件；新增「我的位置（本机 GPS）」卡（`mePosCard` / `renderMePosition()`）；
+- `UIKit/LMLoveCarViewController.swift`：地图卡主位置改回**车机坐标**，删 `ipSourceNote`，`openInMaps()` 改回按坐标导航；
+- `API/LMClient.swift`：**删掉**轮询版 `refreshIPAddress()`（UI 不再显示，没必要每次刷新都发请求）；诊断用的 `probeIpAddress()` 保留；
+- 把「车端已关闭位置数据分享，无法获取车辆实时位置」这条提示从 IP 卡挪到**车辆位置**卡上 —— 它本来就是车辆位置的问题。
+
+> ⚠️ 断言纪律：契约测试里**不能**写 `"ipSourceNote" not in love` 这种。
+> 解释「为什么撤掉」时注释里必然会写出这个名字，会变成假阳性。
+> 一律匹配**真实代码形态**，例如 `re.search(r"private let ipSourceNote", love) is None`。
+
+#### 驻车照片 = `chassis/query`
+
+★★ 这次**更正了一个旧结论**。以前 `probeChassis()` 的注释写的是
+「`chassis/query` 返回的是 OSS 上的 `ChassisPicture/prod/<VIN>` —— 一张**底盘图片**，跟定位无关」。
+**那半句是错的**：它确实是 `ChassisPicture/prod/<VIN>`，但那张图是
+**地下停车场的俯视哨兵照**（画面里能看到车位号、通道箭头、消防管道）。
+
+证据（用户自己的抓包 `evidence/har_appgw.har` 第 42 / 38 条）：
+
+```
+GET /carownerservice/v3/api/chassis/query?vin=LFZ63AA15TH035113
+→ 200 {"code":0,"result":0,"message":"请求成功","data":{
+      "fileUrl":"http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/LFZ63AA15TH035113?Expires=...&OSSAccessKeyId=...&Signature=...",
+      "uploadTime":1791344811823}}
+→ 下载 fileUrl 得到 74,088 字节 JPEG（856×1296）
+```
+
+那张 JPEG 已存盘：**`evidence/car3d/chassis.jpg`**（车位号 067，黑色车）。
+
+旁证（官方主二进制）—— 整条「驻车快照」链路都在：
+
+| 符号 | 作用 |
+|---|---|
+| `LMVMapParkingSnapService` | 快照服务（`_snapService`） |
+| `queryParkSnapComleteBlock:` | 取快照（官方拼写就是 `Comlete`） |
+| `LMVMapParkingSnapView` | 快照视图（`_snapView` / `_aiPhotoView`） |
+| `LMVParkPhotoBrowserView` | 照片浏览器（点击看大图） |
+| `LMVParkBusinessModel` | 模型（`parkingTs` / `parkingEnv` / `parkingType` / `parkingPriceSummary` / `parkingSnapSwitch`） |
+| `LMVParkInfoModel` / `queryAIParkInfoComleteBlock:` | AI 泊车信息 |
+| `/v3/api/vehicleinfo/parking/query` | 另一条停车查询接口（**无抓包样本**，未接） |
+
+还有一条旁证来自 RN bundle：`leapmotor://NativePage:CarMap` 的 label 就是
+**「驻车拍照」**（`description: 跳转地图页（包含驻车拍照）`）——
+官方**没有**独立的驻车照片页，它是地图页内部的一块。
+
+落地：
+
+| 文件 | 内容 |
+|---|---|
+| `API/LMModels.swift` | `LMParkingSnap`（`fileUrl` + `uploadTime` 毫秒时间戳 → `Date`）、`LMParkingSnapData` |
+| `API/LMClient.swift` | `parkingSnap` / `parkingSnapLoading` / `parkingSnapError` / `parkingSnapImageData` + `refreshParkingSnap()` + `downloadParkingSnapImage()` |
+| `UIKit/LMLocationViewController.swift` | 「驻车照片」卡：缩略图（点开全屏）+ 上传时间 + **驻车位置**（车机坐标）+ 重新获取 |
+
+三个实现细节（都是踩过的）：
+
+1. **图片高度约束必须跟 `isHidden` 联动**。`UIStackView` 里 hidden 的 arrangedSubview
+   只是不参与布局，**它自己的约束还在** —— 直接 `isHidden = true` 会留一块 260pt 空白。
+   所以高度约束先 `isActive = false`，有图了再开（`snapHeightConstraint`）。
+2. **`LMClient` 不下载图片**。它只依赖 Foundation，不想为了一个 `UIImage` 引入 UIKit。
+   下载在 VC 层做（`URLSession.shared.data(from:)`），结果缓存在 `parkingSnapImageData`。
+3. **OSS 直链带签名会过期**，所以每次都是现拉 `fileUrl`，不做长期缓存；
+   直链变了（换了新图）要丢掉旧的图片缓存。
+
+#### 健康充电显示错误 —— 根因是 `deviceId`
+
+用户报：「健康充电官方 App 是开启状态，这个显示关闭」。
+
+查到的东西：
+
+- `healthyCharging/queryPushState`（`POST`，form: `carvin` + `deviceId`）
+  实测返回 `{"isPush":false}`；
+- 抓包里**官方自己**调这个接口也是 `false`（`har_appgw.har` #29 / #161）；
+- 官方 selector 是 `requestForChargingHealthControl:`（cmdid **480**），写走车控通道。
+
+★★ 根因在 `LMConfig.deviceId`：
+
+```swift
+// 改之前 —— 每次启动都换一个
+var deviceId: String = "ios_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+```
+
+这个接口是拿 `carvin + deviceId` 查「**这台设备**的状态」的。
+`deviceId` 每次启动都变，服务端就永远把本机当成一台**没绑定过的新设备**，
+凡是有设备维度的状态一律回默认值（`false` / `0`）—— 健康充电开关正是这么被读成「已关闭」的。
+
+抓包交叉验证：官方自己调同一个接口，用的是**固定不变**的
+`ios_ee45b9d830bb126d431e998943a7797a`。
+
+修法：
+
+```swift
+var deviceId: String = LMConfig.stableDeviceId
+
+static let stableDeviceId: String = {
+    let key = "lm.deviceId"
+    if let saved = UserDefaults.standard.string(forKey: key),
+       saved.hasPrefix("ios_"), saved.count > 8 { return saved }
+    UserDefaults.standard.set(capturedDeviceId, forKey: key)   // 默认取官方抓包那个
+    return capturedDeviceId
+}()
+```
+
+> 存 `UserDefaults` 而不是 Keychain：这不是凭据，丢了也只是重新认一次设备。
+
+配套的 UI 改进（`UIKit/LMChargeViewController.swift`）：
+
+- 卡里**写明状态来源**（`healthSourceLabel`）—— 以前只有一个「已关闭」，用户对着官方的
+  「已开启」完全没辙，既不知道值从哪来，也没有重读入口；
+- 「读取开关状态」按钮**不再隐藏** —— 以前读到一次就藏起来，想重读都没得点；
+- 开/关用颜色区分（`.lmGood` / `.lmText2`），扫一眼能分清。
+
+> ⚠️ 诚实标注：`deviceId` 是**能查到的最可能根因**，不是 100% 确证 ——
+> 抓包里官方自己调也是 `false`，所以 `isPush` 是否就是健康充电开关本身仍有不确定性。
+> 但「每次启动换 UUID」无论从哪个角度看都是 bug，先修掉。
+> 如果修完还是显示「已关闭」，说明 `isPush` 确实是另一个东西（比如推送提醒开关），
+> 那就要去 signalMap 找健康充电信号（官方有个 `chargeHealth` 属性是 `NSNumber`，
+> 且带 `chargeHealthChangeWithValue:`，像信号驱动）。**需要真机验证。**
+
+#### 车控按钮右上角的感叹号
+
+用户问「车控的按钮右上角有个感叹号是什么意思」。
+
+那是自己加的**物理动作警示**（`LMControlActionTile.warnView`，
+`exclamationmark.triangle.fill`、`.lmWarn`、9pt、右上角 top6/trailing6）：
+
+```swift
+warnView.isHidden = (cmd.risk != .physical)
+```
+
+`Risk` 定义在 `API/LMEndpoints.swift`：
+
+| 值 | 含义 | 感叹号 |
+|---|---|---|
+| `.low` | 只改状态，不会夹到人（空调、车窗、充电上限…） | ❌ |
+| `.physical` | **会开合车门 / 后备箱 / 启动上电** | ✅ |
+
+含义之前只写在代码注释里，界面上没有任何解释 —— 等于只有开发者看得懂。
+这次在车控页页脚（`footnoteText`）补了一句图例。
+
+#### 本节相关的门禁
+
+| 检查 | 内容 |
+|---|---|
+| `client/test_refresh_contract.py` → `[9]` | 定位数据源（40+ 条）：撤 IP 卡 / 本机 GPS / 驻车照片 / 代码里不读 `ipAddress` |
+| 同上 → `[10]` | 新增 6 条：`deviceId` 稳定性 + 健康充电 UI |
+| `ios/tools/lint_swift.py` | `R1~R19` 全过（本轮无新增规则，改动没引入新陷阱） |
+
+---
+
 ## 2. 编译 / 打包 IPA
 
 ### 方式 A：一键打包（推荐）

@@ -8,7 +8,12 @@
 //    · 车机坐标 = signalMap 的 2190/2191（缺失时退 3725/3724），见 `LMClient.coordinate`
 //    · 地图 / 地址 / 导航用「按 `carFix` 换算后」的坐标；
 //      算距离和逆地理编码则必须先换算回 WGS-84（见下）
-//    · 主位置文案来自手机 IP 归属地（与官方 App「车辆位置」同源）
+//    · 本机位置 = `LMLocationProvider`（`CLLocationManager`），跟「距我多远」同源
+//
+//  ★★ 2026-10-09 改动：撤掉「当前位置（IP 归属地）」卡。
+//    那张卡显示的是手机**网络**的 IP 归属地（`tecHost/ipAnalysis`），
+//    不是手机 GPS，也不是车的位置 —— 只精确到城市，还会被代理/热点带偏。
+//    用户明确要求撤掉它、改成「本机 GPS 位置」和「车辆位置」并列。
 //
 //  ★★ 坐标换算（2026-10-07 修「定位偏到隔壁小区」的成果）一律原样调用
 //     `LMCarCoordFix.apply / toWgs84 / amapCoordinateParam`，**不要**在本文件里
@@ -76,21 +81,27 @@ final class LMLocationViewController: LMBaseViewController {
     private let placeholderBodyLabel = UILabel()
     private let placeholderRefreshButton = UIButton()
 
-    // MARK: - 控件：IP 归属地（主位置）
+    // MARK: - 控件：我的位置（本机 GPS）
+    //
+    // ★★ 2026-10-09 用户要求：「把当前位置取消掉、改回之前的」
+    //    + 「把车辆定位内部加入本机 GPS 位置和车辆位置同时加入」。
+    //
+    //    原来这里是一张「当前位置（与官方 App 同源）」卡，内容是手机**网络**的
+    //    IP 归属地（`tecHost/ipAnalysis`）。它有两个问题：
+    //      · 那是「服务端认为手机连的网在哪」，不是手机的 GPS 位置 ——
+    //        WiFi 走专线、用代理、开热点都会把它指到别的城市；
+    //      · 它只精确到城市，放在「车辆定位」页最上面，很容易被当成「车在哪」。
+    //    所以撤掉，换成**真实的本机 GPS 位置**（`CLLocationManager`），
+    //    和下面的「车辆位置」并排，两个位置各自标清来源。
 
-    private let ipHeader = LMSectionHeaderLabel("当前位置（与官方 App 同源）")
-    private let ipCard = LMCardView()
-    private let ipContentStack = LMUIKit.vStack(spacing: 10)
-    private let ipIconView = UIImageView()
-    private let ipRegionLabel = UILabel()
-    private let ipTextLabel = UILabel()
-    private let ipFootnote = UILabel()
-    private let ipShareOffNote = LMLocIconNote(
-        icon: "exclamationmark.triangle.fill",
-        text: "车端已关闭位置数据分享，无法获取车辆实时位置",
-        iconColor: .lmWarn, textColor: .lmWarn, size: 11)
-    private let ipEmptyLabel = UILabel()
-    private let ipRefreshButton = UIButton()
+    private let mePosHeader = LMSectionHeaderLabel("我的位置（本机 GPS）")
+    private let mePosCard = LMCardView()
+    private let mePosIcon = UIImageView()
+    private let mePosValueLabel = UILabel()
+    private let mePosCoordLabel = UILabel()
+    private let mePosMetaLabel = UILabel()
+    private let mePosStateLabel = UILabel()
+    private let mePosRequestButton = UIButton()
 
     // MARK: - 控件：地址
 
@@ -100,6 +111,12 @@ final class LMLocationViewController: LMBaseViewController {
     private let addressStatusLabel = UILabel()
     private let placeNameLabel = UILabel()
     private let regeocodeButton = UIButton()
+    /// ★ 2026-10-09：这条提示原来挂在「IP 归属地」卡上，那张卡撤了之后挪到这里 ——
+    /// 它是**车辆位置**的问题，本来就该跟车辆位置放一起。
+    private let carShareOffNote = LMLocIconNote(
+        icon: "exclamationmark.triangle.fill",
+        text: "车端已关闭位置数据分享，无法获取车辆实时位置",
+        iconColor: .lmWarn, textColor: .lmWarn, size: 11)
 
     // MARK: - 控件：坐标
 
@@ -162,6 +179,28 @@ final class LMLocationViewController: LMBaseViewController {
     private let meFailedLabel = UILabel()
     private let meRetryButton = UIButton()
 
+    // MARK: - 控件：驻车照片（★ 2026-10-09 用户要求「找出驻车照片和驻车位置」）
+    //
+    // 来源：`GET /carownerservice/v3/api/chassis/query?vin=...`
+    //       → `data.fileUrl`（OSS 直链）+ `data.uploadTime`
+    // 证据：`evidence/har_appgw.har` #42/#38，图片已存 `evidence/car3d/chassis.jpg`。
+    // 详细说明见 `LMParkingSnap` 与 `LMClient.refreshParkingSnap()` 的注释。
+    //
+    // 「驻车位置」就在这张卡里一起给：照片拍摄时刻车辆所在的坐标
+    // （车机 signalMap 2190/2191，即页面上面「车辆位置」那一套）。
+
+    private let snapHeader = LMSectionHeaderLabel("驻车照片")
+    private let snapCard = LMCardView()
+    private let snapImageView = UIImageView()
+    /// 图片高度约束 —— 没图时**必须**关掉，否则 `UIStackView` 里会留一块空白
+    /// （hidden 的 arrangedSubview 只是不参与布局，它自己的约束还在，容易打架）
+    private var snapHeightConstraint: NSLayoutConstraint?
+    private let snapMetaLabel = UILabel()
+    private let snapStateLabel = UILabel()
+    private let snapButton = UIButton()
+    /// 全屏看大图的临时 VC（弱引用；present 之后由 UIKit 持有）
+    private weak var snapViewer: UIViewController?
+
     // MARK: - 控件：说明
 
     private let sourceNote = UILabel()
@@ -197,18 +236,19 @@ final class LMLocationViewController: LMBaseViewController {
 
         buildMap()
         buildPlaceholder()
-        buildIPCard()
+        buildMePositionCard()
         buildAddressCard()
         buildCoordinateCard()
         buildFixCard()
         buildActionRows()
         buildDistanceCard()
+        buildSnapCard()
         buildSourceNote()
 
         stack.addArrangedSubview(mapContainer)
         stack.addArrangedSubview(noLocationView)
-        stack.addArrangedSubview(ipHeader)
-        stack.addArrangedSubview(ipCard)
+        stack.addArrangedSubview(mePosHeader)
+        stack.addArrangedSubview(mePosCard)
         stack.addArrangedSubview(addressCard)
         stack.addArrangedSubview(coordHeader)
         stack.addArrangedSubview(coordCard)
@@ -216,6 +256,8 @@ final class LMLocationViewController: LMBaseViewController {
         stack.addArrangedSubview(actionGrid())
         stack.addArrangedSubview(distanceHeader)
         stack.addArrangedSubview(distanceCard)
+        stack.addArrangedSubview(snapHeader)
+        stack.addArrangedSubview(snapCard)
         stack.addArrangedSubview(sourceNote)
 
         observeMe()
@@ -315,52 +357,50 @@ final class LMLocationViewController: LMBaseViewController {
         ])
     }
 
-    // MARK: - IP 归属地卡片
+    // MARK: - 我的位置卡片（本机 GPS）
 
-    private func buildIPCard() {
-        ipIconView.image = UIImage(systemName: "location.circle.fill")
-        ipIconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 26)
-        ipIconView.tintColor = .lmTeal
-        ipIconView.contentMode = .scaleAspectFit
-        ipIconView.setContentHuggingPriority(.required, for: .horizontal)
+    private func buildMePositionCard() {
+        mePosIcon.image = UIImage(systemName: "location.fill")
+        mePosIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 22)
+        mePosIcon.tintColor = .lmAccent
+        mePosIcon.contentMode = .scaleAspectFit
+        mePosIcon.setContentHuggingPriority(.required, for: .horizontal)
 
-        ipRegionLabel.font = .systemFont(ofSize: 20, weight: .semibold)
-        ipRegionLabel.numberOfLines = 1
-        ipTextLabel.font = .systemFont(ofSize: 12)
-        ipTextLabel.textColor = .secondaryLabel
-        ipTextLabel.numberOfLines = 1
+        mePosValueLabel.font = LMFont.text(17, weight: .semibold)
+        mePosValueLabel.textColor = .lmText
+        mePosValueLabel.numberOfLines = 0
 
-        let texts = LMUIKit.vStack(spacing: 2)
-        texts.addArrangedSubview(ipRegionLabel)
-        texts.addArrangedSubview(ipTextLabel)
+        // 坐标用等宽：一串数字里某位变化时整行不会左右"跳"
+        mePosCoordLabel.font = LMFont.mono(11.5)
+        mePosCoordLabel.textColor = .lmText3
+        mePosCoordLabel.numberOfLines = 1
+        mePosCoordLabel.adjustsFontSizeToFitWidth = true
+        mePosCoordLabel.minimumScaleFactor = 0.7
 
-        let head = LMUIKit.hStack(spacing: 10)
-        head.addArrangedSubview(ipIconView)
+        mePosMetaLabel.font = LMFont.text(11)
+        mePosMetaLabel.textColor = .lmText3
+        mePosMetaLabel.numberOfLines = 0
+
+        mePosStateLabel.font = LMFont.text(12)
+        mePosStateLabel.textColor = .lmText2
+        mePosStateLabel.numberOfLines = 0
+
+        let texts = LMUIKit.vStack(spacing: 3)
+        texts.addArrangedSubview(mePosValueLabel)
+        texts.addArrangedSubview(mePosCoordLabel)
+        texts.addArrangedSubview(mePosMetaLabel)
+
+        let head = LMUIKit.hStack(spacing: 12, alignment: .top)
+        head.addArrangedSubview(mePosIcon)
         head.addArrangedSubview(texts)
 
-        ipFootnote.text = "取自手机网络的 IP 归属地。官方 App 的「车辆位置」用的就是这个来源 —— "
-            + "所以它只精确到城市，且跟手机所在网络有关，不一定是车的实际停车点。"
-        ipFootnote.font = .systemFont(ofSize: 11)
-        ipFootnote.textColor = .secondaryLabel
-        ipFootnote.numberOfLines = 0
+        styleLinkButton(mePosRequestButton, title: "获取我的位置", icon: "location.fill")
+        mePosRequestButton.addTarget(self, action: #selector(requestMeTapped), for: .touchUpInside)
 
-        ipContentStack.addArrangedSubview(head)
-        ipContentStack.addArrangedSubview(ipFootnote)
-        ipContentStack.addArrangedSubview(ipShareOffNote)
-
-        ipEmptyLabel.text = "还没取到 IP 归属地（下拉刷新试试）"
-        ipEmptyLabel.font = .systemFont(ofSize: 16)
-        ipEmptyLabel.textColor = .secondaryLabel
-        ipEmptyLabel.numberOfLines = 0
-
-        styleLinkButton(ipRefreshButton, title: "重新获取",
-                        icon: "arrow.triangle.2.circlepath")
-        ipRefreshButton.addTarget(self, action: #selector(probeIPTapped), for: .touchUpInside)
-
-        ipCard.contentStack.addArrangedSubview(ipContentStack)
-        ipCard.contentStack.addArrangedSubview(ipEmptyLabel)
-        ipCard.contentStack.addArrangedSubview(
-            LMUIKit.hStack(spacing: 0).lmAdding([ipRefreshButton, LMUIKit.spacer()]))
+        mePosCard.contentStack.addArrangedSubview(head)
+        mePosCard.contentStack.addArrangedSubview(mePosStateLabel)
+        mePosCard.contentStack.addArrangedSubview(
+            LMUIKit.hStack(spacing: 0).lmAdding([mePosRequestButton, LMUIKit.spacer()]))
     }
 
     // MARK: - 地址卡片
@@ -397,10 +437,13 @@ final class LMLocationViewController: LMBaseViewController {
                         icon: "arrow.triangle.2.circlepath")
         regeocodeButton.addTarget(self, action: #selector(regeocodeTapped), for: .touchUpInside)
 
+        carShareOffNote.isHidden = true
+
         addressCard.contentStack.addArrangedSubview(head)
         addressCard.contentStack.addArrangedSubview(addressValueLabel)
         addressCard.contentStack.addArrangedSubview(addressStatusLabel)
         addressCard.contentStack.addArrangedSubview(placeNameLabel)
+        addressCard.contentStack.addArrangedSubview(carShareOffNote)
         addressCard.contentStack.addArrangedSubview(
             LMUIKit.hStack(spacing: 0).lmAdding([regeocodeButton, LMUIKit.spacer()]))
     }
@@ -559,17 +602,52 @@ final class LMLocationViewController: LMBaseViewController {
 
     // MARK: - 说明
 
+    // MARK: - 驻车照片卡片
+
+    private func buildSnapCard() {
+        snapImageView.contentMode = .scaleAspectFit
+        snapImageView.backgroundColor = .lmCanvas
+        snapImageView.layer.cornerRadius = LMRadius.tile
+        snapImageView.layer.cornerCurve = .continuous
+        snapImageView.clipsToBounds = true
+        snapImageView.translatesAutoresizingMaskIntoConstraints = false
+        snapImageView.isUserInteractionEnabled = true
+        snapImageView.addGestureRecognizer(
+            UITapGestureRecognizer(target: self, action: #selector(snapTapped)))
+
+        // 高度约束先关掉：没图的时候如果它是 active 的，
+        // UIStackView 会给这块留 260pt 空白（hidden 只是不参与布局，约束还在）。
+        let h = snapImageView.heightAnchor.constraint(equalToConstant: 260)
+        h.isActive = false
+        snapHeightConstraint = h
+
+        snapMetaLabel.font = LMFont.text(11.5)
+        snapMetaLabel.textColor = .lmText3
+        snapMetaLabel.numberOfLines = 0
+
+        snapStateLabel.font = LMFont.text(12)
+        snapStateLabel.textColor = .lmText2
+        snapStateLabel.numberOfLines = 0
+
+        styleLinkButton(snapButton, title: "获取驻车照片", icon: "camera.fill")
+        snapButton.addTarget(self, action: #selector(loadSnapTapped), for: .touchUpInside)
+
+        snapCard.contentStack.addArrangedSubview(snapImageView)
+        snapCard.contentStack.addArrangedSubview(snapMetaLabel)
+        snapCard.contentStack.addArrangedSubview(snapStateLabel)
+        snapCard.contentStack.addArrangedSubview(
+            LMUIKit.hStack(spacing: 0).lmAdding([snapButton, LMUIKit.spacer()]))
+    }
+
     private func buildSourceNote() {
         sourceNote.text = """
-        ★ 主位置（最上面那张卡）来自手机网络的 IP 归属地 —— 和官方 App 的「车辆位置」是同一个接口
-        （apptec.leapmotor.cn/ipAnalysis/getAddressByIp）。它只精确到城市，且取决于手机当前连的网络，
-        不保证等于车的实际停车点。
-
-        下面的坐标来自车机上报的信号 2190/2191（另一组 3725/3724 做交叉校验），不是实时 GPS 跟踪。
+        本页有两个位置，来源完全不同，别混：
+        · 「我的位置（本机 GPS）」= 这台手机的 GPS，`CLLocationManager` 直出，米级精度；
+        · 「车辆位置」= 车机上报的信号 2190/2191（另一组 3725/3724 做交叉校验），
+          不是实时 GPS 跟踪 —— 它反映的是车机最后一次上报的坐标。
 
         ★ 实测提醒：这组车机坐标**可能长期不变**。在 60 个抓包样本里它一个数字都没动过
-        （31.801201 / 117.342718，指向合肥），而同一时间官方 App 显示的是淮南 ——
-        所以别把它当成「车在哪」的答案，它更像一个静态基准值。要判断新不新，看上面单独标的
+        （31.801201 / 117.342718，指向合肥）。要判断新不新，看坐标卡里单独标的
         「坐标未变化」多久：车况采集时间每秒都在刷新，但坐标可以连续几十次完全不变。
 
         车熄火后位置可能长时间不更新；地库里通常没有定位。
@@ -616,12 +694,13 @@ final class LMLocationViewController: LMBaseViewController {
         }
 
         renderMap()
-        renderIP()
+        renderMePosition()
         renderAddress()
         renderCoordinates()
         renderFix()
         renderActions()
         renderDistance()
+        renderSnap()
     }
 
     private func renderMap() {
@@ -657,16 +736,30 @@ final class LMLocationViewController: LMBaseViewController {
         mapPill.update(text: ageText)
     }
 
-    private func renderIP() {
-        if let ip = client.ipAddress, !ip.text.isEmpty {
-            ipContentStack.isHidden = false
-            ipEmptyLabel.isHidden = true
-            ipRegionLabel.text = ip.regionText
-            ipTextLabel.text = ip.text
-            ipShareOffNote.isHidden = !client.carLocationShareOff
+    /// 我的位置（本机 GPS）—— 与「距我多远」同一个数据源（`LMLocationProvider`）。
+    /// 幂等：只改已有控件的属性 / `isHidden`，不 `addSubview`。
+    private func renderMePosition() {
+        let state = me.state
+
+        mePosValueLabel.isHidden = false
+        mePosCoordLabel.isHidden = true
+        mePosMetaLabel.isHidden = true
+        mePosStateLabel.isHidden = true
+
+        if state == .ready, let c = me.coordinate {
+            mePosValueLabel.text = "已定位（WGS-84 原始坐标）"
+            mePosCoordLabel.isHidden = false
+            mePosCoordLabel.text = String(format: "%.6f, %.6f", c.latitude, c.longitude)
+            if let acc = me.accuracy {
+                mePosMetaLabel.isHidden = false
+                mePosMetaLabel.text = String(format: "定位精度约 ±%.0f 米（越小越准）", acc)
+            }
+            mePosRequestButton.configuration?.title = "刷新我的位置"
         } else {
-            ipContentStack.isHidden = true
-            ipEmptyLabel.isHidden = false
+            mePosValueLabel.text = (state == .locating) ? "正在获取你的位置…" : "还没拿到你的位置"
+            mePosStateLabel.isHidden = false
+            mePosStateLabel.text = state.text
+            mePosRequestButton.configuration?.title = "获取我的位置"
         }
     }
 
@@ -701,6 +794,7 @@ final class LMLocationViewController: LMBaseViewController {
         placeNameLabel.text = "地图兴趣点：\(p)"
 
         regeocodeButton.isEnabled = (carCoordinate != nil) && !geocoding
+        carShareOffNote.isHidden = !client.carLocationShareOff
     }
 
     private func renderCoordinates() {
@@ -810,6 +904,73 @@ final class LMLocationViewController: LMBaseViewController {
         }
     }
 
+    /// 驻车照片（幂等）。
+    private func renderSnap() {
+        let loading = client.parkingSnapLoading
+        let snap = client.parkingSnap
+
+        // 图片：有数据才显示，没数据就把高度约束关掉（见 buildSnapCard 的注释）
+        if let data = client.parkingSnapImageData, let img = UIImage(data: data) {
+            snapImageView.image = img
+            snapImageView.isHidden = false
+            snapHeightConstraint?.isActive = true
+        } else {
+            snapImageView.image = nil
+            snapImageView.isHidden = true
+            snapHeightConstraint?.isActive = false
+        }
+
+        // 拍摄时间 + 驻车位置
+        if let snap {
+            var lines: [String] = []
+            lines.append("车端上传时间：" + Self.snapTimeText(snap.uploadTime))
+            if let c = carCoordinate {
+                lines.append(String(format: "驻车位置：%.6f, %.6f（车机坐标）",
+                                    c.latitude, c.longitude))
+            } else {
+                lines.append("驻车位置：暂时没有车机坐标")
+            }
+            lines.append("照片由车端哨兵 / 环视系统拍摄后上传到 OSS；"
+                         + "链接带签名会过期，过期后点「重新获取」换一条新的。")
+            snapMetaLabel.isHidden = false
+            snapMetaLabel.text = lines.joined(separator: "\n")
+        } else {
+            snapMetaLabel.isHidden = true
+        }
+
+        // 状态行
+        if loading {
+            snapStateLabel.isHidden = false
+            snapStateLabel.text = "正在获取驻车照片…"
+        } else if let e = client.parkingSnapError {
+            snapStateLabel.isHidden = false
+            snapStateLabel.text = e
+        } else if snap == nil {
+            snapStateLabel.isHidden = false
+            snapStateLabel.text = "还没获取。点下面按钮从车端拉一张。"
+        } else if client.parkingSnapImageData == nil {
+            snapStateLabel.isHidden = false
+            snapStateLabel.text = "拿到图片链接了，正在下载…"
+        } else {
+            snapStateLabel.isHidden = true
+        }
+
+        // ★ 用 configuration 建的按钮，动态标题/图标必须改 configuration，
+        //   写 titleLabel?.text 会被配置覆盖（静默失效）。
+        snapButton.configuration?.title = (snap == nil) ? "获取驻车照片" : "重新获取"
+        snapButton.configuration?.image = UIImage(
+            systemName: (snap == nil) ? "camera.fill" : "arrow.triangle.2.circlepath")
+        snapButton.isEnabled = !loading
+    }
+
+    /// 上传时间 → `2026-10-07 13:26`
+    private static func snapTimeText(_ d: Date?) -> String {
+        guard let d else { return "未知" }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f.string(from: d)
+    }
+
     // MARK: - 动作
 
     @objc private func refreshTapped() {
@@ -832,13 +993,6 @@ final class LMLocationViewController: LMBaseViewController {
         }
     }
 
-    @objc private func probeIPTapped() {
-        Task { @MainActor in
-            _ = await client.probeIpAddress()
-            self.render()
-        }
-    }
-
     @objc private func regeocodeTapped() {
         Task { @MainActor in
             await self.reverseGeocode(force: true)
@@ -848,6 +1002,56 @@ final class LMLocationViewController: LMBaseViewController {
     @objc private func requestMeTapped() {
         me.request()
         render()
+    }
+
+    @objc private func loadSnapTapped() {
+        Task { @MainActor in
+            _ = await client.refreshParkingSnap()
+            if client.parkingSnap != nil {
+                _ = await client.downloadParkingSnapImage()
+            }
+            self.render()
+        }
+    }
+
+    /// 点缩略图 → 全屏看大图。
+    /// 照片里最有用的是**车位号**（画面里那个数字），缩略图上不一定看得清。
+    @objc private func snapTapped() {
+        guard let img = snapImageView.image else { return }
+        let vc = UIViewController()
+        vc.view.backgroundColor = .lmCanvas
+        vc.modalPresentationStyle = .fullScreen
+
+        let iv = UIImageView(image: img)
+        iv.contentMode = .scaleAspectFit
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        vc.view.addSubview(iv)
+
+        let close = UIButton(type: .system)
+        close.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        close.tintColor = .lmText2
+        close.translatesAutoresizingMaskIntoConstraints = false
+        close.addTarget(self, action: #selector(closeSnapViewer), for: .touchUpInside)
+        vc.view.addSubview(close)
+
+        NSLayoutConstraint.activate([
+            iv.topAnchor.constraint(equalTo: vc.view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            iv.leadingAnchor.constraint(equalTo: vc.view.leadingAnchor, constant: 12),
+            iv.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor, constant: -12),
+            iv.bottomAnchor.constraint(equalTo: vc.view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+
+            close.topAnchor.constraint(equalTo: vc.view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            close.trailingAnchor.constraint(equalTo: vc.view.trailingAnchor, constant: -16),
+            close.widthAnchor.constraint(equalToConstant: 34),
+            close.heightAnchor.constraint(equalToConstant: 34),
+        ])
+        snapViewer = vc
+        present(vc, animated: true)
+    }
+
+    @objc private func closeSnapViewer() {
+        snapViewer?.dismiss(animated: true)
+        snapViewer = nil
     }
 
     @objc private func fixChanged() {
@@ -892,7 +1096,16 @@ final class LMLocationViewController: LMBaseViewController {
         if !didInitialLoad {
             didInitialLoad = true
             centerOnVehicle(force: true)
-            Task { @MainActor in await self.reverseGeocode() }
+            Task { @MainActor in
+                await self.reverseGeocode()
+                // ★ 2026-10-09：顺手拉一次驻车照片。
+                //   失败不弹错 —— 状态写在驻车照片卡里，不打断定位主流程。
+                _ = await self.client.refreshParkingSnap()
+                if self.client.parkingSnap != nil {
+                    _ = await self.client.downloadParkingSnapImage()
+                }
+                self.render()
+            }
         }
     }
 

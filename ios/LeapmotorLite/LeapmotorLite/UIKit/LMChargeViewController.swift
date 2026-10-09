@@ -86,6 +86,11 @@ final class LMChargeViewController: LMBaseViewController {
     private let healthSwitch = UISwitch()
     private let healthStateLabel = UILabel()
     private let healthReadRow = UIStackView()
+    /// ★ 2026-10-09 加：把「这个状态是从哪读的」写在卡里。
+    ///   用户报「官方是开启的、本 App 显示已关闭」，而我们能查到的根因是
+    ///   `deviceId` 每次启动都变（见 `LMConfig.deviceId` 的注释）——
+    ///   服务端把本机当成陌生设备，带设备维度的状态一律回默认 false。
+    private let healthSourceLabel = UILabel()
 
     // MARK: - 控件：充电上限（cmdid 190）
 
@@ -351,6 +356,17 @@ final class LMChargeViewController: LMBaseViewController {
             "打开后，将根据车辆电池状态自动调整充电上限，以保持电池健康。"
             + "官方说明：健康充电期间可能无法把上限调到 90% 以上，属正常保护。",
             size: 11, color: .secondaryLabel))
+
+        // ★ 2026-10-09：把状态来源和「读不到怎么办」写清楚。
+        //   以前卡里只有一句「已关闭」，用户对着官方 App 的「已开启」完全没辙 ——
+        //   既不知道这个值从哪来，也没有重读的入口。
+        healthSourceLabel.text = "状态来源：healthyCharging/queryPushState"
+            + "（按 VIN + 设备号查询，官方 App 的开关也读这条）。"
+            + "和官方显示不一致时，点「读取开关状态」重读一次。"
+        healthSourceLabel.font = .systemFont(ofSize: 11)
+        healthSourceLabel.textColor = .secondaryLabel
+        healthSourceLabel.numberOfLines = 0
+        healthCard.contentStack.addArrangedSubview(healthSourceLabel)
     }
 
     // MARK: - 充电上限（cmdid 190）
@@ -740,16 +756,22 @@ final class LMChargeViewController: LMBaseViewController {
             healthUnreadLabel.isHidden = true
             healthSwitch.isHidden = false
             healthStateLabel.isHidden = false
-            healthReadRow.isHidden = true
             healthStateLabel.text = on ? "已开启" : "已关闭"
+            // ★ 用颜色区分：开启给主色，关闭给次级文字色 ——
+            //   以前两种情况都是同一个颜色，扫一眼分不出开还是关。
+            healthStateLabel.textColor = on ? .lmGood : .lmText2
             healthSwitch.setOn(on, animated: false)
             healthSwitch.isEnabled = !client.isBusy && !locked
         } else {
             healthUnreadLabel.isHidden = false
             healthSwitch.isHidden = true
             healthStateLabel.isHidden = true
-            healthReadRow.isHidden = false
         }
+        // ★ 2026-10-09：读取按钮**不再隐藏**。
+        //   以前读到一次就把它藏了，用户看到「已关闭」却没有任何重读的入口，
+        //   对着官方 App 的「已开启」只能干瞪眼。现在随时可点。
+        healthReadRow.isHidden = false
+        healthReadRow.isUserInteractionEnabled = !client.isBusy
     }
 
     private func renderSoc() {

@@ -88,19 +88,56 @@ signalMappings = {unlock:1298, trunk:1281, windows:1693, ac:1938}
 
 ## 4. ★ 明确**没有**复刻的部分（以及为什么）
 
-### 4.1 驻车照片
+### 4.1 驻车照片（★ 2026-10-09 已做，旧结论已推翻）
 
-官方地图卡里有一张「驻车照片」（车停稳时拍的图，存服务端再按停车点回放）。
-**本 App 不做**，三条理由：
+**旧结论（2026-10-08，已推翻）**：当时写「本 App 不做」，三条理由 ——
 
 1. 主二进制字符串表里扫不到任何像「取驻车照片」的路径；
 2. 四份 HAR 里没有任何一次请求像在取这张图；
 3. `vehicleinfo/parking/query` 是**纯路径猜测**（只有字符串表里那一段，
    服务名前缀是推的），实测响应里没有图片字段。
 
-与其放一张假图，不如把已确认的东西做扎实。契约测试里有一条**反向断言**
-（`test_lovecar_page` → 「没有把『驻车照片』做成 UI 元素」），
-防止后人「顺手补上」时糊一张假图进去。
+**新结论（2026-10-09，用户要求「找出驻车照片和驻车位置」后复查）**：
+找到了，而且证据是硬的 —— 走的是**另一条**接口 `chassis/query`：
+
+```
+GET /carownerservice/v3/api/chassis/query?vin=LFZ63AA15TH035113
+→ 200 {"code":0,"result":0,"message":"请求成功","data":{
+      "fileUrl":"http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/LFZ63AA15TH035113?Expires=...&OSSAccessKeyId=...&Signature=...",
+      "uploadTime":1791344811823}}
+→ 下载 fileUrl 得到 74,088 字节 JPEG（856×1296）
+```
+
+那张图就是**地下停车场俯视哨兵照**（车位号 067、通道箭头、消防管道都在），
+已存盘 `evidence/car3d/chassis.jpg`。
+
+**当时为什么会漏**：三条理由里 ① ② 都对，但**路径找错了** ——
+盯着 `parking/query` 找照片，而照片其实挂在 `chassis/query` 上；
+偏偏 `chassis/query` 当时又被误判成「一张底盘图片，跟定位无关」
+（见 `LMClient.probeChassis` 的旧注释），于是没人再回头看它一眼。
+「跟定位无关」这半句本身没错（它不返回经纬度），错的是「底盘图片」这个描述。
+
+**主二进制旁证**（整条「驻车快照」链路都在）：
+
+| 符号 | 作用 |
+|---|---|
+| `LMVMapParkingSnapService` | 快照服务（`_snapService`） |
+| `queryParkSnapComleteBlock:` | 取快照（官方拼写就是 `Comlete`） |
+| `LMVMapParkingSnapView` | 快照视图（`_snapView` / `_aiPhotoView`） |
+| `LMVParkPhotoBrowserView` | 照片浏览器（点击看大图） |
+| `LMVParkBusinessModel` | 模型（`parkingTs` / `parkingEnv` / `parkingType` / `parkingPriceSummary` / `parkingSnapSwitch`） |
+| `LMVParkInfoModel` / `queryAIParkInfoComleteBlock:` | AI 泊车信息 |
+| `/v3/api/vehicleinfo/parking/query` | 另一条停车查询接口（**至今无样本**，未接） |
+
+RN bundle 旁证：`leapmotor://NativePage:CarMap` 的 label 就是**「驻车拍照」**
+（`description: 跳转地图页（包含驻车拍照）`）—— 官方**没有**独立的驻车照片页，
+它是地图页内部的一块。
+
+**落地**：定位页「驻车照片」卡（`LMLocationViewController.buildSnapCard()` /
+`renderSnap()`），字段、实现细节与三个坑见
+`ios/LeapmotorLite/README.md` §1.11。
+契约测试里那条「不做驻车照片」的反向断言已在同一天**反转**
+（`test_lovecar_page` ⑤）。
 
 ### 4.2 空调设定温度
 
@@ -205,7 +242,7 @@ signalMappings = {unlock:1298, trunk:1281, windows:1693, ac:1938}
 ⚠️ 已知限制：IP 归属地只精确到城市，且取决于手机当前网络 ——
 手机与车不在同一城市时它也会不准。**官方有同样的限制**（它用的就是这个接口）。
 
-⚠️ 仍缺 **驻车照片**：抓包里没有任何接口返回驻车照片或停车点。
-该卡片可能走 MQTT（`mqtt-center.leapmotor.cn/mqtt/token/applyToken`
-→ `ssl://app-mq-central.leapmotor.com:8883`），HTTP 层抓不到 ——
-需在**打开该卡片时**重新抓包才能确认。
+✅ **驻车照片已找到**（2026-10-09 更正，原判断「走 MQTT、HTTP 抓不到」**不成立**）：
+它走 HTTP 的 `chassis/query`，返回 `data.fileUrl`（OSS 直链）+ `data.uploadTime`，
+四份 HAR 里**本来就有**这条请求（`evidence/har_appgw.har` #42 请求 + #38 图片本体）。
+之前没认出来，是因为把 `chassis/query` 误当成「底盘图片」。详见 §4.1。

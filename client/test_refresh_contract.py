@@ -285,13 +285,25 @@ def test_lovecar_page() -> None:
           re.search(r"Car3DConfig\.appJSON\(width:[\s\S]{0,60}?height:\s*car3DHeight\)", love)
           is not None)
 
-    # ⑤ 反向断言：**不能**把「驻车照片」做成 UI 元素 ——
-    #    那个接口在 IPA 字符串表里扫不到、抓包里也没有样本，
-    #    本 App 明确不做，不拿假图糊上去。有人「顺手补上」时这里会红。
-    #    （只允许它出现在解释「为什么不做」的注释里，但 UIKit 版连注释都没写，
-    #     所以直接断言整份文件里没有这个词。）
-    check("没有把「驻车照片」做成 UI 元素（接口未确认，明确不做）",
+    # ⑤ ★★ 2026-10-09 **反转了这条断言**。
+    #    原来写的是「**不能**把『驻车照片』做成 UI 元素」——
+    #    理由是当时那个接口在 IPA 字符串表里扫不到、四份 HAR 里也没有样本，
+    #    所以宁可留空，不拿假图糊上去。
+    #
+    #    现在接口**已确认**，证据是硬的：
+    #      GET /carownerservice/v3/api/chassis/query?vin=<VIN>
+    #      → data.fileUrl（OSS 直链）+ data.uploadTime
+    #      （evidence/har_appgw.har #42 请求 + #38 图片本体）
+    #    图片也已存盘：evidence/car3d/chassis.jpg（地下停车场俯视哨兵照）。
+    #
+    #    功能落在**定位页**（LMLocationViewController），不在爱车页 ——
+    #    官方把这块放在地图页内部，我们放在「车辆定位」页更顺手，
+    #    也避免同一张图两处维护。所以下面两条断言一正一反。
+    loc = read("UIKit/LMLocationViewController.swift")
+    check("爱车页不放驻车照片（统一放定位页，避免两处维护）",
           "驻车照片" not in love)
+    check("定位页确实做了驻车照片（接口已确认，不再是「明确不做」）",
+          "驻车照片" in loc)
 
     # ⑥ lint R9：读了锁定态就必须挂时钟，否则倒计时冻住
     #    ★ SwiftUI 版的等价物 `.lmClock(until:)` 是修饰符；
@@ -323,59 +335,128 @@ def test_lovecar_page() -> None:
 
 
 def test_location_source() -> None:
-    """⑨ 定位数据源：车辆位置必须走 IP 归属地（与官方 App 同源）。
+    """⑨ 定位数据源：**本机 GPS + 车机坐标**，不再用 IP 归属地。
 
-    背景（2026-10-08 用户报）：官方 App 显示车在淮南，本 App 显示合肥。
-    根因：之前拿车机 signalMap 的 `2190/2191` 当位置，而那组坐标在
-    **60 个抓包样本里一个数字都没变**（31.801201 / 117.342718，指向合肥）
-    —— 是静态值，不是实时位置。官方「车辆位置」实际来自 IP 归属地：
-        GET https://apptec.leapmotor.cn/ipAnalysis/getAddressByIp
-        → {"country":"中国","province":"安徽","city":"淮南"}
-    下面几条断言把这个修复钉死，防止以后有人「优化」回用车机坐标。
+    历史（两次方向相反的修复，别把结论搞混）：
+      · 2026-10-08 用户报「官方显示淮南、本 App 显示合肥」。
+        当时的修复是**把主位置改成 IP 归属地**
+        （`GET apptec.leapmotor.cn/ipAnalysis/getAddressByIp`），
+        依据是车机 signalMap 的 `2190/2191` 在 60 个抓包样本里一个数字都没变过。
+      · ★ 2026-10-09 用户**要求撤掉这一套**：
+        「把当前位置取消掉 改回之前的」
+        +「把车辆定位内部加入本机 GPS 位置和车辆位置同时加入」。
+        理由：IP 归属地是「服务端认为手机连的网在哪」—— 只精确到城市，
+        WiFi 专线 / 代理 / 开热点都会把它指到别的城市；而且它出现在
+        「车辆定位」页最上面，很容易被当成「车在哪」。
+
+    现在的规则（本函数钉死）：
+      · 定位页**同时**有「我的位置（本机 GPS）」和「车辆位置（车机坐标）」；
+      · UI 层**不许**再读 `client.ipAddress`；
+      · `probeIpAddress()` 保留（诊断页的排查工具，有独立抓包样本），
+        但轮询版 `refreshIPAddress()` 已删除，不再每次刷新都发这个请求；
+      · ★ 新增：驻车照片（`chassis/query` → `fileUrl`）。
+
+    ⚠️ 断言写法纪律：只匹配**真实代码形态**，不要写
+       `"ipSourceNote" not in love` 这种 —— 注释里必然会提到这个名字
+       （解释「为什么撤掉」时就要写），会变成假阳性。同一类坑踩过四次了。
     """
-    print("\n[9] 定位数据源（IP 归属地，与官方同源）")
+    print("\n[9] 定位数据源（本机 GPS + 车机坐标，撤掉 IP 归属地）")
 
     client = read("API/LMClient.swift")
     models = read("API/LMModels.swift")
-    # ★ 2026-10-09：两页都已迁成 UIKit。
     love = read("UIKit/LMLoveCarViewController.swift")
     loc = read("UIKit/LMLocationViewController.swift")
     ep = read("API/LMEndpoints.swift")
 
-    # 端点
-    check("端点表里有 IP 归属地路径", "/ipAnalysis/getAddressByIp" in ep)
-    check("IP 归属地走 tecHost（apptec.leapmotor.cn）",
+    # ── 端点 / 模型：都保留（诊断页要用，也是历史证据）─────────────────
+    check("端点表里仍保留 IP 归属地路径（诊断用）",
+          "/ipAnalysis/getAddressByIp" in ep)
+    check("IP 归属地仍走 tecHost（apptec.leapmotor.cn）",
           "tecHost" in ep and "apptec.leapmotor.cn" in ep)
-
-    # 模型
-    check("LMIPAddress 有 regionText（省+市，给主位置用）",
+    check("LMIPAddress 仍保留 regionText（诊断页会显示）",
           re.search(r"var regionText: String", models) is not None)
 
-    # 客户端
-    check("LMClient 暴露结构化 ipAddress",
-          re.search(r"var ipAddress: LMIPAddress\?", client) is not None)
-    check("refreshAll 里会拉 IP 归属地", "refreshIPAddress()" in client)
-    check("refreshIPAddress 走 ipAddress 路径",
-          re.search(r"private func refreshIPAddress[\s\S]{0,900}?LMEndpoints\.Path\.ipAddress",
-                    client) is not None)
+    # ── ★ 关键：IP 归属地不再进轮询 ────────────────────────────────
+    check("refreshAll 里不再 await refreshIPAddress",
+          "await refreshIPAddress()" not in client)
+    check("轮询版 refreshIPAddress 已删除（否则是 unused private，编译器会警告）",
+          re.search(r"func refreshIPAddress", client) is None)
+    check("诊断用的 probeIpAddress 保留",
+          re.search(r"func probeIpAddress\(", client) is not None)
 
-    # 爱车页地图卡：主位置 = IP 归属地
-    check("爱车页地图卡读 client.ipAddress", "client.ipAddress" in love)
-    check("爱车页地图卡显示 regionText", "ip.regionText" in love)
-    check("打开地图优先用 IP 归属地城市名",
-          re.search(r"func openInMaps\(\)[\s\S]{0,700}?ip\.regionText", love) is not None)
+    # ── ★ 关键：UI 层不许再读 ipAddress（匹配代码形态，不是注释）──────
+    check("爱车页不再读 client.ipAddress（代码里）",
+          re.search(r"if let ip = client\.ipAddress", love) is None)
+    check("定位页不再读 client.ipAddress（代码里）",
+          re.search(r"if let ip = client\.ipAddress", loc) is None)
+    check("爱车页不再声明 ipSourceNote 控件",
+          re.search(r"private let ipSourceNote", love) is None)
+    check("定位页不再声明 ipCard / ipHeader 控件",
+          re.search(r"private let ip(Card|Header|ContentStack)\b", loc) is None)
+    check("定位页不再有 buildIPCard / renderIP / probeIPTapped",
+          re.search(r"func (buildIPCard|renderIP|probeIPTapped)\b", loc) is None)
 
-    # 定位页
-    check("定位页有 IP 归属地卡片", "ipCard" in loc)
-    check("定位页卡片读 client.ipAddress", "client.ipAddress" in loc)
+    # ── ★ 新规则：定位页同时有「本机 GPS」和「车辆位置」──────────────
+    check("定位页有「我的位置（本机 GPS）」标题",
+          "我的位置（本机 GPS）" in loc)
+    check("定位页声明了本机位置卡片控件",
+          re.search(r"private let mePosCard\b", loc) is not None)
+    check("定位页有 renderMePosition",
+          re.search(r"func renderMePosition\(", loc) is not None)
+    check("本机位置真的读 me.coordinate（LMLocationProvider）",
+          re.search(r"func renderMePosition\(\)[\s\S]{0,900}?me\.coordinate", loc) is not None)
+    check("本机位置与「距我多远」同源（都用 LMLocationProvider 实例 me）",
+          re.search(r"private let me = LMLocationProvider\(\)", loc) is not None)
+    check("定位页仍然有车辆位置（地址卡 caption）", "车辆位置" in loc)
+    check("定位页 render() 同时调用两个位置渲染",
+          re.search(r"renderMePosition\(\)", loc) is not None
+          and re.search(r"renderAddress\(\)", loc) is not None)
+
+    # ── ★ 爱车页地图卡改回车机坐标 ────────────────────────────────
+    check("爱车页地图卡改回车机坐标（renderMap 里读 client.coordinate）",
+          re.search(r"func renderMap\(\)[\s\S]{0,700}?client\.coordinate", love) is not None)
+    check("打开地图改回按车机坐标（openInMaps 里读 client.coordinate）",
+          re.search(r"func openInMaps\(\)[\s\S]{0,700}?client\.coordinate", love) is not None)
     check("定位页说明了车机坐标可能长期不变", "一个数字都没动" in loc)
 
-    # 车端未分享位置的提示（复刻官方原话）
+    # ── 车端未分享位置的提示（复刻官方原话）─────────────────────────
     tip = "车端已关闭位置数据分享，无法获取车辆实时位置"
     check("爱车页复刻了官方「车端已关闭位置数据分享」提示", tip in love)
     check("定位页复刻了同一句提示", tip in loc)
     check("该判断用可观测事实（坐标长期不变）而非猜 privacyGPS 语义",
-          re.search(r"var carLocationShareOff[\s\S]{0,700}?coordinateUnchangedFor", client) is not None)
+          re.search(r"var carLocationShareOff[\s\S]{0,700}?coordinateUnchangedFor",
+                    client) is not None)
+
+    # ── ★★ 驻车照片（2026-10-09 新增）────────────────────────────
+    #
+    # 用户要求「找出驻车照片和驻车位置」。
+    # 证据：`evidence/har_appgw.har` #42 / #38 ——
+    #   GET /carownerservice/v3/api/chassis/query?vin=<VIN>
+    #   → data.fileUrl（OSS 直链）+ data.uploadTime
+    #   → 下载得到地下停车场俯视哨兵照（856×1296，已存 evidence/car3d/chassis.jpg）
+    # 旁证：官方主二进制 LMVMapParkingSnapService / queryParkSnapComleteBlock: /
+    #       LMVMapParkingSnapView / LMVParkPhotoBrowserView / LMVParkBusinessModel。
+    check("chassis 端点路径在端点表里",
+          "/carownerservice/v3/api/chassis/query" in ep)
+    check("LMClient 暴露 parkingSnap 状态",
+          re.search(r"var parkingSnap: LMParkingSnap\?", client) is not None)
+    check("LMClient 有 refreshParkingSnap()",
+          re.search(r"func refreshParkingSnap\(", client) is not None)
+    check("LMClient 有 downloadParkingSnapImage()",
+          re.search(r"func downloadParkingSnapImage\(", client) is not None)
+    check("LMParkingSnap 读 fileUrl",
+          re.search(r"struct LMParkingSnap[\s\S]{0,1200}?fileUrl", models) is not None)
+    check("LMParkingSnap 把 uploadTime 毫秒时间戳转成 Date",
+          re.search(r"struct LMParkingSnap[\s\S]{0,1400}?timeIntervalSince1970", models) is not None)
+    check("定位页有驻车照片卡片",
+          re.search(r"private let snapCard\b", loc) is not None)
+    check("定位页有 buildSnapCard / renderSnap",
+          re.search(r"func buildSnapCard\(", loc) is not None
+          and re.search(r"func renderSnap\(", loc) is not None)
+    check("驻车照片卡里同时给出驻车位置（车机坐标）",
+          re.search(r"func renderSnap\(\)[\s\S]{0,1200}?carCoordinate", loc) is not None)
+    check("图片高度约束在没图时被关掉（否则 stack 会留 260pt 空白）",
+          re.search(r"snapHeightConstraint\?\.isActive", loc) is not None)
 
 
 def test_charging_center() -> None:
@@ -515,6 +596,27 @@ def test_charging_center() -> None:
             check(f"复现脚本里断言了 cmdid {cid}", f", {cid}, " in r)
         check("复现脚本解释了「预约充电是多对一」",
               "多对一" in r or "161 / 171 / 361 / 392" in r)
+
+    # ---- ★ 2026-10-09 加：deviceId 必须稳定，否则设备维度的状态读不对 ----
+    #
+    # 用户报「官方健康充电是开启状态，本 App 显示已关闭」。
+    # 根因线索：`queryPushState` 是拿 `carvin + deviceId` 查「**这台设备**的状态」，
+    # 而原来的 `deviceId` 是**每次启动现生成一个 UUID** ——
+    # 服务端每次都把本机当成一台陌生设备，带设备维度的状态一律回默认值 false。
+    # 抓包交叉验证：官方自己调同一个接口，用的也是**固定不变**的
+    # `ios_ee45b9d830bb126d431e998943a7797a`。
+    check("deviceId 走持久化的稳定值（不再每次启动随机）",
+          re.search(r"var deviceId: String\s*=\s*LMConfig\.stableDeviceId", client) is not None)
+    check("stableDeviceId 落盘复用（UserDefaults）",
+          re.search(r"static let stableDeviceId[\s\S]{0,1300}?UserDefaults", client) is not None)
+    check("stableDeviceId 首次取官方抓包那个 deviceId（服务端认过）",
+          re.search(r"static let stableDeviceId[\s\S]{0,1300}?capturedDeviceId", client) is not None)
+    check("健康充电卡写明了状态来源（不再只给一个「已关闭」）",
+          re.search(r"healthSourceLabel\.text[\s\S]{0,500}?queryPushState", view) is not None)
+    check("读取开关状态的按钮不再被隐藏（用户随时能重读）",
+          re.search(r"healthReadRow\.isHidden = false", view) is not None)
+    check("健康充电开关状态用颜色区分开/关",
+          re.search(r"healthStateLabel\.textColor = on \? \.lmGood", view) is not None)
 
 
 def test_car3d_layout() -> None:

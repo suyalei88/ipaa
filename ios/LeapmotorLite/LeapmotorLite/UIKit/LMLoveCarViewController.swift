@@ -139,7 +139,6 @@ final class LMLoveCarViewController: LMBaseViewController {
     private let locationMainLabel = UILabel()
     private let locationCoordLabel = UILabel()
     private let locationAgeLabel = UILabel()
-    private let ipSourceNote = UILabel()
     private let carShareOffNote = LMIconTextRow(
         icon: "exclamationmark.triangle.fill",
         text: "车端已关闭位置数据分享，无法获取车辆实时位置",
@@ -719,11 +718,9 @@ final class LMLoveCarViewController: LMBaseViewController {
         head.addArrangedSubview(texts)
         head.addArrangedSubview(LMUIKit.spacer())
 
-        ipSourceNote.text = "位置取自手机网络归属地，与官方 App 同源"
-        ipSourceNote.font = LMFont.text(11)
-        ipSourceNote.textColor = .lmText3
-        ipSourceNote.numberOfLines = 0
-        ipSourceNote.isHidden = true
+        // ★★ 2026-10-09 用户要求撤掉「当前位置（IP 归属地）」那一套，
+        //    改回用车机坐标 —— 那张 `ipSourceNote`（「位置取自手机网络归属地」）
+        //    一并删掉，见 `renderMap()` 的说明。
         carShareOffNote.isHidden = true
         privacyNote.isHidden = true
 
@@ -741,7 +738,6 @@ final class LMLoveCarViewController: LMBaseViewController {
         buttons.addArrangedSubview(locationButton)
 
         mapCard.contentStack.addArrangedSubview(head)
-        mapCard.contentStack.addArrangedSubview(ipSourceNote)
         mapCard.contentStack.addArrangedSubview(carShareOffNote)
         mapCard.contentStack.addArrangedSubview(privacyNote)
         mapCard.contentStack.addArrangedSubview(buttons)
@@ -1013,19 +1009,16 @@ final class LMLoveCarViewController: LMBaseViewController {
     }
 
     private func renderMap() {
-        if let ip = client.ipAddress, !ip.regionText.isEmpty {
-            locationMainLabel.text = ip.regionText
-        } else if let c = client.coordinate {
-            locationMainLabel.text = String(format: "%.5f, %.5f", c.latitude, c.longitude)
-        } else {
-            locationMainLabel.text = "暂无位置"
-        }
-
+        // ★★ 2026-10-09：改回**车机坐标**（用户要求撤掉 IP 归属地那一套）。
+        //    原来这里优先显示 `client.ipAddress.regionText`（手机网络的归属地），
+        //    那是「服务端认为手机连的网在哪」，不是车在哪 —— 只精确到城市，
+        //    还会被 WiFi 专线 / 代理 / 热点带到别的城市。
         if let c = client.coordinate {
+            locationMainLabel.text = String(format: "%.5f, %.5f", c.latitude, c.longitude)
             locationCoordLabel.isHidden = false
-            locationCoordLabel.text = String(format: "车机坐标 %.5f, %.5f",
-                                             c.latitude, c.longitude)
+            locationCoordLabel.text = "车机信号 2190 / 2191"
         } else {
+            locationMainLabel.text = "暂无车辆坐标"
             locationCoordLabel.isHidden = true
         }
 
@@ -1036,11 +1029,10 @@ final class LMLoveCarViewController: LMBaseViewController {
             locationAgeLabel.isHidden = true
         }
 
-        ipSourceNote.isHidden = !(client.ipAddress.map { !$0.regionText.isEmpty } ?? false)
         carShareOffNote.isHidden = !client.carLocationShareOff
         privacyNote.isHidden = !client.locationMayBeHidden
 
-        mapsButton.isEnabled = !(client.ipAddress == nil && client.coordinate == nil)
+        mapsButton.isEnabled = (client.coordinate != nil)
     }
 
     private func renderBLE() {
@@ -1520,16 +1512,9 @@ final class LMLoveCarViewController: LMBaseViewController {
     }
 
     private func openInMaps() {
-        // ★ 优先按 IP 归属地的城市名搜 —— 与官方「车辆位置」同源。
-        //   车机坐标是静态值（实测 60 个样本不变），直接拿它导航会导到**错误城市**。
-        if let ip = client.ipAddress, !ip.regionText.isEmpty {
-            let q = ip.regionText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-                ?? ip.regionText
-            if let url = URL(string: "https://maps.apple.com/?q=\(q)&z=12") {
-                UIApplication.shared.open(url)
-            }
-            return
-        }
+        // ★★ 2026-10-09：改回按**车机坐标**导航（用户要求撤掉 IP 归属地那一套）。
+        //   ⚠️ 已知限制：车机坐标实测可能长期不变（60 个抓包样本里一个数字都没动过），
+        //      所以它不一定等于车**现在**停的地方 —— 完整说明在「车辆定位」页底部。
         guard let c = client.coordinate else { return }
         if let url = URL(string: "https://maps.apple.com/?ll=\(c.latitude),\(c.longitude)&q=我的车&z=17") {
             UIApplication.shared.open(url)

@@ -400,6 +400,49 @@ struct LMParkingProbe {
     }
 }
 
+// MARK: - 驻车照片（`chassis/query`）
+
+/// `GET /carownerservice/v3/api/chassis/query?vin=...`
+///
+/// ★★ 2026-10-09 **更正一个旧结论**：这个接口以前被记成「底盘图片，跟定位无关」
+///   （见 `LMClient.probeChassis` 的注释）。实际它返回的就是**驻车照片** ——
+///   车停稳后由车端环视/哨兵系统拍下并上传到 OSS 的一张**俯视照片**，
+///   画面里能看到车位号、通道箭头、周边管道，正是官方「驻车拍照」那张图。
+///
+/// 证据（用户自己的抓包，`evidence/har_appgw.har` 第 42 与第 38 条）：
+/// ```
+/// GET /carownerservice/v3/api/chassis/query?vin=LFZ63AA15TH035113
+/// → {"code":0,"result":0,"message":"请求成功","data":{
+///      "fileUrl":"http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/LFZ63AA15TH035113?Expires=...&OSSAccessKeyId=...&Signature=...",
+///      "uploadTime":1791344811823}}
+/// → 下载 fileUrl 得到 74,088 字节 JPEG（856×1296）
+/// ```
+/// 那张 JPEG 已存盘：`evidence/car3d/chassis.jpg`。
+///
+/// 旁证（官方主二进制）：`LMVMapParkingSnapService` / `queryParkSnapComleteBlock:`
+/// （官方拼写如此）/ `LMVMapParkingSnapView` / `LMVParkPhotoBrowserView` /
+/// `LMVParkBusinessModel` —— 整条「驻车快照」链路都在，且 RN bundle 里
+/// `leapmotor://NativePage:CarMap` 的 label 就是「驻车拍照」。
+struct LMParkingSnap: Equatable {
+    /// OSS 图片直链（带签名，`Expires` 到点会失效，需要重新调接口换一条）
+    let fileUrl: String
+    /// 车端上传时间
+    let uploadTime: Date?
+
+    /// `uploadTime` 是毫秒时间戳
+    init?(fileUrl: String?, uploadTimeMillis: Double?) {
+        guard let u = fileUrl, !u.isEmpty else { return nil }
+        self.fileUrl = u
+        self.uploadTime = uploadTimeMillis.map { Date(timeIntervalSince1970: $0 / 1000) }
+    }
+}
+
+/// `chassis/query` 的 `data` 段
+struct LMParkingSnapData: Decodable {
+    let fileUrl: String?
+    let uploadTime: Double?
+}
+
 // MARK: - OTA 版本（`fota/getCurrentVersion`）
 
 /// `GET /carownerservice/v3/api/fota/getCurrentVersion?vin=...`
