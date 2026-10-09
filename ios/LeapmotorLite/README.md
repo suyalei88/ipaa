@@ -4,7 +4,7 @@
 仅用于控制 **本人账号下的本人车辆**。
 
 - 平台：iOS 17+
-- 语言：Swift / SwiftUI
+- 语言：Swift / UIKit（v1.1.3 起全部页面为原生 UIKit，零 SwiftUI）
 - 依赖：**零第三方库**（CryptoKit + CommonCrypto，系统自带）
 - 网络：URLSession，全部接口走 HTTPS
   （唯一例外：「3D 看车」由 App 自己在 `127.0.0.1` 起一个只服务内置资源的本地 HTTP 服务，
@@ -498,20 +498,21 @@ stub 地址：`AppointmentContrl @0x10a4d4d40` / `BeginOrEndCharging @0x10a4d4d8
 
 ---
 
-### 1.9 UI 框架迁移：SwiftUI → UIKit（进行中）
+### 1.9 UI 框架迁移：SwiftUI → UIKit（✅ 已完成，v1.1.3）
 
 **起因**：要求「换个 UI，不使用 SwiftUI」。
 
 **做法不是一次性重写**。先把壳换成 UIKit，未迁移的页面用
 `UIHostingController` 托住 —— 每一步 App 都能编译、能出包、能装机，
-不存在「改到一半整个工程不可用」的中间状态。
+不存在「改到一半整个工程不可用」的中间状态。到 v1.1.3 全部页面迁完，
+`LMHostingController` 与 `Views/` 目录已整体删除，**全项目零 `import SwiftUI`**。
 
 代码分界（实测行数）：
 
 | 层 | 文件 | 行数 | 迁移时 |
 |---|---|---|---|
-| 入口 + 视图层 | `UIKit/` + `Views/` | 15 个文件 / 约 7,600 行 | **要重写** |
-| 协议 + 加密 + 蓝牙 + 存储 | `API/` `Crypto/` `BLE/` `Store/` | 17 个文件 / 6,790 行 | **一行不动**（纯 Foundation） |
+| 入口 + 视图层 | `UIKit/`（迁移前是 `UIKit/` + `Views/`） | 迁移前 15 个文件 / 约 7,600 行 | **已全部重写**（v1.1.3） |
+| 协议 + 加密 + 蓝牙 + 存储 | `API/` `Crypto/` `BLE/` `Store/` | 17 个文件 / 6,790 行 | **一行没动**（纯 Foundation） |
 
 也就是说 `LMClient`（`ObservableObject` + 29 个 `@Published`）**完全不用改**，
 UIKit 侧订阅 `objectWillChange` 就够了。
@@ -522,10 +523,12 @@ UIKit 侧订阅 `objectWillChange` 就够了。
   `Info.plist` 里没有 `UIApplicationSceneManifest`，所以走传统生命周期，
   **不需要 SceneDelegate**（⚠️ 以后要加 Scene 清单必须同时补 SceneDelegate，否则白屏）。
 - `UIKit/LMUIKitTheme.swift` —— `UIColor.lm*` 与 UIKit 版卡片 / 磁贴 / 胶囊 / 导航，
-  颜色值与 `Views/Theme.swift` **逐位对齐**。
+  颜色值与原 `Views/Theme.swift` **逐位对齐**（v1.1.3 迁完后 `LMRadius` 也搬到了这里，
+  旧 `Theme.swift` 随 `Views/` 一起删除，现在只有一处定义）。
 - `UIKit/LMBaseViewController.swift` —— 页面基类。订阅 `client.objectWillChange`
   驱动 `render()`，并提供滚动容器、下拉刷新、提示框。
-- `UIKit/LMHostingController.swift` —— 过渡桥，把未迁移的 SwiftUI 页包成 VC。
+- ~~`UIKit/LMHostingController.swift`~~ —— 过渡桥，把未迁移的 SwiftUI 页包成 VC。
+  **v1.1.3 已删除**：所有页面迁完后它就没有使用者了。
 - `UIKit/LMRootViewController.swift` / `LMMainTabBarController.swift` —— 根容器与 5 个 Tab。
 
 **Phase 1（已完成，v1.1.1）**：登录页 `LoginView`（285 行）迁成原生
@@ -592,32 +595,63 @@ UIKit 侧订阅 `objectWillChange` 就够了。
 并且 `render()` 必须**幂等** —— 只改已有控件的属性，不要在里面 `addSubview`，
 否则每来一次数据就叠一层控件。
 
-#### 后续阶段
+#### Phase 3~6（已完成，v1.1.3）：剩余 11 页一次性迁完
 
-按体量从小到大逐页替换，每迁完一页都要 lint + 契约测试通过、CI 绿：
+原计划按体量从小到大分 6 批（Phase 3~8），实际按「谁依赖谁」重排成 4 批、
+**一次性迁完** —— 因为逐批做会让「UIKit 页 push SwiftUI 页」的过渡桥
+（`LMHostingController` + `ownsNavigationBar`）在每一批里都要维护一遍，
+而它本身就是最别扭的部分，早一天删掉早一天省心。
 
-| 阶段 | 页面 | 行数 | 状态 |
+| 阶段 | 页面 | 迁移前 | 状态 |
 |---|---|---|---|
 | Phase 0 | 换壳（AppDelegate + window + 宿主桥） | — | ✅ v1.1.0 |
-| Phase 1 | `LoginView` | 285 | ✅ v1.1.1 |
-| Phase 2 | `SettingsView` | 423 | ✅ v1.1.2 |
-| Phase 3 | `VehicleProfileView` | 522 |
-| Phase 4 | `ControlPanelView` | 686 |
-| Phase 5 | `LocationView` | 763 |
-| Phase 6 | `ChargeView` | 884 |
-| Phase 7 | `LoveCarView` | 1114 |
-| Phase 8 | 诊断类（Diagnostics / BLEDebug / SignalExplorer / BLEKey / Car3D / SelfTest） | 2572 |
+| Phase 1 | `LoginView` | 285 行 | ✅ v1.1.1 |
+| Phase 2 | `SettingsView` | 423 行 | ✅ v1.1.2 |
+| Phase 3 | 诊断类 5 页：`SelfTestView` / `SignalExplorerView` / `BLEKeyView` / `BLEDebugView` / `DiagnosticsView`（另拆出 `BLEProtocolStatus` / `BLEKeySelfCheck` 两个小页） | 约 2,100 行 | ✅ v1.1.3 |
+| Phase 4 | `VehicleProfileView` / `ControlPanelView` | 1,208 行 | ✅ v1.1.3 |
+| Phase 5 | `LocationView` / `ChargeView` | 1,647 行 | ✅ v1.1.3 |
+| Phase 6 | `Car3DView` / `LoveCarView`（`Car3DConfig` + `Car3DWebView` 合并成 `LMCar3DWebView`） | 约 1,600 行 | ✅ v1.1.3 |
 
-`Car3DView` 的 `WKWebView` 部分本来就是 UIKit 组件，可以直接复用。
-`Views/Theme.swift` 要等**全部**页面迁完才删（届时把 `LMRadius` 搬进 `LMUIKitTheme.swift`）。
+**收尾时一并做掉的事：**
 
-#### 顺带修掉的一处断言
+- 11 处 `pushSwiftUIPage(...) { XxxView() }` 全部改成
+  `navigationController?.pushViewController(LMXxxViewController(client: client), animated: true)`。
+- 4 个还在托管里的 Tab 换成 `makeTab(LMXxxViewController(client: client), title:image:)`
+  —— 每个 Tab 都套 `LMNavigationController`，因为 5 个页面内部都有 push 目标。
+- 删除 `Views/` 目录（12 个 SwiftUI 文件）与 `UIKit/LMHostingController.swift`。
+- `gen_xcodeproj.py` 的 `DIR_ORDER` 去掉 `"Views"`；重跑后 pbxproj 从 51 → 38 个源文件。
+- `Views/Theme.swift` 的 `enum LMRadius` 在 Phase 2 就搬进了 `LMUIKitTheme.swift`，
+  旧文件删除后只剩一处定义。
 
-`test_refresh_contract.py` 里有一组断言靠读 `LeapmotorLiteApp.swift` 来确认
-「首 Tab 是爱车页」。入口换成 UIKit 后那个文件已删除，断言改为读
-`UIKit/LMMainTabBarController.swift`；同时新增 `[11]` 一节共 18 条断言，
-把「全项目只有一处 `@main`」「六个新文件真的进了 pbxproj 的 Sources」等钉死 ——
-后者尤其重要：漏了会出现「CI 绿了但功能静默缺失」。
+**踩到的两个新坑：**
+
+- **`Car3DConfig` 重名**：旧 `Views/Car3DView.swift` 与新 `UIKit/LMCar3DWebView.swift`
+  都定义了 `enum Car3DConfig`，两个文件同时存在会直接编译失败
+  （invalid redeclaration），所以「新文件落地」与「旧文件删除」必须**在同一次提交里**
+  完成。契约测试 `[14]` 现在钉死「`Car3DConfig` 只有一处定义」。
+- **`UIViewController.title` 与 `tabBarItem.title` 是两回事**：原
+  `LMHostingController(title:tabImage:)` 一次设了两个；改成原生页后，
+  `title` 由页面自己在 `buildUI()` 里设，`tabBarItem` 由 `makeTab(...)` 设，
+  两边都要给，否则要么导航栏没标题、要么 Tab 没名字。
+
+#### 契约测试随迁移更新的三处
+
+1. `[11]`（骨架）原来断言「4 个托管 Tab 各自保留 `NavigationStack`」，
+   v1.1.3 后改成「5 个 Tab 全是原生 UIKit 页，`LMHostingController(` 与
+   `NavigationStack {` 的计数都是 0」。
+2. `[3c]` / `[9]` / `[10]` / `[11]` 里读 `Views/XxxView.swift` 的断言全部改读
+   `UIKit/LMXxxViewController.swift`，并把**断言锚点**从 SwiftUI 写法换成 UIKit 等价物：
+   `private var rangeHero` → `private let rangeHero`、`GeometryReader` → 容器实际宽度、
+   `.lmClock(until:)` → target/selector 版 `Timer` + `.common` 模式。
+3. 新增 `[14]`：钉整体不变量 —— `Views/` 目录已删、全项目零 `import SwiftUI`、
+   没有 `pushSwiftUIPage` 的**定义**、13 个新 VC 都继承 `LMBaseViewController`、
+   跨页跳转全部指向新 VC、`Car3DConfig` 只有一处定义、磁盘源文件数 == 工程源文件数。
+
+> ⚠️ 写断言的老规矩（本项目已踩过三次）：**盯被测对象，不要盯「某字符串有没有
+> 出现在某文件里」**。这一轮又踩了一次 —— `[13]` 里写了
+> `"pushSwiftUIPage" not in vc`，而文件头注释为了说明「过渡方法已删」必然写出
+> 这个词，于是断言自己把自己判失败。改成匹配真实声明形态
+> （`re.search(r"func\s+pushSwiftUIPage", vc) is None`）才对。
 
 ---
 
@@ -755,27 +789,28 @@ ios/
         ├── Store/
         │   ├── LMSessionStore.swift     # Keychain 会话持久化
         │   └── LMLocationProvider.swift # 本机定位（只用于「距我多远」）
-        ├── UIKit/                       # ★ 2026-10-09 UI 从 SwiftUI 迁到 UIKit（迁移进行中）
+        ├── UIKit/                       # ★ 2026-10-09 UI 全部换成原生 UIKit（迁移已完成，v1.1.3）
         │   ├── LMAppDelegate.swift      # App 入口（@main + window；Info.plist 无 Scene 清单）
-        │   ├── LMUIKitTheme.swift       # UIKit 版主题（UIColor 调色板 + 卡片/磁贴/胶囊/导航）
-        │   ├── LMBaseViewController.swift # 页面基类：订阅 objectWillChange → render()
-        │   ├── LMHostingController.swift  # 过渡桥：把未迁移的 SwiftUI 页包成 VC
+        │   ├── LMUIKitTheme.swift       # UIKit 版主题（UIColor 调色板 + 卡片/磁贴/胶囊/导航 + LMRadius）
+        │   ├── LMBaseViewController.swift # ★★ 页面基类：订阅 objectWillChange → 幂等 render()
         │   ├── LMRootViewController.swift # 根容器：登录页 ↔ 主 Tab
-        │   ├── LMMainTabBarController.swift # 5 个 Tab
-        │   ├── LMLoginViewController.swift  # ★ Phase 1：登录页（原生 UIKit，短信验证码 / 导入登录态）
-        │   └── LMSettingsViewController.swift # ★ Phase 2：设置页（原生 UIKit，会话 / 操作密码 / 车辆 / 诊断 / 设备）
-        ├── Views/
-        │   ├── Theme.swift              # 配色 + 复用组件（卡片 / 磁贴 / 电量环 / .lmClock）
-        │   ├── LoveCarView.swift        # ★ 爱车页（官方爱车页完整复刻：内嵌 3D 车模 + 快捷分页 + 预约充电 + 空调/地图/蓝牙钥匙）
-        │   ├── LocationView.swift       # 车辆定位（地图 / 地址 / 导航 / 坐标校正）
-        │   ├── ChargeView.swift         # 充电信息（距目标电量还需多久 / 充电判据证据 / 预约充电）
-        │   ├── ControlPanelView.swift   # 车控
-        │   ├── BLEKeyView.swift         # 蓝牙钥匙（钥匙记录 / 开关 / 接口探测 / 协议进度）
-        │   ├── BLEDebugView.swift       # BLE 调试台（扫描 / GATT / 订阅抓帧 / 发字节）
-        │   ├── SignalExplorerView.swift # 信号浏览器 + 快照 A/B 对比
-        │   ├── DiagnosticsView.swift    # 车控体检 + 官方接口探测
-        │   ├── Car3DView.swift          # 3D 看车（WKWebView 驱动官方查看器）
-        │   └── SelfTestView.swift       # 算法自检
+        │   ├── LMMainTabBarController.swift # 5 个 Tab（全部原生 UIKit 页，各自套 LMNavigationController）
+        │   ├── LMLoginViewController.swift  # ★ Phase 1：登录页（短信验证码 / 导入登录态）
+        │   ├── LMSettingsViewController.swift # ★ Phase 2：设置页（会话 / 操作密码 / 车辆 / 诊断 / 设备）
+        │   ├── LMLoveCarViewController.swift  # ★ Phase 6：爱车页（内嵌 3D 车模 + 快捷分页 + 预约充电 + 空调/地图/蓝牙钥匙）
+        │   ├── LMCar3DWebView.swift     # ★ Phase 6：3D 容器（WKWebView）+ Car3DConfig
+        │   ├── LMCar3DViewController.swift # ★ Phase 6：全屏 3D 看车
+        │   ├── LMLocationViewController.swift # ★ Phase 5：车辆定位（地图 / 地址 / 导航 / 坐标校正）
+        │   ├── LMChargeViewController.swift   # ★ Phase 5：充电中心（可写：立即/结束 · 健康 · 上限 · 预约）
+        │   ├── LMControlPanelViewController.swift # ★ Phase 4：车控
+        │   ├── LMVehicleProfileViewController.swift # ★ Phase 4：车辆档案
+        │   ├── LMBLEKeyViewController.swift     # ★ Phase 3：蓝牙钥匙（钥匙记录 / 开关 / 接口探测 / 协议进度）
+        │   ├── LMBLEDebugViewController.swift   # ★ Phase 3：BLE 调试台（扫描 / GATT / 订阅抓帧 / 发字节）
+        │   ├── LMBLEProtocolStatusViewController.swift # ★ Phase 3：协议进度
+        │   ├── LMBLEKeySelfCheckViewController.swift   # ★ Phase 3：协议自检
+        │   ├── LMDiagnosticsViewController.swift # ★ Phase 3：车控体检 + 官方接口探测
+        │   ├── LMSignalExplorerViewController.swift # ★ Phase 3：信号浏览器 + 快照 A/B 对比
+        │   └── LMSelfTestViewController.swift   # ★ Phase 3：算法自检
         ├── Car3D/                       # ★ 官方 3D 车模离线包（folder 引用，17 MB / 63 文件）
         │   ├── index.html               #   官方查看器入口（未改动）
         │   ├── index.js                 #   three.js 打包产物 1.6 MB（未改动）

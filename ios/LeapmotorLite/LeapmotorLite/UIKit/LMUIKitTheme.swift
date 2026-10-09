@@ -21,6 +21,20 @@
 //
 import UIKit
 
+// MARK: - 圆角半径
+
+/// 圆角半径统一（连续曲率，比默认的圆角顺眼）。
+///
+/// ★ 2026-10-09（UIKit 迁移）：这个枚举原来定义在 `Views/Theme.swift` 里，
+///   现在搬到本文件。原因是它**两种框架都要用**（纯常量，不依赖 SwiftUI），
+///   而 `Theme.swift` 会随着迁移完成被整体删除 —— 留在那边会一起消失。
+///   数值必须与 `Theme.swift` 原来的一致（card 18 / tile 14 / hero 22）。
+enum LMRadius {
+    static let card: CGFloat = 18
+    static let tile: CGFloat = 14
+    static let hero: CGFloat = 22
+}
+
 // MARK: - 调色板（与 Color.lm* 逐位对应）
 
 extension UIColor {

@@ -174,10 +174,12 @@ def test_car3d_assets() -> None:
         check("Car3D 进了 Resources build phase", "Car3D in Resources" in p)
 
     # 入口：爱车页必须同时挂上「内嵌车模」和「全屏看车」
-    love = read("Views/LoveCarView.swift")
-    check("爱车页内嵌了 3D 车模（Car3DWebView 直接出现在本页）",
-          "Car3DWebView(" in love)
-    check("爱车页保留了全屏看车入口", "Car3DView()" in love)
+    # ★ 2026-10-09：爱车页已从 SwiftUI 迁成 UIKit（LMLoveCarViewController）。
+    love = read("UIKit/LMLoveCarViewController.swift")
+    check("爱车页内嵌了 3D 车模（LMCar3DWebView 直接出现在本页）",
+          "LMCar3DWebView(" in love)
+    check("爱车页保留了全屏看车入口",
+          "LMCar3DViewController(client: client)" in love)
 
     # ATS 必须放开本地回环（Car3DServer 走 http://127.0.0.1）
     plist = read("Support/Info.plist")
@@ -242,26 +244,30 @@ def test_response_shapes() -> None:
 # ============================================================
 def test_lovecar_page() -> None:
     print("\n[3c] 爱车页完整复刻")
-    love = read("Views/LoveCarView.swift")
+    # ★ 2026-10-09：已从 SwiftUI（Views/LoveCarView.swift）迁成 UIKit。
+    love = read("UIKit/LMLoveCarViewController.swift")
 
     # ① 官方爱车页的模块（顺序即官方截图顺序）
+    #    ★ UIKit 版里模块从「`private var xxx` 计算属性」变成
+    #      「`private let xxx` 控件属性 + `buildXxx()` 方法」，
+    #      断言按真实形态写（盯被测对象，不盯旧写法）。
     modules = [
-        ("顶部车辆栏", "private func topBar("),
-        ("续航主数字 + SOC 进度条 + 车门锁态", "private var rangeHero"),
-        ("充电中心入口", "private var chargeCenterChip"),
-        ("3D 车模（内嵌）", "private var car3DCard"),
-        ("快捷操作分页", "private var quickActionsPager"),
-        ("预约充电横幅", "private var appointmentBanner"),
-        ("车内温度 / 空调", "private var climateCard"),
-        ("地图卡", "private var mapCard"),
-        ("蓝牙钥匙卡", "private var bleCard"),
+        ("顶部车辆栏", "private func buildTopBar()"),
+        ("续航主数字 + SOC 进度条 + 车门锁态", "private let rangeHero"),
+        ("充电中心入口", "private let chargeCenterChip"),
+        ("3D 车模（内嵌）", "private func buildCar3D()"),
+        ("快捷操作分页", "private func buildPager()"),
+        ("预约充电横幅", "private let appointmentBanner"),
+        ("车内温度 / 空调", "private let climateCard"),
+        ("地图卡", "private let mapCard"),
+        ("蓝牙钥匙卡", "private let bleCard"),
     ]
     for label, token in modules:
         check(f"模块在：{label}", token in love)
 
     # ② 快捷操作第 1 页必须与官方截图逐字一致
-    m = re.search(r"quickPages:\s*\[\[String\]\]\s*=\s*\[\s*\[([^\]]*)\]", love)
-    check("找得到 quickPages 定义", m is not None)
+    m = re.search(r"let\s+pages:\s*\[\[String\]\]\s*=\s*\[\s*\n?\s*\[([^\]]*)\]", love)
+    check("找得到快捷操作分页定义", m is not None)
     if m:
         page1 = [s.strip().strip('"') for s in m.group(1).split(",") if s.strip()]
         check("快捷操作第 1 页 = 解锁/上锁/后备箱/车窗（与官方截图一致）",
@@ -274,29 +280,31 @@ def test_lovecar_page() -> None:
           "LMEndpoints.windowCmdid" in love and "windowState(" in love)
 
     # ④ 3D 内嵌卡必须把真实宽度喂给官方查看器（否则车会被裁切）
-    check("内嵌车模用 GeometryReader 量宽度",
-          re.search(r"GeometryReader\s*\{\s*geo\s+in[\s\S]{0,120}?car3DBody\(width:", love) is not None)
-    check("内嵌车模喂 Car3DConfig.appJSON(width:height:)",
-          "Car3DConfig.appJSON(width: width, height: height)" in love)
+    #    ★ UIKit 没有 GeometryReader，等价物是「容器实际宽度 / 兜底宽度」。
+    check("内嵌车模按容器实际宽度喂 Car3DConfig.appJSON(width:height:)",
+          re.search(r"Car3DConfig\.appJSON\(width:[\s\S]{0,60}?height:\s*car3DHeight\)", love)
+          is not None)
 
     # ⑤ 反向断言：**不能**把「驻车照片」做成 UI 元素 ——
     #    那个接口在 IPA 字符串表里扫不到、抓包里也没有样本，
     #    本 App 明确不做，不拿假图糊上去。有人「顺手补上」时这里会红。
-    #    （只允许它出现在解释「为什么不做」的注释里。）
+    #    （只允许它出现在解释「为什么不做」的注释里，但 UIKit 版连注释都没写，
+    #     所以直接断言整份文件里没有这个词。）
     check("没有把「驻车照片」做成 UI 元素（接口未确认，明确不做）",
-          re.search(r'(?:Text|Label)\(\s*"驻车照片"', love) is None)
+          "驻车照片" not in love)
 
     # ⑥ lint R9：读了锁定态就必须挂时钟，否则倒计时冻住
-    check("挂了 .lmClock 驱动锁定倒计时", ".lmClock(until:" in love)
+    #    ★ SwiftUI 版的等价物 `.lmClock(until:)` 是修饰符；
+    #      UIKit 版是 target/selector 版 Timer（block 版收 @Sendable 闭包，
+    #      不继承 @MainActor 隔离，会编译报错）+ `.common` 模式。
+    check("挂了 target/selector 版 Timer 驱动锁定倒计时",
+          re.search(r"Timer\(timeInterval:[\s\S]{0,200}?selector:\s*#selector\(lockTick\)", love)
+          is not None and "forMode: .common" in love)
 
     # ⑦ Tab 必须换成爱车页，旧的车况页不能留
-    #    ★ 2026-10-09：入口从 SwiftUI 的 `LeapmotorLiteApp.swift`
-    #      换成 UIKit 的 `UIKit/LMAppDelegate.swift`，
-    #      Tab 定义搬到了 `UIKit/LMMainTabBarController.swift`。
-    #      被托管的 SwiftUI 页仍然叫 `LoveCarView()`，只是外面多了
-    #      一层 `NavigationStack`（这些页面内部有 NavigationLink）。
     tabs = read("UIKit/LMMainTabBarController.swift")
-    check("首 Tab 是 LoveCarView", "LoveCarView()" in tabs)
+    check("首 Tab 是 LMLoveCarViewController",
+          "LMLoveCarViewController(client: client)" in tabs)
     check("Tab 标签叫「爱车」", '"爱车"' in tabs)
     check("旧 DashboardView 已移除", not os.path.exists(os.path.join(APP, "Views", "DashboardView.swift")))
     check("代码里没有 DashboardView 残留",
@@ -308,7 +316,8 @@ def test_lovecar_page() -> None:
     #       main actor-isolated property 'car3DKey' can not be referenced
     #       from a non-isolated context
     #    2026-10-08 真烧过一轮 CI。lint 的 R14 也会拦，这里是双保险。
-    c3d = read("Views/Car3DView.swift")
+    #    ★ 2026-10-09：`Car3DConfig` 随迁移搬到了 `UIKit/LMCar3DWebView.swift`。
+    c3d = read("UIKit/LMCar3DWebView.swift")
     check("Car3DConfig.serverJSON 标了 @MainActor（否则 CI 报 actor 隔离错误）",
           re.search(r"@MainActor\s*\n\s*static func serverJSON\(", c3d) is not None)
 
@@ -328,8 +337,9 @@ def test_location_source() -> None:
 
     client = read("API/LMClient.swift")
     models = read("API/LMModels.swift")
-    love = read("Views/LoveCarView.swift")
-    loc = read("Views/LocationView.swift")
+    # ★ 2026-10-09：两页都已迁成 UIKit。
+    love = read("UIKit/LMLoveCarViewController.swift")
+    loc = read("UIKit/LMLocationViewController.swift")
     ep = read("API/LMEndpoints.swift")
 
     # 端点
@@ -356,7 +366,7 @@ def test_location_source() -> None:
           re.search(r"func openInMaps\(\)[\s\S]{0,700}?ip\.regionText", love) is not None)
 
     # 定位页
-    check("定位页有 IP 归属地卡片", "ipLocationCard" in loc)
+    check("定位页有 IP 归属地卡片", "ipCard" in loc)
     check("定位页卡片读 client.ipAddress", "client.ipAddress" in loc)
     check("定位页说明了车机坐标可能长期不变", "一个数字都没动" in loc)
 
@@ -387,7 +397,8 @@ def test_charging_center() -> None:
 
     ep = read("API/LMEndpoints.swift")
     client = read("API/LMClient.swift")
-    view = read("Views/ChargeView.swift")
+    # ★ 2026-10-09：充电中心已从 SwiftUI（Views/ChargeView.swift）迁成 UIKit。
+    view = read("UIKit/LMChargeViewController.swift")
 
     # ---- cmdid 取值 ----
     m = re.search(r"enum\s+ChargeCmdid\s*\{(.*?)\n\s*\}", ep, re.S)
@@ -467,20 +478,25 @@ def test_charging_center() -> None:
           re.search(r"refreshAll\(\)[\s\S]*?refreshHealthyCharging\(\)", client) is not None)
 
     # ---- 界面：四张卡 + 四个动作 ----
-    for card in ("controlCard", "healthCard", "socLimitCard", "appointmentEditor"):
-        check(f"ChargeView 有 {card}", re.search(rf"private\s+var\s+{card}\s*:", view) is not None)
+    # ★ UIKit 版的卡是 `private let xxxCard = LMCardView(...)` 控件属性。
+    for card in ("controlCard", "healthCard", "socCard", "apCard"):
+        check(f"充电页有 {card}",
+              re.search(rf"private\s+let\s+{card}\s*=", view) is not None)
     for act in ("runCharging", "runHealth", "runSocLimit", "runAppointment"):
-        check(f"ChargeView 有动作 {act}()", re.search(rf"func\s+{act}\(", view) is not None)
+        check(f"充电页有动作 {act}()", re.search(rf"func\s+{act}\(", view) is not None)
 
     # body 顺序：控制 → 健康 → 上限 → 预约
-    idx = [view.find(x) for x in ("controlCard", "healthCard", "socLimitCard", "appointmentEditor")]
+    idx = [view.find(x) for x in ("controlCard", "healthCard", "socCard", "apCard")]
     check("四张卡的 body 顺序为 控制→健康→上限→预约",
           all(i >= 0 for i in idx) and idx == sorted(idx), str(idx))
 
     check("按钮在忙 / 控制锁定期内禁用（controlLockRemaining）",
           "controlLockRemaining() > 0" in view)
+    # ★ SwiftUI 版用 `.alert`；UIKit 版走基类的 `showAlert`（内部是
+    #   `UIAlertController`），同样保证「下发结果不静默」。
     check("下发结果用 alert 回报（不静默）",
-          re.search(r"\.alert\(", view) is not None and "toast" in view)
+          re.search(r"showAlert\(", view) is not None
+          and "UIAlertController" in read("UIKit/LMBaseViewController.swift"))
 
     # ---- 预约回填：只在服务端有值时才覆盖 ----
     check("syncAppointmentFromServer 存在", re.search(r"func\s+syncAppointmentFromServer\(", view) is not None)
@@ -508,37 +524,43 @@ def test_car3d_layout() -> None:
     官方爱车页的车模是**页面背景的一部分**（直接浮在页面上），
     而我们之前套了 `LMCard` 式的圆角底色，看起来像一张卡。
 
-    注意「去掉底色」是安全的：`Car3DWebView` 的 WKWebView 已设
+    注意「去掉底色」是安全的：`LMCar3DWebView` 的 WKWebView 已设
     `isOpaque = false` + `backgroundColor = .clear`，所以没有白块。
+
+    ★ 2026-10-09：本页已迁成 UIKit，断言按 UIKit 的真实形态写 ——
+      「顺序」看 `buildUI()` 里 `addArrangedSubview` 的调用次序，
+      「去卡片感」看 `buildCar3D()` 里有没有铺底色 / 裁圆角。
     """
     print("\n[11] 3D 车模布局（放大 + 上移 + 去卡片感）")
 
-    love = read("Views/LoveCarView.swift")
-    c3d = read("Views/Car3DView.swift")
+    love = read("UIKit/LMLoveCarViewController.swift")
+    c3d = read("UIKit/LMCar3DWebView.swift")
 
     check("car3DHeight = 330（原 230）",
-          re.search(r"var\s+car3DHeight\s*:\s*CGFloat\s*\{\s*330\s*\}", love) is not None)
+          re.search(r"let\s+car3DHeight\s*:\s*CGFloat\s*=\s*330", love) is not None)
 
-    # 顺序：topBar → car3DCard → rangeHero
-    i_top = love.find("topBar(v)")
-    i_car = love.find("car3DCard\n")
-    i_rng = love.find("rangeHero\n")
-    check("car3DCard 紧跟在 topBar 之后（提到页面顶部）",
+    # 顺序：topBar → car3DContainer → rangeHero
+    i_top = love.find("addArrangedSubview(topBar)")
+    i_car = love.find("addArrangedSubview(car3DContainer)")
+    i_rng = love.find("addArrangedSubview(rangeHero)")
+    check("car3DContainer 紧跟在 topBar 之后（提到页面顶部）",
           i_top >= 0 and i_car >= 0 and i_top < i_car, f"topBar@{i_top} car3D@{i_car}")
-    check("car3DCard 在 rangeHero 之前",
+    check("car3DContainer 在 rangeHero 之前",
           i_car >= 0 and i_rng >= 0 and i_car < i_rng, f"car3D@{i_car} range@{i_rng}")
 
-    # 去卡片感：car3DBody 里不能再有 secondarySystemBackground / clipShape
-    seg = love[love.find("private func car3DBody"):]
-    seg = seg[: seg.find("private var car3DFailureView") if "private var car3DFailureView" in seg else 3000]
-    check("car3DBody 不再铺 secondarySystemBackground 底色",
+    # 去卡片感：buildCar3D 里不能再有 secondarySystemBackground / 圆角裁切
+    seg = love[love.find("private func buildCar3D()"):]
+    nxt = re.search(r"\n    (?:private|override|@objc) ", seg[10:])
+    seg = seg[: (10 + nxt.start()) if nxt else 3000]
+    check("buildCar3D 不再铺 secondarySystemBackground 底色",
           "secondarySystemBackground" not in seg)
-    check("car3DBody 不再 clipShape 圆角", "clipShape" not in seg)
+    check("buildCar3D 不再对容器做圆角裁切",
+          "masksToBounds" not in seg and "clipShape" not in seg)
 
     # 安全性前提：WebView 必须透明，否则去底色会露白块
-    check("Car3DWebView 设了 isOpaque = false（去底色才安全）",
+    check("LMCar3DWebView 设了 isOpaque = false（去底色才安全）",
           "isOpaque = false" in c3d)
-    check("Car3DWebView 设了 backgroundColor = .clear",
+    check("LMCar3DWebView 设了 backgroundColor = .clear",
           "backgroundColor = .clear" in c3d)
 
     # 全屏入口与手势提示保留
@@ -556,10 +578,14 @@ def test_uikit_skeleton() -> None:
     视图代码，而是先把**壳**换成 UIKit，未迁移的页面用 `UIHostingController`
     托住 —— 这样每一步 App 都能编译、能出包、能装机验证。
 
+    ★ 2026-10-09（Phase 3~6 全部迁完）：SwiftUI 页面已清零，
+      `LMHostingController` 与 `Views/` 目录都已删除。本组断言随之更新为
+      「5 个 Tab 全是原生 UIKit 页」的形态。
+
     这组断言钉住三件事：
       ① 入口只有一处 `@main`，且是 AppDelegate（两处 `@main` 直接编译失败）
-      ② 骨架各件语义正确（订阅 / 注入 / 换根 / 5 个 Tab / 保留 NavigationStack）
-      ③ 六个新文件**真的进了 pbxproj 的 Sources** ——
+      ② 骨架各件语义正确（订阅 / 注入 / 换根 / 5 个原生 Tab）
+      ③ 关键文件**真的进了 pbxproj 的 Sources** ——
          否则会出现「CI 绿了但功能静默缺失」这种最难查的问题
     """
     print("\n[11] UIKit 骨架（AppDelegate + HostingController 过渡）")
@@ -607,28 +633,37 @@ def test_uikit_skeleton() -> None:
     check("基类持的是外部传入的 client（不自己 new）",
           "init(client: LMClient)" in base)
 
-    host = read("UIKit/LMHostingController.swift")
-    check("宿主注入 environmentObject(client)", ".environmentObject(client)" in host)
-    check("宿主补回全局 tint（否则 SwiftUI 控件退回系统蓝）",
-          ".tint(Color.lmAccent)" in host)
+    host = read("UIKit/LMBaseViewController.swift")
+    check("基类订阅 objectWillChange 驱动刷新", "client.objectWillChange" in host)
+    check("基类把刷新推到下一轮主 actor（objectWillChange 早于赋值）",
+          "Task { @MainActor in" in host)
+    check("基类提供下拉刷新桥接", "UIRefreshControl" in host)
+    check("基类暴露 buildUI / render 两个钩子",
+          "func buildUI()" in host and "func render()" in host)
+    check("基类持的是外部传入的 client（不自己 new）",
+          "init(client: LMClient)" in host)
+
+    # ★ 2026-10-09（Phase 3~6 全部迁完）：过渡期的 `LMHostingController`
+    #   （把 SwiftUI 页包成 VC 的桥）已随最后一个 SwiftUI 页面一起删除。
+    #   它只在「还有页面没迁」时才有意义 —— 留着反而是死代码。
+    check("过渡期的 LMHostingController.swift 已删除",
+          not os.path.exists(os.path.join(app_dir, "UIKit", "LMHostingController.swift")))
 
     tabs = read("UIKit/LMMainTabBarController.swift")
     for name in ("爱车", "定位", "充电", "车控", "设置"):
         check(f"Tab 里有「{name}」", f'"{name}"' in tabs)
-    # ★ Phase 2：设置页已迁成 UIKit，它那一行不再是托管页 ——
-    #   必须由 LMNavigationController 提供导航栏（否则它没法 push 那 7 个子页），
-    #   所以「保留 NavigationStack」的只剩 4 个还没迁的 Tab。
-    check("还没迁的 4 个托管页各自保留了 NavigationStack（否则内部跳转静默失效）",
-          tabs.count("NavigationStack {") == 4)
-    check("设置 Tab 已是原生 UIKit 页",
-          "LMSettingsViewController(client: client)" in tabs)
-    check("设置 Tab 由 LMNavigationController 承载（push 子页的前提）",
-          "LMNavigationController(" in tabs)
-    # ★ 不能用 `"SettingsView()" not in tabs` —— 本文件注释里为了解释
-    #   「为什么不能再 NavigationLink { SettingsView() }」必然写出这个词，
-    #   裸串断言会自己踩自己。这里匹配**真实的托管形态**。
-    check("设置 Tab 不再是 SwiftUI 托管页",
-          re.search(r"NavigationStack\s*\{\s*SettingsView\(\)", tabs) is None)
+    # ★ 2026-10-09（Phase 3~6）：5 个 Tab **全部**已是原生 UIKit 页，
+    #   由 `LMNavigationController` 承载 —— 一个 SwiftUI 托管页都不剩。
+    check("5 个 Tab 全是原生 UIKit 页（不再有 SwiftUI 托管页）",
+          tabs.count("LMHostingController(") == 0
+          and tabs.count("NavigationStack {") == 0)
+    check("Tab 统一由 makeTab(...) 包 LMNavigationController",
+          "makeTab(" in tabs
+          and "LMNavigationController(rootViewController: root)" in tabs)
+    for vc in ("LMLoveCarViewController", "LMLocationViewController",
+               "LMChargeViewController", "LMControlPanelViewController",
+               "LMSettingsViewController"):
+        check(f"Tab 根页是 {vc}", f"{vc}(client: client)" in tabs)
 
     rootvc = read("UIKit/LMRootViewController.swift")
     check("根容器按 session?.isValid 切换",
@@ -648,13 +683,29 @@ def test_uikit_skeleton() -> None:
         with open(pbx_path, "r", encoding="utf-8") as f:
             pbx = f.read()
         for fn in ("LMAppDelegate.swift", "LMBaseViewController.swift",
-                   "LMHostingController.swift", "LMMainTabBarController.swift",
+                   "LMMainTabBarController.swift",
                    "LMRootViewController.swift", "LMUIKitTheme.swift",
-                   "LMLoginViewController.swift"):
+                   "LMLoginViewController.swift",
+                   # ★ 2026-10-09（Phase 3~6）新迁的 5 个 Tab 根页 + 子页
+                   "LMLoveCarViewController.swift", "LMLocationViewController.swift",
+                   "LMChargeViewController.swift", "LMControlPanelViewController.swift",
+                   "LMSettingsViewController.swift", "LMCar3DWebView.swift",
+                   "LMCar3DViewController.swift", "LMVehicleProfileViewController.swift",
+                   "LMBLEKeyViewController.swift", "LMBLEDebugViewController.swift",
+                   "LMDiagnosticsViewController.swift", "LMSignalExplorerViewController.swift",
+                   "LMSelfTestViewController.swift"):
             check(f"{fn} 已进 Sources（否则 CI 绿但功能静默缺失）",
                   f"{fn} in Sources" in pbx)
         check("旧入口 LeapmotorLiteApp.swift 已从工程移除",
               "LeapmotorLiteApp.swift" not in pbx)
+        # ★ 2026-10-09：过渡期的宿主桥与 12 个 SwiftUI 页面必须一起消失，
+        #   否则会出现「文件还在工程里、但没有任何代码引用」的死代码。
+        check("过渡期宿主 LMHostingController.swift 已从工程移除",
+              "/* LMHostingController.swift */" not in pbx)
+        check("旧 SwiftUI 页面已从工程移除",
+              "/* LoveCarView.swift */" not in pbx
+              and "/* Car3DView.swift */" not in pbx
+              and "/* ChargeView.swift */" not in pbx)
     check("旧入口文件已删除",
           not os.path.exists(os.path.join(app_dir, "LeapmotorLiteApp.swift")))
 
@@ -663,6 +714,9 @@ def test_uikit_skeleton() -> None:
         with open(gen, "r", encoding="utf-8") as f:
             gsrc = f.read()
         check("gen_xcodeproj.py 的 DIR_ORDER 含 UIKit", '"UIKit"' in gsrc)
+        # ★ 2026-10-09：`Views/` 整个目录已删，DIR_ORDER 里不能再留着它。
+        check("gen_xcodeproj.py 的 DIR_ORDER 已移除 Views",
+              '"Views"' not in gsrc)
 
 
 # ============================================================
@@ -796,9 +850,9 @@ def test_uikit_settings() -> None:
 
       A. **操作密码的输入语义不能变** —— 这是「车控报密码错误」的主战场：
          密码框不能挂 `.oneTimeCode`、只滤数字但不截断、切明文后必须重赋 text。
-      B. **子页跳转不能断** —— 设置页要 push 7 个还没迁移的 SwiftUI 页，
-         其中 `BLEKeyView` / `DiagnosticsView` 内部还有 `NavigationLink`，
-         所以必须走 `ownsNavigationBar: true`（自带 NavigationStack + 补返回键）。
+      B. **子页跳转不能断** —— 设置页要 push 7 个子页。Phase 3~6 之后这 7 个
+         也全是原生 UIKit 页了，一律直接 `pushViewController`；过渡期的
+         `ownsNavigationBar` / `LMHostingController` 已随之删除。
 
     ⚠️ 写断言时注意：**盯被测对象，不要盯字符串是否出现在文件里**。
        本文件的注释里为了解释「为什么不能用 .oneTimeCode / prefix(8)」
@@ -867,27 +921,31 @@ def test_uikit_settings() -> None:
     ):
         check(f"仍保留：{name}", needle in vc)
 
-    # ---- ⑤ 7 个子页跳转入口都在 ----
-    for page in ("VehicleProfileView", "LocationView", "ChargeView", "BLEKeyView",
-                 "SignalExplorerView", "DiagnosticsView", "SelfTestView"):
-        check(f"设置页仍能跳到 {page}", f"{page}()" in vc)
+    # ---- ⑤ 7 个子页跳转入口都在（★ 现在全是原生 UIKit 页，直接 push）----
+    for page in ("LMVehicleProfileViewController", "LMLocationViewController",
+                 "LMChargeViewController", "LMBLEKeyViewController",
+                 "LMSignalExplorerViewController", "LMDiagnosticsViewController",
+                 "LMSelfTestViewController"):
+        check(f"设置页仍能跳到 {page}",
+              f"pushViewController({page}(client: client)" in vc)
 
-    # ---- ⑥ 导航架构：push 出去的 SwiftUI 页必须自带 NavigationStack ----
-    check("push 子页时打开 ownsNavigationBar"
-          "（否则 BLEKeyView / DiagnosticsView 内部跳转静默失效）",
-          "ownsNavigationBar: true" in vc)
-    check("push 子页时补了返回键（NavigationStack 作为栈底本来没有）",
-          "onBack:" in vc and "popViewController(animated: true)" in vc)
-    host = read("UIKit/LMHostingController.swift")
-    check("宿主在 ownsNavigationBar 模式下藏掉外层 UIKit 导航栏（否则双导航栏）",
-          "setNavigationBarHidden(true" in host)
-    check("宿主离开时恢复外层导航栏（否则返回后设置页也没栏了）",
-          "setNavigationBarHidden(false" in host)
+    # ---- ⑥ 导航架构：直接 push 原生 VC，过渡期的宿主桥已删除 ----
+    #
+    # ⚠️ 这里**不能**写 `"pushSwiftUIPage" not in vc` / `"import SwiftUI" not in vc`：
+    #    本文件的头注释为了说明「过渡期方法已删」必然会写出这两个词，
+    #    裸串断言会自己踩自己（这个坑在本项目已经踩过三次）。
+    #    必须匹配**真实声明形态**。
+    check("设置页不再有过渡方法 pushSwiftUIPage",
+          re.search(r"func\s+pushSwiftUIPage", vc) is None)
+    check("设置页不再 import SwiftUI",
+          re.search(r"(?m)^import SwiftUI", vc) is None)
+    check("push 子页前先取到 navigationController",
+          re.search(r"let\s+nav\s*=\s*navigationController", vc) is not None
+          and "nav.pushViewController(" in vc)
 
     # ---- ⑦ 爱车页那个齿轮入口 ----
-    lovecar = read("Views/LoveCarView.swift")
-    check("爱车页齿轮改成切「设置」Tab"
-          "（UIKit 页没法塞进 SwiftUI 的 NavigationStack）",
+    lovecar = read("UIKit/LMLoveCarViewController.swift")
+    check("爱车页齿轮改成切「设置」Tab",
           "lmSelectSettingsTab" in lovecar)
     tabs = read("UIKit/LMMainTabBarController.swift")
     check("Tab 容器实现了切到设置 Tab",
@@ -903,6 +961,126 @@ def test_uikit_settings() -> None:
               "/* LMSettingsViewController.swift */" in pbx)
         check("旧的 SettingsView.swift 已从工程移除",
               "/* SettingsView.swift */" not in pbx)
+
+
+# ============================================================
+# 14. Phase 3~6：剩余 11 页全部迁成 UIKit（SwiftUI 清零）
+# ============================================================
+def test_uikit_full_migration() -> None:
+    """⑭ Phase 3~6：11 个页面全部迁成 UIKit，SwiftUI 清零。
+
+    这是「换掉 SwiftUI」这条线的收尾验收。前面 ⑫⑬ 是逐页验收，
+    这一节只钉**整体不变量** —— 它们能拦住「迁了一半、留了半截」的形态：
+
+      ① `Views/` 目录与 `LMHostingController` 必须整个消失
+      ② 全项目不能再有 `import SwiftUI`（UIKit 页不该引 SwiftUI）
+      ③ 不能再有过渡方法 `pushSwiftUIPage` 的**定义**（只剩注释不算）
+      ④ 13 个新 VC 全部继承 `LMBaseViewController` 且实现 buildUI/render
+      ⑤ 跨页跳转全部指向新的 VC 类
+      ⑥ `Car3DConfig` 只有一处定义（新旧文件曾重名，不删旧的必冲突）
+      ⑦ 全部进了 pbxproj 的 Sources，且磁盘源文件数与工程一致
+
+    ⚠️ 写断言的老规矩：盯**真实声明形态**，不盯裸词 ——
+       本文件注释里必然出现 `pushSwiftUIPage` / `import SwiftUI` 这些词，
+       裸串断言会自己踩自己（本项目已踩过三次）。
+    """
+    print("\n[14] Phase 3~6：全部页面迁成 UIKit（SwiftUI 清零）")
+
+    app_dir = APP
+
+    def _swift_files():
+        for dirpath, dirs, fns in os.walk(app_dir):
+            dirs.sort()
+            for fn in sorted(fns):
+                if fn.endswith(".swift"):
+                    p = os.path.join(dirpath, fn)
+                    with open(p, "r", encoding="utf-8") as f:
+                        yield os.path.relpath(p, app_dir).replace(os.sep, "/"), f.read()
+
+    # ---- ① 过渡期产物必须整体消失 ----
+    check("Views/ 目录已删除",
+          not os.path.isdir(os.path.join(app_dir, "Views")))
+    check("LMHostingController.swift 已删除",
+          not os.path.exists(os.path.join(app_dir, "UIKit", "LMHostingController.swift")))
+
+    # ---- ② 全项目不再 import SwiftUI ----
+    swiftui_imports, old_types = [], []
+    for rel, src in _swift_files():
+        if re.search(r"(?m)^import SwiftUI", src):
+            swiftui_imports.append(rel)
+        # 旧的 SwiftUI 页面都是 `struct XxxView: View`
+        if re.search(r"(?m)^\s*(?:struct|final class)\s+\w+View\s*:\s*View\b", src):
+            old_types.append(rel)
+    check("全项目不再 import SwiftUI", swiftui_imports == [], f"实际 {swiftui_imports}")
+    check("源码里没有 SwiftUI 页面类型残留（struct XxxView: View）",
+          old_types == [], f"实际 {old_types}")
+
+    # ---- ③ 过渡方法只剩注释，没有定义 ----
+    pushers = [rel for rel, src in _swift_files()
+               if re.search(r"func\s+pushSwiftUIPage", src)]
+    check("没有 pushSwiftUIPage 的方法定义（过渡期结束）", pushers == [], f"实际 {pushers}")
+
+    # ---- ④ 13 个新 VC 的骨架 ----
+    new_vcs = [
+        # Phase 3 诊断类
+        "LMSelfTestViewController", "LMSignalExplorerViewController",
+        "LMBLEKeyViewController", "LMBLEProtocolStatusViewController",
+        "LMBLEKeySelfCheckViewController", "LMBLEDebugViewController",
+        "LMDiagnosticsViewController",
+        # Phase 4
+        "LMVehicleProfileViewController", "LMControlPanelViewController",
+        # Phase 5
+        "LMLocationViewController", "LMChargeViewController",
+        # Phase 6
+        "LMCar3DViewController", "LMLoveCarViewController",
+    ]
+    for vc in new_vcs:
+        src = read(f"UIKit/{vc}.swift")
+        check(f"{vc} 继承 LMBaseViewController",
+              re.search(rf"final class {vc}\s*:\s*LMBaseViewController", src) is not None)
+        check(f"{vc} 实现了 buildUI / render",
+              "override func buildUI()" in src and "override func render()" in src)
+
+    # ---- ⑤ 跨页跳转全部指向新 VC ----
+    settings = read("UIKit/LMSettingsViewController.swift")
+    for target in ("LMVehicleProfileViewController", "LMLocationViewController",
+                   "LMChargeViewController", "LMBLEKeyViewController",
+                   "LMSignalExplorerViewController", "LMDiagnosticsViewController",
+                   "LMSelfTestViewController"):
+        check(f"设置页 → {target}",
+              f"pushViewController({target}(client: client)" in settings)
+
+    blekey = read("UIKit/LMBLEKeyViewController.swift")
+    check("蓝牙钥匙页 → LMDiagnosticsViewController",
+          "LMDiagnosticsViewController(client: client)" in blekey)
+    check("蓝牙钥匙页 → LMBLEDebugViewController（复用同一个 ble）",
+          "LMBLEDebugViewController(client: client, ble: ble)" in blekey)
+    diag = read("UIKit/LMDiagnosticsViewController.swift")
+    check("车控体检页 → LMSignalExplorerViewController",
+          "LMSignalExplorerViewController(client: client)" in diag)
+    lovecar = read("UIKit/LMLoveCarViewController.swift")
+    check("爱车页 → LMCar3DViewController（全屏看车）",
+          "LMCar3DViewController(client: client)" in lovecar)
+
+    # ---- ⑥ Car3DConfig 只能有一处定义（新旧文件曾重名）----
+    defs = [rel for rel, src in _swift_files()
+            if re.search(r"(?m)^(?:enum|struct|final class)\s+Car3DConfig\b", src)]
+    check("Car3DConfig 只有一处定义",
+          defs == ["UIKit/LMCar3DWebView.swift"], f"实际 {defs}")
+
+    # ---- ⑦ 进编译 + 源文件数一致 ----
+    pbx_path = os.path.join(os.path.dirname(app_dir),
+                            "LeapmotorLite.xcodeproj", "project.pbxproj")
+    if os.path.exists(pbx_path):
+        with open(pbx_path, "r", encoding="utf-8") as f:
+            pbx = f.read()
+        for vc in new_vcs:
+            check(f"{vc}.swift 已进 Sources", f"/* {vc}.swift */" in pbx)
+        disk = sum(1 for _, _, fs in os.walk(app_dir)
+                   for f in fs if f.endswith(".swift"))
+        in_pbx = pbx.count("in Sources */ = {isa = PBXBuildFile")
+        check("磁盘源文件数 == pbxproj 编译源文件数",
+              disk == in_pbx, f"磁盘 {disk} vs 工程 {in_pbx}")
 
 
 def main() -> int:
@@ -924,6 +1102,7 @@ def main() -> int:
     test_uikit_skeleton()
     test_uikit_login()
     test_uikit_settings()
+    test_uikit_full_migration()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

@@ -1,14 +1,14 @@
 # 零跑轻控 · 第三方干净客户端（iOS）
 
 > 无广告、纯功能、本地直连的零跑车控 App。
-> 核心 = **协议逆向**（签名/加密算法已完整还原并回归验证）+ **干净原生前端**（自己写的 SwiftUI）。
+> 核心 = **协议逆向**（签名/加密算法已完整还原并回归验证）+ **干净原生前端**（自己写的 UIKit）。
 >
 > ⚠️ 只用**你自己账号**控制**你自己名下的车**。车控是安全敏感接口，
 > 别做越权 / 批量 / 代控 / 分享账号的事。逆向仅用于互操作（自用），请自行评估官方用户协议。
 
-**交付物 → [`ios/LeapmotorLite/`](ios/LeapmotorLite/)**（Swift / SwiftUI，iOS 17+，零第三方依赖）
+**交付物 → [`ios/LeapmotorLite/`](ios/LeapmotorLite/)**（Swift / UIKit，iOS 17+，零第三方依赖）
 
-**当前版本：`1.0.9 (10)`** · 最近更新 2026-10-09 —— 充电中心可写 + 3D 车模放大上移（[版本历史](#六版本历史)）
+**当前版本：`1.1.3 (14)`** · 最近更新 2026-10-09 —— UIKit 迁移收尾：全部页面换成原生 UIKit，SwiftUI 清零（[版本历史](#六版本历史)）
 
 ---
 
@@ -76,7 +76,7 @@ chained-fixups 解码，不依赖 lief）。官方换版本时它会报红。
 
 | 目录 | 作用 |
 |---|---|
-| **`ios/LeapmotorLite/`** | **最终交付：SwiftUI 干净车控 App（签名/加密全实现 + 内置自检）** |
+| **`ios/LeapmotorLite/`** | **最终交付：UIKit 干净车控 App（签名/加密全实现 + 内置自检）** |
 | `client/` | Python 参考实现（签名/派生/回归校验）+ Mach-O 逆向工具 |
 | `evidence/` | 原始 IPA、抓包 HAR、扫描结果、**各模块 FINDINGS_*.md 分析报告** |
 | `capture/` | mitmproxy 抓包插件 + **CAPTURE_SOP_IOS.md 抓包 SOP** |
@@ -269,6 +269,10 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 
 | 版本 | tag | 内容 |
 |---|---|---|
+| **1.1.3 (14)** | `2026-10-09.7` | **UIKit 迁移 Phase 3~6（收尾）**：剩余 11 页（爱车 / 定位 / 充电 / 车控 / 车辆档案 / 蓝牙钥匙 / 车控体检 / 信号浏览器 / 算法自检 / BLE 调试台 / 3D 看车）全部换成原生 UIKit，**SwiftUI 页面清零**；过渡桥 `LMHostingController` 与 `Views/` 目录整体删除 |
+| 1.1.2 (13) | `2026-10-09.6` | UIKit 迁移 Phase 2：设置页换成原生 UIKit；解决「UIKit 页 push SwiftUI 页」的导航栏冲突（`ownsNavigationBar`） |
+| 1.1.1 (12) | `2026-10-09.5` | UIKit 迁移 Phase 1：登录页换成原生 UIKit（`LMLoginViewController`），确立「继承 `LMBaseViewController` + 只覆盖 `buildUI()`/`render()`」的迁移样板 |
+| 1.1.0 (11) | `2026-10-09.4` | UI 框架从 SwiftUI 换成 UIKit（Phase 0 换壳）：入口改成 `AppDelegate` + `window`，未迁移的页面暂由 `UIHostingController` 托住，行为与上一版一致 |
 | **1.0.9 (10)** | `2026-10-09.3` | **充电中心可写**（立即/结束 193、健康充电 480、上限 190、预约 161，cmdid 全部反汇编实证）+ **3D 车模放大上移**（230→330，去卡片底色与页面背景融合） |
 | 1.0.8 (9) | `2026-10-09.2` | **定位改用 IP 归属地**（与官方 App 同源），车机坐标降级为附注；复刻官方「车端已关闭位置数据分享」提示 |
 | 1.0.7 (8) | `2026-10-09.1` | **爱车页完整复刻**（官方「爱车」Tab 的 9 个模块）；`Car3DConfig.serverJSON` 补 `@MainActor` 修 CI |
@@ -324,25 +328,28 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `ios/tools/pack_source.py` — 打包源码 zip（传到 Mac / 推 GitHub）
 - `.github/workflows/build-ipa.yml` — 云端打包流水线（先跑 Python 算法回归，再编译）
 
-**iOS 交付**（32 个 Swift 文件，零第三方依赖）
-- `ios/LeapmotorLite/` — SwiftUI 车控 App
+**iOS 交付**（38 个 Swift 文件，零第三方依赖）
+- `ios/LeapmotorLite/` — UIKit 车控 App
+- `UIKit/LMAppDelegate.swift` + `UIKit/LMRootViewController.swift` — 入口（`AppDelegate` + `window`）与根容器（按登录态换根）
+- `UIKit/LMBaseViewController.swift` — ★★ 所有页面的基类：订阅 `client.objectWillChange` 驱动**幂等** `render()`
+- `UIKit/LMUIKitTheme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 状态胶囊 / 导航控制器 / 圆角常量）
+- `UIKit/LMMainTabBarController.swift` — 5 个 Tab（**全部**是原生 UIKit 页，各自套 `LMNavigationController`）
 - `LMBuildInfo.swift` — ★ 构建标识（版本号 + 构建 tag + git 提交号），解决「分不清装的是哪一版」
-- `Views/LoveCarView.swift` — ★ 爱车页（官方「爱车」Tab 复刻，含内嵌 3D 车模）
-- `Views/Car3DView.swift` + `Support/Car3DServer.swift` — ★ 3D 看车（WKWebView + 回环 HTTP 服务跑官方查看器）
-- `Views/ChargeView.swift` — ★ 充电中心（**可写**：立即/结束、健康充电、上限、预约 + 证据卡 + 疑似项专区）
-- `Views/Theme.swift` — 统一配色 + 复用组件（卡片 / 磁贴 / 电量环 / 充电状态胶囊 / 秒级时钟）
+- `UIKit/LMLoveCarViewController.swift` — ★ 爱车页（官方「爱车」Tab 复刻，含内嵌 3D 车模）
+- `UIKit/LMCar3DWebView.swift` + `UIKit/LMCar3DViewController.swift` + `Support/Car3DServer.swift` — ★ 3D 看车（WKWebView + 回环 HTTP 服务跑官方查看器）
+- `UIKit/LMChargeViewController.swift` — ★ 充电中心（**可写**：立即/结束、健康充电、上限、预约 + 证据卡 + 疑似项专区）
 - `API/LMCoordinate.swift` — ★ 坐标系换算（WGS-84 ↔ GCJ-02）+ 三选一校正策略 + 4 项自检
 - `API/LMEndpoints.swift` — 端点表 + **充电 cmdid 常量（含反汇编证据表）** + 空调/车窗档位范围
 - `API/LMSignalCatalog.swift` — ★ 信号 id → 语义知识库（带置信度与判定依据）
-- `Views/LocationView.swift` — 车辆定位（MapKit + CLGeocoder + IP 归属地卡 + 坐标校正）
-- `Views/VehicleProfileView.swift` — 车辆档案（66 能力位 / 固件 OTA / 功能开关 / cmdid 路线图）
-- `Views/SignalExplorerView.swift` — 信号浏览器 + 快照 A/B 对比
-- `Views/BLEKeyView.swift` — ★ 蓝牙钥匙（云端钥匙记录 / 行为开关 / 接口探测 / 协议进度）
-- `Views/BLEDebugView.swift` — ★ BLE 调试台（扫描 / GATT 树 / 订阅抓帧 / 发原始字节）
+- `UIKit/LMLocationViewController.swift` — 车辆定位（MapKit + CLGeocoder + IP 归属地卡 + 坐标校正）
+- `UIKit/LMVehicleProfileViewController.swift` — 车辆档案（66 能力位 / 固件 OTA / 功能开关 / cmdid 路线图）
+- `UIKit/LMSignalExplorerViewController.swift` — 信号浏览器 + 快照 A/B 对比
+- `UIKit/LMBLEKeyViewController.swift` — ★ 蓝牙钥匙（云端钥匙记录 / 行为开关 / 接口探测 / 协议进度）
+- `UIKit/LMBLEDebugViewController.swift` — ★ BLE 调试台（扫描 / GATT 树 / 订阅抓帧 / 发原始字节）
 - `BLE/LMBLEProtocol.swift` — ★★ BLE 协议知识库（UUID / ECDH 字段 / 帧模板 / 逆向证据全记录）
 - `BLE/LMBLECentral.swift` — CoreBluetooth 封装（queue: nil 保主线程）
 - `BLE/LMBLEKeyModels.swift` — 钥匙记录 / 行为开关 / 探测结果 / 帧自检
-- `Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求 / 接口探测 / 未验证 cmdid）
+- `UIKit/LMDiagnosticsViewController.swift` — 车控体检（oppwd / token / 上次请求 / 接口探测 / 未验证 cmdid）
 - `Store/LMLocationProvider.swift` — 本机定位（只用于「距我多远」）
 - `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R15，CI 里会跑）
 - `ios/LeapmotorLite/README.md` — 编译 / 使用 / 协议文档（含 §1.8 充电中心）

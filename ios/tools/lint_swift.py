@@ -444,15 +444,31 @@ def check(path: str, src: str):
     # 视图必须挂 .lmClock(until:now:) 推一个每秒更新的 now。
     #
     # 定义处（LMClient.swift 里那两行 `func ...`）要放行，否则会误报自己。
+    #
+    # ★ 2026-10-09（UIKit 迁移 Phase 3）加第二条例外：**UIKit 页根本没有
+    #   `.lmClock(` 这个修饰符** —— 它没有「因为 @State 变了就重绘」这回事，
+    #   等价物是「自己跑一个 Timer 每 0.5s 调一次 render()」。
+    #   所以文件里出现下面这个组合就说明已经手工驱动了时钟，必须放行：
+    #     · `Timer(timeInterval:…target:…selector:…)`（不是 block 版）
+    #     · `forMode: .common`（否则一拖动 ScrollView 就停走）
+    #   条件刻意写成两条同时满足，避免「随便有个 Timer」就把规则绕过去。
     defines_api = "func isControlLocked" in code or "func controlLockRemaining" in code
-    if not defines_api and ("isControlLocked(" in code or "controlLockRemaining(" in code):
+    uikit_clock = (
+        re.search(r"Timer\(timeInterval:[\s\S]{0,200}?selector:\s*#selector\(", code)
+        is not None
+        and "forMode: .common" in code
+    )
+    if (not defines_api
+            and not uikit_clock
+            and ("isControlLocked(" in code or "controlLockRemaining(" in code)):
         if ".lmClock(" not in code:
             idx = code.find("isControlLocked(")
             if idx < 0:
                 idx = code.find("controlLockRemaining(")
             add(idx, "R9",
-                "读了 isControlLocked/controlLockRemaining（依赖当前时间）但本文件没有"
-                ".lmClock(until:now:) → 倒计时会冻住，锁定期到期后按钮不会重新启用")
+                "读了 isControlLocked/controlLockRemaining（依赖当前时间）但本文件既没有"
+                ".lmClock(until:now:)，也没有 UIKit 那套 Timer(target/selector) + "
+                "forMode: .common 的手工时钟 → 倒计时会冻住，锁定期到期后按钮不会重新启用")
 
     # R11 —— CoreBluetooth delegate 回调里写 @Published 但没保证主线程
     # CBCentralManager 的 delegate 回调**不在主线程**（除非建的时候传 queue: nil）。

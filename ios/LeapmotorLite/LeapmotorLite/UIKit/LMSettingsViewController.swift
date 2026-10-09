@@ -16,12 +16,11 @@
 //    · `render()` 必须幂等：只改已有控件的属性 + 用 `isHidden` 折叠整行，
 //      绝不 `addSubview`（车辆列表和续期日志是例外，见 `rebuildIfNeeded`）
 //
-//  ⚠️ 本文件里 `import SwiftUI` 只为了一个目的：把**还没迁移**的 SwiftUI 页面
-//     包成 VC 再 push（`pushSwiftUIPage`）。等那些页面也迁完，这个 import 和
-//     那个方法都能删掉。
+//  ★ 2026-10-09（Phase 3~6 全部迁完）：本页 push 的 7 个页面现在**全是**
+//    `LMBaseViewController` 子类，一律直接 `pushViewController` ——
+//    `import SwiftUI` 与过渡期的 `pushSwiftUIPage` 都已删除。
 //
 import UIKit
-import SwiftUI
 
 final class LMSettingsViewController: LMBaseViewController {
 
@@ -140,7 +139,7 @@ final class LMSettingsViewController: LMBaseViewController {
     private let signOutCard = LMCardView()
     private let signOutButton = UIButton()
 
-    // MARK: - 被 push 的页面（还没迁移的 SwiftUI 页）
+    // MARK: - 被 push 的页面（全部已是原生 UIKit 页）
 
     /// 设置页要 push 的 7 个页面。
     ///
@@ -488,42 +487,24 @@ final class LMSettingsViewController: LMBaseViewController {
     }
 
     @objc private func openPage(_ sender: UIControl) {
-        guard let page = SettingsPage(rawValue: sender.tag) else { return }
+        guard let page = SettingsPage(rawValue: sender.tag),
+              let nav = navigationController else { return }
         switch page {
         case .vehicleProfile:
-            pushSwiftUIPage("车辆档案") { VehicleProfileView() }
+            nav.pushViewController(LMVehicleProfileViewController(client: client), animated: true)
         case .location:
-            pushSwiftUIPage("车辆定位") { LocationView() }
+            nav.pushViewController(LMLocationViewController(client: client), animated: true)
         case .charge:
-            pushSwiftUIPage("车辆充电信息") { ChargeView() }
+            nav.pushViewController(LMChargeViewController(client: client), animated: true)
         case .bleKey:
-            pushSwiftUIPage("蓝牙钥匙") { BLEKeyView() }
+            nav.pushViewController(LMBLEKeyViewController(client: client), animated: true)
         case .signal:
-            pushSwiftUIPage("信号浏览器") { SignalExplorerView() }
+            nav.pushViewController(LMSignalExplorerViewController(client: client), animated: true)
         case .diagnostics:
-            pushSwiftUIPage("车控体检") { DiagnosticsView() }
+            nav.pushViewController(LMDiagnosticsViewController(client: client), animated: true)
         case .selfTest:
-            pushSwiftUIPage("算法自检") { SelfTestView() }
+            nav.pushViewController(LMSelfTestViewController(client: client), animated: true)
         }
-    }
-
-    /// 把一个**还没迁移**的 SwiftUI 页面推进导航栈。
-    ///
-    /// `ownsNavigationBar: true` 会让 `LMHostingController` 给内容套
-    /// `NavigationStack`（`BLEKeyView` / `DiagnosticsView` 内部有
-    /// `NavigationLink`，没有它会静默失效），同时藏掉外层 UIKit 导航栏并补返回键。
-    /// 详见 `LMHostingController.ownsNavigationBar` 的注释。
-    private func pushSwiftUIPage<C: View>(_ title: String,
-                                          @ViewBuilder content: () -> C) {
-        let vc = LMHostingController(
-            client: client,
-            title: title,
-            ownsNavigationBar: true,
-            onBack: { [weak self] in
-                self?.navigationController?.popViewController(animated: true)
-            },
-            content: content)
-        navigationController?.pushViewController(vc, animated: true)
     }
 
     // MARK: - 小工具
