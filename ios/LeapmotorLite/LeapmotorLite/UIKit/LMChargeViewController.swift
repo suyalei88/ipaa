@@ -980,30 +980,36 @@ final class LMChargeViewController: LMBaseViewController {
 
     private func renderEvidence() {
         let votes = "\(client.chargeFlagVotes) / \(LMClient.chargeFlagIDs.count)"
+        let hvText = (client.highVoltageActive ? "已激活 · " : "未激活 · ") + votes
         let currentText = client.chargeCurrentA.map { String(format: "%.2f A", $0) } ?? "0.00 A"
         let stateText = client.chargeState.text
-        let sig = [votes, currentText, stateText].joined(separator: "\u{1}")
+        let sig = [hvText, currentText, stateText].joined(separator: "\u{1}")
         rebuildIfNeeded(evidenceStack, signature: sig) { () -> [UIView] in
             var views: [UIView] = []
-            let vRow = LMChargeKVRow(key: "标志位投票")
-            vRow.update(votes)
-            views.append(vRow)
-            views.append(LMUIKit.label(
-                "参与投票的信号：\(LMClient.chargeFlagIDs.joined(separator: " / "))。"
-                + "实测充电时全为 1、未充电时全为 0。", size: 11, color: .secondaryLabel))
+            // ★ 判据 = 电流，放最上面（用户最该看的就是这一行）
             let cRow = LMChargeKVRow(key: "充电电流 1178")
             cRow.update(currentText)
             views.append(cRow)
             views.append(LMUIKit.label(
-                "没电流就充不进电，这是唯一带物理意义的判据。取「多数票 ≥ 3」或「电流非零」即判为充电中。",
-                size: 11, color: .secondaryLabel))
+                "★ 判据只看它：没有电流就一定没有电进电池。电流为零 = 未充电，"
+                + "不管别的标志位怎么翻。", size: 11, color: .secondaryLabel))
+            views.append(makeDivider())
+            // ★ 高压系统状态：以前这 5 位被当成「充电中」投票，是误报来源。
+            let hRow = LMChargeKVRow(key: "高压系统")
+            hRow.update(hvText)
+            views.append(hRow)
+            views.append(LMUIKit.label(
+                "\(LMClient.chargeFlagIDs.joined(separator: " / ")) 这 5 路信号"
+                + "**不代表在充电** —— 车辆通电（READY）、开哨兵模式时它们同样会亮"
+                + "（2026-10-09 用户实测）。所以现在只用来提示「高压系统在工作」，"
+                + "不参与充电判定。", size: 11, color: .secondaryLabel))
             views.append(makeDivider())
             let sRow = LMChargeKVRow(key: "结论")
             sRow.update(stateText)
             views.append(sRow)
             views.append(LMUIKit.label(
-                "★ 信号 1200 不参与这个判断 —— 它是纯 SOC 投影，未充电时照样有值（实测 550）。"
-                + "老版本就是拿它当状态位才误报的。", size: 11, color: .tertiaryLabel))
+                "★ 信号 1200 也不参与判断 —— 它是纯 SOC 投影，未充电时照样有值（实测 550）。"
+                + "老版本拿它当状态位，误报过一次。", size: 11, color: .tertiaryLabel))
             return views
         }
     }
@@ -1034,7 +1040,24 @@ final class LMChargeViewController: LMBaseViewController {
         }
         // 两个信号都没有时，整张卡只剩标题 + 说明，那就把说明也收起来，
         // 免得用户对着一堆读不到的值发愣。
-        powerNote.isHidden = (v == nil && a == nil)
+        //
+        // ★ 2026-10-09：「电压有值但电流为 0」是最常见的困惑态 —— 车辆通电
+        //   （READY）/ 哨兵模式下母线电压照样上报，但没插枪就没电流。
+        //   必须明说「没有电流」，否则用户会以为功率读不到是坏了。
+        if v != nil && a == nil {
+            powerNote.isHidden = false
+            powerNote.text = "读到了母线电压，但**充电电流为 0** —— 没有电进电池，"
+                + "所以功率不显示。车辆通电（READY）或哨兵模式下就是这个状态，"
+                + "不是读数坏了。"
+        } else if v == nil && a == nil {
+            powerNote.isHidden = true
+        } else {
+            powerNote.isHidden = false
+            powerNote.text = "官方充电中心有「电压 / 电流 / 功率」三项"
+                + "（本地化表 ChargingCnter_Voltage / _Current / _Power）。"
+                + "车端上报的信号里只有 1177（电压）与 1178（电流）这一对量纲自洽，"
+                + "功率按「电压 × 电流」现算 —— 它是派生值，不是车端直接给的数字。"
+        }
     }
 
     // MARK: - 动作（全部走原页那套 client.xxx，参数一字不改）

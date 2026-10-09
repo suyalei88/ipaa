@@ -533,6 +533,31 @@ final class LMDiagnosticsViewController: LMBaseViewController {
             size: 11, color: .lmText2)
         enableCopy(keys)
         cmdidCard.contentStack.addArrangedSubview(keys)
+
+        // ── ★ 2026-10-09：预约充电 payload 候选（一键预填）
+        //
+        //   用户报「保存预约充电报下发失败」，但手上没有一份「官方保存预约充电」
+        //   的抓包样本。与其让他对着空输入框猜 JSON，不如把三种有依据的形状摆出来：
+        //   点一行 → 预填 cmdid 161 + 该 state → 再点上面的「发送原始指令」。
+        //   三种都试一次，哪种返回 msgID 哪种就是对的。
+        cmdidCard.contentStack.addArrangedSubview(LMUIKit.label(
+            "预约充电（161）payload 候选 —— 点一下预填，再点上面的「发送原始指令」",
+            size: 11, color: .secondaryLabel))
+        for (i, probe) in LMEndpoints.appointmentProbes.enumerated() {
+            let b = UIButton(type: .system)
+            styleRowButton(b, title: probe.title, icon: "calendar.badge.clock")
+            b.tag = i
+            b.addTarget(self, action: #selector(appointmentProbeTapped(_:)),
+                        for: .touchUpInside)
+            cmdidCard.contentStack.addArrangedSubview(b)
+        }
+        let probeNote = LMUIKit.label(
+            "依据：① 主二进制字符串池里的官方键名（chargesoc / chargeEnable 是"
+            + "config[\"3\"] 里从来没有过的写接口专用名）；② config[\"3\"] 的下发键名；"
+            + "③ 两者并集（App 现在默认发这个）。"
+            + "官方充电中心的「保存」到底收哪一套，目前没有抓包能定 —— 试出来为止。",
+            size: 11, color: .tertiaryLabel)
+        cmdidCard.contentStack.addArrangedSubview(probeNote)
     }
 
     private func buildCopySection() {
@@ -810,8 +835,24 @@ final class LMDiagnosticsViewController: LMBaseViewController {
     /// cmdid 全集里点一行：只填 cmdid，**不填 state**（state 没有样本，猜不得）。
     /// 填完把页面滚回输入框，否则用户点了没反馈（输入框在屏幕上方之外）。
     @objc private func cmdidRowTapped(_ sender: LMDiagCmdidRow) {
-        rawCmdId = String(sender.cmdid)
-        rawState = ""
+        fillRawProbe(cmdid: sender.cmdid, state: "")
+    }
+
+    /// 预约充电 payload 候选被点：预填 161 + 该候选的 state。
+    @objc private func appointmentProbeTapped(_ sender: UIButton) {
+        let probes = LMEndpoints.appointmentProbes
+        guard sender.tag >= 0, sender.tag < probes.count else { return }
+        fillRawProbe(cmdid: LMEndpoints.ChargeCmdid.appointment,
+                     state: probes[sender.tag].state)
+    }
+
+    /// 把 cmdid + state 写进「原始 cmdid 探测」的两个输入框，并把卡片滚进可视区。
+    ///
+    /// 这是**动作**（用户点击触发）不是 `render()`，所以可以动输入控件 ——
+    /// 幂等渲染的铁律只约束 `render()`。
+    private func fillRawProbe(cmdid: Int, state: String) {
+        rawCmdId = String(cmdid)
+        rawState = state
         rawCmdField.text = rawCmdId
         rawStateField.text = rawState
         scrollToRawCard()

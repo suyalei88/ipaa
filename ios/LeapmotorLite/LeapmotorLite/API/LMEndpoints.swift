@@ -445,6 +445,23 @@ enum LMEndpoints {
     /// 但反过来说「预约充电只有 161」不成立。本 App 只用 161 ——
     /// 它也在 `rightList` 里。
     ///
+    /// ★★ 2026-10-09 补（修「保存预约充电报下发失败」的依据）：
+    ///   **写接口的 JSON 键名与 `config["3"]` 的读取键名不一样。**
+    ///   主二进制字符串常量池里有一段**连续的键名**：
+    /// ```
+    /// LMVChargingAppointment.chargesoc.chargeEnable.recharge.cycles.circulation.Begin_Charge
+    /// ```
+    ///   其中 `chargesoc`（目标电量）与 `chargeEnable`（预约开关）是**写接口专用**
+    ///   —— `config["3"]` 下发的字段里从来没有它们（那边叫 `percent` / `isEnable`）。
+    ///   老 payload 恰好缺这两个键，用户实测「保存报错下发失败」大概率就是它。
+    ///   现在 `LMClient.saveAppointmentCharge` **两套键名都带上**（冗余键服务端
+    ///   通常忽略），与 `setChargeLimit`（`percent` + `chargesoc`）策略一致。
+    ///
+    /// ⚠️ 诚实标注：手上**没有一份「官方保存预约充电」的抓包样本**
+    ///   （HAR 里只有 `getappointment` 查询，返回 `data:""`）。所以这是
+    ///   「二进制字段名 + 同族接口惯例」推出来的最优组合，真机若仍失败，
+    ///   诊断页有 payload 探测可以直接定位。
+    ///
     /// ## ⚠️ 没解出来的部分（如实说明）
     ///
     /// 分派器只传 `cmdid` + `content`，**content 的字段名在调用方构造**，
@@ -478,6 +495,41 @@ enum LMEndpoints {
     /// 且 `ChargingCenter_ChargeHealthSocAlert` = 「为保持电池健康状态，
     /// **无法调节至90%以上**」→ 说明上限区间是 [50, 100] 一类的整数百分比。
     static let chargeSocRange = 50...100
+
+    /// 预约充电（cmdid 161）的 payload 候选 —— 给诊断页「一键预填」用。
+    ///
+    /// ★ 2026-10-09 新增。起因：用户报「保存预约充电报下发失败」，
+    ///   而手上**没有一份「官方保存预约充电」的抓包样本**
+    ///   （HAR 里只有 `getappointment` 查询，返回 `data:""`）。
+    ///   与其让用户对着空输入框猜 JSON，不如把三种**有依据**的形状列出来：
+    ///   点一行 → 预填 cmdid 161 + 该 state → 再点「发送原始指令」。
+    ///   哪种返回 msgID，哪种就是对的。
+    ///
+    ///   ⚠️ 这三条都是**候选**，不是结论。真机跑出来哪个能过，
+    ///      就该把 `LMClient.saveAppointmentCharge` 收敛到那一种，
+    ///      并回来更新这里（别让「候选」永远挂着）。
+    struct AppointmentProbe: Identifiable {
+        let title: String
+        /// 这个形状的依据（写清来源，避免后人当成拍脑袋）
+        let basis: String
+        /// 要发出去的 state JSON 原文
+        let state: String
+
+        var id: String { title }
+    }
+
+    static let appointmentProbes: [AppointmentProbe] = [
+        .init(title: "① 官方键名 chargesoc / chargeEnable",
+              basis: "主二进制字符串池 LMVChargingAppointment.chargesoc."
+                  + "chargeEnable.recharge.cycles.circulation.Begin_Charge",
+              state: #"{"chargesoc":80,"chargeEnable":1,"recharge":0,"cycles":"1,1,1,1,1,1,1","circulation":1,"Begin_Charge":"03:00"}"#),
+        .init(title: "② config 键名 percent / isEnable（老 payload）",
+              basis: "commonConfig 的 config[\"3\"] 服务端下发过的字段名",
+              state: #"{"beginTime":"03:00","endTime":"08:00","percent":80,"isEnable":1,"cycles":"1,1,1,1,1,1,1","circulation":1,"recharge":0}"#),
+        .init(title: "③ 两套合并（App 当前默认）",
+              basis: "①②的并集 —— 多一个未知键服务端通常忽略",
+              state: #"{"chargesoc":80,"chargeEnable":1,"recharge":0,"cycles":"1,1,1,1,1,1,1","circulation":1,"beginTime":"03:00","endTime":"08:00","percent":80,"isEnable":1}"#),
+    ]
 
     // MARK: - 空调（cmdid 170）
 

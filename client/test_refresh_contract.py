@@ -1402,7 +1402,7 @@ def test_dark_theme() -> None:
 
 def test_cmdid_table() -> None:
     """
-    [15] cmdid 全表 + 400 语义纠正 + 前备箱 + 充电功率
+    [16] cmdid 全表 + 400 语义纠正 + 前备箱 + 充电功率
 
     这一轮（v1.1.7）的东西有一个共同特征：**全部是「知识」而不是「逻辑」**。
     知识类的改动编译器一个字都不会拦 —— 谁把 400 的标题改回「上电」、
@@ -1413,7 +1413,7 @@ def test_cmdid_table() -> None:
       断言盯**真实声明形态**（`"hello": Command(`、`RemoteCmdid(cmdid: 110,`），
       不盯「某字符串有没有出现在某文件里」—— 注释里必然会写出被修掉的旧名字。
     """
-    print("\n[15] cmdid 全表 / 400 语义 / 前备箱 / 充电功率")
+    print("\n[16] cmdid 全表 / 400 语义 / 前备箱 / 充电功率")
 
     ep = read("API/LMEndpoints.swift")
     client = read("API/LMClient.swift")
@@ -1557,16 +1557,95 @@ def test_cmdid_table() -> None:
     check("官方本地化表 evidence/official/LMV_zh-Hans.json 存在",
           os.path.isfile(os.path.join(ROOT, "evidence", "official", "LMV_zh-Hans.json")))
 
-    # ── 15.11 版本号已升到 1.1.7 (18) ──────────────────────────
+    # ── 15.11 版本号已升到 1.1.8 (19) ──────────────────────────
     plist = read("Support/Info.plist")
-    check("Info.plist 版本 = 1.1.7",
-          re.search(r"CFBundleShortVersionString</key>\s*<string>1\.1\.7</string>", plist)
+    check("Info.plist 版本 = 1.1.8",
+          re.search(r"CFBundleShortVersionString</key>\s*<string>1\.1\.8</string>", plist)
           is not None)
-    check("Info.plist build = 18",
-          re.search(r"CFBundleVersion</key>\s*<string>18</string>", plist) is not None)
+    check("Info.plist build = 19",
+          re.search(r"CFBundleVersion</key>\s*<string>19</string>", plist) is not None)
     bi = read("LMBuildInfo.swift")
-    check("LMBuildInfo.tag 提到了这一轮的 cmdid 全表",
-          re.search(r'static\s+let\s+tag\s*=\s*"[^"]*cmdid', bi) is not None)
+    check("LMBuildInfo.tag 提到了这一轮的充电判据修复",
+          re.search(r'static\s+let\s+tag\s*=\s*"[^"]*充电', bi) is not None)
+
+
+def test_charge_and_appointment() -> None:
+    """
+    [17] 充电状态判据改版 + 预约充电 payload 修复（v1.1.8）
+
+    用户报的两个 bug：
+      ① 车辆通电使用 / 开启哨兵模式时**错误显示「充电中」**
+      ② **保存预约充电报「下发失败」**
+
+    ① 的根因是**判据选错了**：老代码拿 5 路「高压系统激活」标志位投票
+       （`chargeFlagVotes >= 3`），而那 5 位在车辆通电 / 哨兵模式下同样会亮。
+       现在判据换成充电电流 1178 —— 没电流就一定没有电进电池。
+    ② 的根因是 **payload 键名用错了一套**：官方写接口用的是
+       `chargesoc` / `chargeEnable`（主二进制字符串池），而老 payload 只带了
+       `config["3"]` 的**读取**键名（`percent` / `isEnable`）。
+
+    这两条都是「能编译、CI 能绿、但行为错」的类型，必须在这里钉死。
+    """
+    print("\n[17] 充电判据（电流硬门槛）+ 预约充电 payload")
+
+    client = read("API/LMClient.swift")
+    client_code = code_only(client)
+    ep = read("API/LMEndpoints.swift")
+    charge = read("UIKit/LMChargeViewController.swift")
+    catalog = read("API/LMSignalCatalog.swift")
+    diag = read("UIKit/LMDiagnosticsViewController.swift")
+
+    # ── 17.1 判据不再看标志位 ────────────────────────────────────
+    check("LMClient 有 highVoltageActive（标志位降级后的落点）",
+          re.search(r"var\s+highVoltageActive\s*:\s*Bool", client) is not None)
+    check("★ chargeState 不再拿标志位多数票判「充电中」",
+          re.search(r"chargeFlagVotes\s*>=\s*3\s*\)\s*\{\s*return\s*\.charging", client_code)
+          is None)
+    check("chargeState 以 chargeCurrentNonZero 为唯一判据",
+          re.search(r"return\s+chargeCurrentNonZero\s*\?\s*\.charging\s*:\s*\.notCharging",
+                    client_code) is not None)
+    check("1178 缺失时返回 unknown（宁可待确认也不误报）",
+          re.search(r'guard\s+signals\["1178"\]\s*!=\s*nil\s+else\s*\{\s*return\s+\.unknown',
+                    client_code) is not None)
+
+    # ── 17.2 知识库同步改判 ─────────────────────────────────────
+    check("LMSignalCatalog 里 100004 已改名「高压系统激活位」",
+          re.search(r'\.init\("100004",\s*"高压系统激活位"', catalog) is not None)
+    check("100004 的显示名不再是「充电状态位」",
+          re.search(r'\.init\("100004",\s*"充电状态位', catalog) is None)
+
+    # ── 17.3 UI 说明同步 ────────────────────────────────────────
+    check("充电页证据卡显示「高压系统」一行",
+          re.search(r'LMChargeKVRow\(key:\s*"高压系统"\)', charge) is not None)
+    check("充电页不再有「标志位投票」这一行",
+          re.search(r'LMChargeKVRow\(key:\s*"标志位投票"\)', charge) is None)
+    check("电压有值但电流为 0 时给出「没有电流」的说明",
+          "充电电流为 0" in charge)
+
+    # ── 17.4 预约充电 payload 补齐官方写接口键名 ─────────────────
+    check("saveAppointmentCharge 带上官方键名 chargesoc",
+          re.search(r'"chargesoc"\s*:\s*p', client) is not None)
+    check("saveAppointmentCharge 带上官方键名 chargeEnable",
+          re.search(r'"chargeEnable"\s*:\s*enabled', client) is not None)
+    check("saveAppointmentCharge 仍保留 config 键名（冗余不删）",
+          re.search(r'"beginTime"\s*:\s*beginTime', client) is not None
+          and re.search(r'"percent"\s*:\s*p', client) is not None)
+
+    # ── 17.5 失败原因不再只有「下发失败」四个字 ──────────────────
+    check("新增 prettyJSON 辅助函数",
+          re.search(r"static\s+func\s+prettyJSON\s*\(", client) is not None)
+    check("★ 车控失败时把服务端原始响应带进错误信息",
+          "服务端原始响应" in client)
+
+    # ── 17.6 诊断页有预约 payload 候选探测 ───────────────────────
+    check("LMEndpoints 有 struct AppointmentProbe",
+          re.search(r"struct\s+AppointmentProbe\s*:\s*Identifiable", ep) is not None)
+    seg = ep[ep.find("appointmentProbes"):] if "appointmentProbes" in ep else ""
+    n = len(re.findall(r'\.init\(title:\s*"[①②③]', seg))
+    check("appointmentProbes 恰好 3 条候选", n == 3, f"实际 {n}")
+    check("诊断页渲染了候选按钮（appointmentProbeTapped）",
+          re.search(r"func\s+appointmentProbeTapped", diag) is not None
+          and "LMEndpoints.appointmentProbes" in diag)
 
 
 def main() -> int:
@@ -1591,6 +1670,7 @@ def main() -> int:
     test_uikit_full_migration()
     test_dark_theme()
     test_cmdid_table()
+    test_charge_and_appointment()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

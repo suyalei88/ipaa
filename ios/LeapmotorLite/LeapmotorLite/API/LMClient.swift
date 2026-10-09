@@ -200,7 +200,10 @@ struct LMControlTrace: Identifiable {
 
 /// 车辆当前是否在充电。
 ///
-/// ★ 判据来自「充电中 / 未充电」两张真实快照的逐信号 diff，不是猜的：
+/// ## 判据的两次修订（第二修订是用户实测逼出来的）
+///
+/// **第一版（错）**：拿 5 路标志位投票，`≥ 3` 就判「充电中」。
+///   依据是「充电中 / 未充电」两张快照的逐信号 diff：
 ///
 ///   | 信号 | 充电中 SOC 33.0/33.1 | 未充电 SOC 41.4 |
 ///   |------|---------------------|----------------|
@@ -211,8 +214,15 @@ struct LMControlTrace: Identifiable {
 ///   | `3636`   | 1 | **0** |
 ///   | `3722`   | 1 | **0** |
 ///
-///   五路标志位**同步翻转**，其中 `1178` 还有物理意义（没电流就充不进电）。
-///   取「多数票 + 电流」双条件，避免单个标志位抖动造成误报。
+///   ⚠️ **样本只有「熄火停放」和「插枪充电」两种工况** —— 没有「车辆通电 /
+///   哨兵模式」这一组对照，所以把「高压系统在工作」误读成了「在充电」。
+///
+/// **第二版（2026-10-09，用户实测后改）**：用户报「车辆通电使用、开启哨兵模式
+///   时会错误显示充电中」→ 那 5 位其实是**高压系统激活**标志（车辆 READY /
+///   哨兵 / 充电都会点亮）。所以判据换成**充电电流 `1178` 单条硬门槛**：
+///   没有电流就一定没有电进电池，这是唯一带物理意义的量。
+///
+///   标志位降级为 `LMClient.highVoltageActive`，只用来提示「高压系统在工作」。
 enum LMChargeState {
     /// 在充电
     case charging
@@ -1771,9 +1781,16 @@ final class LMClient: ObservableObject {
                                         form: form)
             let env = try decode(LMEnvelope<String>.self, from: any)
             guard let msgID = env.data, !msgID.isEmpty else {
-                trace.outcome = "业务错误 \(env.code ?? -1)：\(env.message ?? "下发失败")"
+                // ★ 2026-10-09：以前这里只写 `env.message ?? "下发失败"`，
+                //   服务端一旦回 `{"result":0,"code":0,"data":""}` 这种「没 msgID
+                //   也没 message」的响应，界面上就只剩「下发失败」四个字，
+                //   完全不知道错在哪。现在把**服务端原始响应**也带上 ——
+                //   错误码和字段一眼可见，用户报错时能直接说清。
+                let raw = Self.prettyJSON(any)
+                let msg = env.message?.isEmpty == false ? env.message! : "服务端未返回 msgID"
+                trace.outcome = "业务错误 \(env.code ?? -1)：\(msg)｜原始响应 \(raw)"
                 lastControlTrace = trace
-                throw LMError.business(env.code ?? -1, env.message ?? "下发失败")
+                throw LMError.business(env.code ?? -1, "\(msg)｜服务端原始响应 \(raw)")
             }
             trace.outcome = "已受理，msgID \(msgID)"
             lastControlTrace = trace
@@ -1855,6 +1872,17 @@ final class LMClient: ObservableObject {
     private func jsonString(_ obj: [String: Any]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: obj, options: [.sortedKeys])
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    /// 把服务端返回的任意 JSON 压成一行短字符串，给错误提示 / 体检单用。
+    ///
+    /// ★ 2026-10-09 新增：以前车控失败只报「下发失败」，看不到服务端到底回了什么。
+    ///   只截前 300 字符 —— alert 里塞整个响应体会被撑爆，300 够看清 code/message。
+    static func prettyJSON(_ obj: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: obj,
+                                                     options: [.sortedKeys]),
+              let s = String(data: data, encoding: .utf8) else { return "（无法序列化）" }
+        return String(s.prefix(300))
     }
 
     // MARK: - 常用车况字段
@@ -2158,10 +2186,29 @@ final class LMClient: ObservableObject {
     /// cmdid 证据：`0x106c5ee88  cmp x23, #0xa1` → `bl objc_msgSend$requestForAppointmentContrlCmdID:content:`。
     /// （同一分支还接了 `0xab`=171、`0x188`=392，是预约族的另外两个子码。）
     ///
-    /// state：**刻意使用服务端下发的原字段名** —— `commonConfig` 的 `config["3"]`
-    /// 实测回来过 `beginTime` / `endTime` / `percent` / `isEnable` /
-    /// `cycles` / `circulation` / `recharge`。读什么写什么，不引入新名字，
-    /// 这是所有候选方案里最不容易写错的一路。
+    /// ── ★★ 2026-10-09 修「保存预约充电报下发失败」────────────────
+    ///
+    ///   老 payload **只带 `config["3"]` 的读取字段名**（`beginTime` /
+    ///   `endTime` / `percent` / `isEnable` / `cycles` / `circulation` /
+    ///   `recharge`）。那是**服务端下发**用的名字，写回去服务端未必认 ——
+    ///   用户实测就是「保存报错下发失败」。
+    ///
+    ///   官方主二进制的字符串常量池里有一段**连续的 JSON 键名**：
+    ///       `LMVChargingAppointment.chargesoc.chargeEnable.recharge.cycles.circulation.Begin_Charge`
+    ///   其中 **`chargesoc`**（= 目标电量）与 **`chargeEnable`**（= 预约开关）
+    ///   是**写接口专用**的名字 —— `config["3"]` 里从来没有它们，
+    ///   而老 payload 恰好缺的就是这两个。
+    ///
+    ///   现在**两套键名都带上**：多一个未知键服务端通常忽略，比押注单一键名安全。
+    ///   这与 `setChargeLimit`（`percent` + `chargesoc`）、
+    ///   `setChargingActive`（`Begin_Charge` + `recharge`）的策略一致。
+    ///   而 `cycles` / `circulation` / `recharge` 三个键**读写两处都出现过**，
+    ///   是最可信的一组。
+    ///
+    ///   ⚠️ 诚实标注：**没有一份「官方保存预约充电」的抓包样本**
+    ///      （手上的 HAR 里只有 `getappointment` 查询，且返回 `data:""`）。
+    ///      所以这是「按二进制字段名 + 同族接口惯例」构造的最优猜测，
+    ///      真机若仍失败，诊断页有 payload 探测可以直接定位是哪套键名不对。
     @discardableResult
     func saveAppointmentCharge(beginTime: String,
                                endTime: String,
@@ -2172,13 +2219,18 @@ final class LMClient: ObservableObject {
         let p = min(max(percent, LMEndpoints.chargeSocRange.lowerBound),
                     LMEndpoints.chargeSocRange.upperBound)
         let state: [String: Any] = [
+            // ① 官方**写接口**字段名（主二进制字符串池，老 payload 缺的就是这两个）
+            "chargesoc": p,
+            "chargeEnable": enabled ? 1 : 0,
+            // ② 读写两处都出现过的键（最可信）
+            "cycles": cycles,
+            "circulation": circulation ? 1 : 0,
+            "recharge": 0,
+            // ③ config["3"] 读取字段名（服务端下发过，冗余保留）
             "beginTime": beginTime,
             "endTime": endTime,
             "percent": p,
             "isEnable": enabled ? 1 : 0,
-            "cycles": cycles,
-            "circulation": circulation ? 1 : 0,
-            "recharge": 0,
         ]
         let ok = await controlRaw(cmdid: LMEndpoints.ChargeCmdid.appointment,
                                   state: state,
@@ -2234,16 +2286,31 @@ final class LMClient: ObservableObject {
     //
     // 证据见 LMSignalCatalog 顶部「充电状态」小节。这里只放「确认过」和「明确标注为疑似」的。
 
-    /// 参与「是否在充电」投票的标志位。实测充电时全为 1、未充电时全为 0。
+    /// 5 路「**高压系统激活**」标志位。
+    ///
+    /// ★★ 2026-10-09 用户实测纠正了它的含义 —— **这不是「充电中」标志**。
+    ///   用户报「车辆通电使用、开启哨兵模式时也显示充电中」，反证车辆 READY
+    ///   （高压上电）与哨兵模式同样会把这 5 位点亮。当时只有「熄火停放 vs
+    ///   插枪充电」两张快照，没有「通电 / 哨兵」这一组对照，才把
+    ///   「高压系统在工作」误读成「在充电」。
+    ///
+    ///   现在它只服务 `highVoltageActive`（给 UI 提示用），
+    ///   **不再参与** `chargeState`。
     static let chargeFlagIDs = ["100004", "1149", "1257", "3636", "3722"]
 
-    /// 标志位里投「在充电」的票数，0...5。
+    /// 标志位里投「高压系统在工作」的票数，0...5。含义见 `chargeFlagIDs`。
     var chargeFlagVotes: Int {
         LMClient.chargeFlagIDs.reduce(0) { acc, id in
             let v = signals[id]?.doubleValue ?? 0
             return acc + (v == 1 ? 1 : 0)
         }
     }
+
+    /// 高压系统是否处于激活状态（车辆通电 / 哨兵模式 / 充电都会点亮）。
+    ///
+    /// ⚠️ 它**不能**用来判断是否在充电 —— 这正是用户报的误报来源。
+    ///   用它来区分「车没充电但高压在工作」（通电 / 哨兵）与「车彻底歇着」。
+    var highVoltageActive: Bool { chargeFlagVotes >= 3 }
 
     /// 充电电流是否非零（信号 `1178`）。
     ///
@@ -2254,12 +2321,18 @@ final class LMClient: ObservableObject {
         return abs(v) > 0.05
     }
 
-    /// 充电状态。多数票 + 电流双条件，见 `LMChargeState` 的说明。
+    /// 充电状态。★ 判据 = **充电电流 `1178`**，见 `LMChargeState` 的说明。
+    ///
+    /// 2026-10-09 改（用户实测逼出来的）：老判据「5 路标志位多数票 ≥ 3」
+    /// 在**车辆通电 / 哨兵模式**下会误报「充电中」—— 那 5 位是「高压系统激活」
+    /// 而不是「充电中」。改成电流硬门槛：
+    ///   · 电流非零           → 充电中
+    ///   · 电流为零           → 未充电（不管标志位怎么翻）
+    ///   · 车端根本没上报 1178 → 不猜，返回 unknown（宁可说「待确认」也不误报）
     var chargeState: LMChargeState {
         if signals.isEmpty { return .unknown }
-        if chargeFlagVotes >= 3 { return .charging }
-        if chargeFlagVotes == 0 && !chargeCurrentNonZero { return .notCharging }
-        return .unknown
+        guard signals["1178"] != nil else { return .unknown }
+        return chargeCurrentNonZero ? .charging : .notCharging
     }
 
     /// 是否在充电（UI 用这个，别再自己拼判据）
