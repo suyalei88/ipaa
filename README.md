@@ -344,7 +344,7 @@ python client/leapmotor_chain.py run  13800000000 123456 # 第 2~4 步：登录+
 - `BLE/LMBLEKeyModels.swift` — 钥匙记录 / 行为开关 / 探测结果 / 帧自检
 - `Views/DiagnosticsView.swift` — 车控体检（oppwd / token / 上次请求 / 接口探测 / 未验证 cmdid）
 - `Store/LMLocationProvider.swift` — 本机定位（只用于「距我多远」）
-- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R14，CI 里会跑）
+- `ios/tools/lint_swift.py` — ★ Swift 陷阱静态检查（R1~R15，CI 里会跑）
 - `ios/LeapmotorLite/README.md` — 编译 / 使用 / 协议文档（含 §1.8 充电中心）
 
 **逆向与分析**
