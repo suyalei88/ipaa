@@ -173,7 +173,6 @@ final class LMLoginViewController: LMBaseViewController {
         sendCfg.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10,
                                                         bottom: 6, trailing: 10)
         sendCodeButton.configuration = sendCfg
-        sendCodeButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .medium)
         sendCodeButton.addTarget(self, action: #selector(sendCodeTapped), for: .touchUpInside)
         sendCodeButton.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -190,7 +189,6 @@ final class LMLoginViewController: LMBaseViewController {
         loginCfg.baseForegroundColor = .white
         loginCfg.cornerStyle = .medium
         smsLoginButton.configuration = loginCfg
-        smsLoginButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
         smsLoginButton.addTarget(self, action: #selector(smsLoginTapped), for: .touchUpInside)
         smsLoginButton.heightAnchor.constraint(equalToConstant: 46).isActive = true
 
@@ -226,7 +224,6 @@ final class LMLoginViewController: LMBaseViewController {
         cfg.baseForegroundColor = .white
         cfg.cornerStyle = .medium
         importButton.configuration = cfg
-        importButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
         importButton.addTarget(self, action: #selector(importTapped), for: .touchUpInside)
         importButton.heightAnchor.constraint(equalToConstant: 46).isActive = true
 
@@ -252,9 +249,16 @@ final class LMLoginViewController: LMBaseViewController {
 
         messageLabel.font = .systemFont(ofSize: 13)
         messageLabel.numberOfLines = 0
-        // 对应原 SwiftUI 的 .textSelection(.enabled)：允许长按复制（含 signKey）
-        messageLabel.isSelectable = true
+        // 对应原 SwiftUI 的 .textSelection(.enabled)：允许长按复制（含 signKey）。
+        // ★ 不能用 `UILabel.isSelectable` —— 那是 UITextView 的成员，UILabel 根本没有，
+        //   写了会在真机编译期直接报 "value of type 'UILabel' has no member 'isSelectable'"
+        //   （本地 Windows 没有 swiftc，静态 lint 也看不出来，只有 CI 才会炸）。
+        //   UIKit 里 UILabel 没有内建选择能力，正确做法是自己挂一个长按手势复制到剪贴板。
         messageLabel.isUserInteractionEnabled = true
+        let copy = UILongPressGestureRecognizer(
+            target: self, action: #selector(messageLongPressed(_:)))
+        copy.minimumPressDuration = 0.4
+        messageLabel.addGestureRecognizer(copy)
 
         let row = LMUIKit.hStack(spacing: 10, alignment: .top)
         row.addArrangedSubview(messageIcon)
@@ -312,7 +316,11 @@ final class LMLoginViewController: LMBaseViewController {
         let canSend = !busy && countdown <= 0 && phone.count >= 11
         sendCodeButton.isEnabled = canSend
         let sendTitle = countdown > 0 ? "\(countdown)s" : (codeSent ? "重发" : "获取验证码")
-        sendCodeButton.setTitle(sendTitle, for: .normal)
+        // ★ 走 `configuration?.title` 而不是 `setTitle(_:for:)`：
+        //   按钮是用 UIButton.Configuration 建的，配置里的 title 才是权威来源。
+        //   同理，字体也由配置决定 —— 直接写 `titleLabel?.font` 会被配置覆盖掉，
+        //   所以这里刻意不设字体，用系统默认（和 LMUIKit 里其它按钮保持一致）。
+        sendCodeButton.configuration?.title = sendTitle
         sendCodeButton.configuration?.showsActivityIndicator = (busy && !codeSent)
 
         smsLoginButton.isEnabled = !busy && codeSent && code.count >= 4 && phone.count >= 11
@@ -382,6 +390,15 @@ final class LMLoginViewController: LMBaseViewController {
 
     @objc private func importTapped() {
         doImport()
+    }
+
+    /// 长按提示卡 = 复制全文（对应原 SwiftUI 的 `.textSelection(.enabled)`）。
+    /// `UILabel` 没有 `isSelectable`，所以复制能力得自己给。
+    @objc private func messageLongPressed(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began, let text = messageLabel.text, !text.isEmpty else { return }
+        UIPasteboard.general.string = text
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        showAlert(title: "已复制", message: text)
     }
 
     private func sendCode() async {

@@ -94,6 +94,19 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       修法：给那个 static func 加 `@MainActor`（调用方本来就在主线程，
       所以不需要任何 await）。
 
+  R15 在 UIKit 类型上写了别的类型才有的成员
+      ★ 2026-10-09 真烧过一轮 CI（UIKit 迁移 Phase 1 的登录页）：
+        LMLoginViewController.swift:256:22: error:
+          value of type 'UILabel' has no member 'isSelectable'
+      起因：照着原 SwiftUI 版的 `.textSelection(.enabled)` 找 UIKit 等价物，
+      顺手把 **UITextView 的** `isSelectable` 安到了 UILabel 上。
+      UILabel 根本没有选择能力 —— 要让文字能复制只能自己挂长按手势
+      （`UILongPressGestureRecognizer` + `UIPasteboard`）。
+      ★ 这类错的特点：纯文本闸门（lint / 契约测试）**完全看不出来**，
+      本机 Windows 又没有 swiftc，所以只能靠 CI 的真机编译暴露。
+      规则只认 MISPLACED_MEMBERS 里显式列出的 (类型, 成员) 组合，宁可窄，
+      不做通用类型检查 —— 后者误报率会失控。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -137,11 +150,40 @@ RULES = {
     "R12": "局部变量名与同文件的方法名同名 → 遮蔽方法调用（报「cannot call value of non-function type」）",
     "R13": "Text(...) 里超过 3 个 `+` 拼接 → Swift 类型检查器超时（抽成 String 计算属性）",
     "R14": "static func 读了 @MainActor 的 LMClient 却没标 @MainActor（CI 编译期直接报 actor 隔离错误）",
+    "R15": "在 UIKit 类型上写了别的类型才有的成员（如 UILabel.isSelectable → 只有真机编译才报）",
 }
 
 # R13 用：Text(...) 参数里允许的最大 `+` 个数。
 #   实测 7 段（6 个 `+`）必炸；4~5 段能过但已贴边，所以阈值取 3（= 4 段）。
 TEXT_PLUS_LIMIT = 3
+
+# R15 用：(宿主类型, 它**没有**的成员, 说明)
+#
+# ★ 只列「在 A 类型上写 B 类型才有的成员」这种错。这类错的特点是：
+#   · 纯文本闸门（lint / 契约测试）**完全看不出来**；
+#   · 本机是 Windows，没有 swiftc，也没法本地编译验证；
+#   · 只有 CI 的真机编译才会炸，白烧一轮（约 2.5 分钟 + 一次完整推送）。
+#
+#   2026-10-09 真烧过一轮：
+#     LMLoginViewController.swift:256:22: error:
+#       value of type 'UILabel' has no member 'isSelectable'
+#   起因是照着原 SwiftUI 版的 `.textSelection(.enabled)` 找等价物，
+#   顺手把 UITextView 的 `isSelectable` 安到了 UILabel 上 —— UILabel 根本没有选择能力，
+#   要能复制只能自己挂长按手势。
+#
+#   ★ 宁可窄，不要误报：只认表里这些 (类型, 成员) 组合，不做通用类型检查。
+MISPLACED_MEMBERS = [
+    ("UILabel", "isSelectable", "UITextView 的成员。UILabel 没有选择能力，要复制得自己挂长按手势"),
+    ("UILabel", "isEditable", "UITextView 的成员"),
+    ("UILabel", "isScrollEnabled", "UITextView / UIScrollView 的成员"),
+    ("UILabel", "textContainerInset", "UITextView 的成员"),
+    ("UILabel", "textContainer", "UITextView 的成员"),
+    ("UIImageView", "isSelectable", "UITextView 的成员"),
+    ("UIImageView", "isEditable", "UITextView 的成员"),
+    ("UIButton", "isSelectable", "UITextView 的成员"),
+    ("UIView", "isSelectable", "UITextView 的成员"),
+    ("UIView", "textContentType", "UITextField / UITextView 的成员"),
+]
 
 # R10 用：框架 → 该框架里「一眼能认出来」的符号正则
 #
@@ -582,6 +624,48 @@ def check(path: str, src: str):
                 add(m.start(), "R10",
                     f"用了 {framework} 的符号（{m.group(0)}）但本文件没有 `import {framework}`")
                 break
+
+    # R15 —— 在 UIKit 类型上写了**别的类型**才有的成员
+    #
+    # ★ 2026-10-09 真烧过一轮 CI（详见文件顶部 MISPLACED_MEMBERS 的注释）：
+    #     LMLoginViewController.swift:256:22: error:
+    #       value of type 'UILabel' has no member 'isSelectable'
+    #
+    #   判定分两步：
+    #     ① 建「变量名 → 类型」表。两种写法都要认：
+    #        `private let messageLabel = UILabel()`   （类型在后面）
+    #        `@IBOutlet weak var foo: UILabel!`       （类型在冒号后）
+    #     ② 查表里每个 (类型, 成员) 组合有没有被写成 `变量名.成员`。
+    #   另外补一条直接链式写法：`UILabel().isSelectable`。
+    #
+    #   ★ 为什么不用「通用类型检查」：那要解析整个 Swift 语法，误报率会失控。
+    #     只认 MISPLACED_MEMBERS 里显式列出的组合，宁可窄。
+    decl_type: dict[str, str] = {}
+    for m in re.finditer(
+            r"(?m)^[ \t]*(?:(?:@\w+|public|private|internal|fileprivate|open|final|"
+            r"weak|lazy|static)[ \t]+)*"
+            r"(?:let|var)[ \t]+(?P<name>[A-Za-z_]\w*)"
+            r"[ \t]*(?::[ \t]*(?P<t1>[A-Za-z_][\w.]*)[!?]?)?"
+            r"[ \t]*(?:=[ \t]*(?P<t2>[A-Z][A-Za-z_]*)[ \t]*\()?",
+            code):
+        t = m.group("t1") or m.group("t2")
+        if t:
+            decl_type.setdefault(m.group("name"), t.split(".")[-1])
+
+    for var, typ in decl_type.items():
+        for host, member, why in MISPLACED_MEMBERS:
+            if typ != host:
+                continue
+            for m in re.finditer(rf"\b{re.escape(var)}\.{re.escape(member)}\b", code):
+                add(m.start(), "R15",
+                    f"`{var}` 是 {host}，但它没有 `{member}`（{why}）"
+                    f"→ 真机编译才报 no member '{member}'")
+
+    for host, member, why in MISPLACED_MEMBERS:
+        for m in re.finditer(rf"\b{re.escape(host)}\(\)\.{re.escape(member)}\b", code):
+            add(m.start(), "R15",
+                f"{host} 没有 `{member}`（{why}）→ 真机编译才报 no member '{member}'")
+
     return hits
 
 

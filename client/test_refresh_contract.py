@@ -667,6 +667,8 @@ def test_uikit_login() -> None:
       ③ **行为不能丢**：验证码倒计时、数字过滤、导入登录态三条链路都在
       ④ 根容器换成原生 VC，不再由 `UIHostingController` 托管
       ⑤ 新文件真的进了 pbxproj 的 Sources
+      ⑥ 踩过的 UIKit 坑不能回归：`UILabel.isSelectable`（真烧过一轮 CI）、
+         按钮标题必须走 `configuration?.title`
     """
     print("\n[12] Phase 1：登录页迁成 UIKit")
 
@@ -745,6 +747,34 @@ def test_uikit_login() -> None:
               "/* LMLoginViewController.swift */" in pbx)
         check("旧的 LoginView.swift 已从工程移除",
               "/* LoginView.swift */" not in pbx)
+
+    # ---- ⑦ 消息卡「可复制」的正确 UIKit 实现（★ 真烧过一轮 CI） ----
+    #
+    # 2026-10-09：这里原来写的是 `messageLabel.isSelectable = true`
+    # （把 UITextView 的成员安到了 UILabel 上），CI 直接报
+    #   LMLoginViewController.swift:256:22: error:
+    #     value of type 'UILabel' has no member 'isSelectable'
+    # 正确做法是自己挂长按手势 + 写剪贴板（UILabel 没有内建选择能力）。
+    # lint 已加 R15 兜这类错，这里再钉一遍**语义**，
+    # 防止以后有人图省事「简化」回 isSelectable。
+    check("没有在 UILabel 上写 isSelectable（UILabel 根本没这个成员）",
+          re.search(r"messageLabel\.isSelectable", vc) is None)
+    check("消息卡用长按手势实现复制",
+          re.search(r"UILongPressGestureRecognizer\(\s*[\s\S]{0,140}?"
+                    r"#selector\(messageLongPressed", vc) is not None)
+    check("长按复制真的写进剪贴板",
+          re.search(r"messageLongPressed[\s\S]{0,500}?UIPasteboard\.general\.string\s*=",
+                    vc) is not None)
+
+    # ---- ⑧ 按钮标题/字体走 configuration（用 Configuration 建的按钮） ----
+    #
+    # `UIButton.Configuration` 一旦挂上，配置里的 title 才是权威来源；
+    # 字体也由配置决定 —— 直接写 `titleLabel?.font` 会被配置覆盖（静默失效）。
+    # 所以：动态标题走 configuration?.title，且全文件不出现 titleLabel?.font。
+    check("动态按钮标题走 configuration?.title",
+          "sendCodeButton.configuration?.title" in vc)
+    check("没有用会被配置覆盖的 titleLabel?.font",
+          re.search(r"\.titleLabel\?\.font\s*=", vc) is None)
 
 
 def main() -> int:
