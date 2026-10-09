@@ -173,18 +173,35 @@ enum LMEndpoints {
         ///    （`data` 是空串，说明这台车当前没有预约项。响应结构因此未知。）
         static let appointment    = "/carownerservice/v3/api/appremotectl/getappointment"
 
-        /// 预约充电**设置**（写）。
+        /// 预约充电**设置**（写）—— ⚠️ **当前未启用**，仅作逆向记录 + 备用通道。
         ///
         /// ★ 2026-10-08 从官方 IPA 主二进制解出：路径
         ///   `/v3/api/appremotectl/appointment`（**不带 `get`**）与
         ///   `cmdid` / `carvin` / `oppwd` / `controlSource` 字段同区出现，
         ///   说明它走的是**车控通道**（带 cmdid），与 `appremotectl` 同族。
+        ///
+        /// ★ 2026-10-09 核实：本 App **没有**用它。预约充电实际走
+        ///   `LMClient.saveAppointmentCharge` → `controlRaw(cmdid: 161)`，
+        ///   即 POST `/app/app-control-service/v3/api/appremotectl` + `cmdid=161`。
+        ///   保留它的两个用途：① 记录官方确实存在这条路径；
+        ///   ② 真机上若 cmdid 通道被拒，这是第一个该试的备用通道。
+        ///
+        /// ⚠️ 别把它当成「已经在用」：**无人引用的常量，Swift 会把整个
+        ///    字符串字面量优化掉**，所以在最终二进制里搜不到这个字符串 ——
+        ///    这属于正常现象，不是漏编译。
         static let appointmentSet = "/carownerservice/v3/api/appremotectl/appointment"
 
-        /// 健康充电**控制**（写）。
+        /// 健康充电**控制**（写）—— ⚠️ **当前未启用**，仅作逆向记录 + 备用通道。
         ///
         /// ★ 2026-10-08 从官方 IPA 主二进制字符串表解出，与查询用的
         ///   `healthyCharging/queryPushState` 紧邻配对。
+        ///
+        /// ★ 2026-10-09 核实：本 App **没有**用它。健康充电开关实际走
+        ///   `LMClient.setHealthyCharging` → `controlRaw(cmdid: 480)`，
+        ///   即 POST `/app/app-control-service/v3/api/appremotectl` + `cmdid=480`
+        ///   （480 由反汇编 `requestForChargingHealthControl:` 解出）。
+        ///   **两条通道官方都存在，哪条才是车端真正接受的，需要真机验证** ——
+        ///   这正是保留它的原因。
         static let healthyChargingControl = "/carownerservice/v3/api/healthyCharging/control"
 
         /// 车辆分享列表（谁被授权用这台车、能用哪些 cmdid）。

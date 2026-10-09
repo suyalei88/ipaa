@@ -209,6 +209,21 @@ v3/api/healthyCharging/queryPushState    ← 健康充电读
 
 → **立即 / 结束充电只能走 `appremotectl` + cmdid 193。**
 
+★ **2026-10-09 补充（重要）**：上表里 `appremotectl/appointment` 与
+`healthyCharging/control` 这两条**本 App 没有使用** —— 预约充电走 cmdid 161、
+健康充电走 cmdid 480，两条都在 `appremotectl` 车控通道上。
+它们只作为**逆向记录 + 备用通道**保留在 `LMEndpoints.Path` 里，
+并在注释里明确标注了「当前未启用」。
+
+⚠️ 由此带来一个排查陷阱：**无人引用的常量，Swift 会把整个字符串字面量
+优化掉**，所以在最终 IPA 的二进制里搜不到这两个路径是**正常现象**，
+不是漏编译。上一轮曾把这种现象误判成「Swift 小字符串优化」——
+但这两条路径分别有 46 / 47 字节，远超小字符串 15 字节的阈值，
+真实原因是**死代码消除**。
+
+（真正会被小字符串优化的是 ≤15 字节的字面量，例如 `Begin_Charge`(12)、
+`chargesoc`(9)、`isPush`(6) —— 这类确实进不了 `__cstring`。）
+
 ### 抓包里的充电接口实测
 
 ```

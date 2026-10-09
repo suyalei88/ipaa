@@ -412,6 +412,29 @@ def test_charging_center() -> None:
           re.search(r'healthyChargingPush\s*=\s*"/carownerservice/v3/api/healthyCharging/queryPushState"', ep)
           is not None)
 
+    # ---- ★ 2026-10-09 核实：上面两条写路径**当前未被引用** ----
+    # 它们只是逆向记录 + 备用通道，真正的下发走 appremotectl + cmdid。
+    #
+    # 为什么必须把这件事钉死：**无人引用的常量，Swift 会把整个字符串
+    # 字面量优化掉**，于是「最终二进制里搜不到这个路径」是**正常现象**。
+    # 不知道这一点的人会误判成「漏编译」，然后去乱改一通。
+    #
+    # 上一轮就真犯过这个错：把搜不到的原因解释成「Swift 小字符串优化」。
+    # 但那两条路径分别是 46 / 47 字节，远超小字符串 15 字节的阈值 ——
+    # 真实原因是**死代码消除**。所以这里同时断言「标注」和「实际通道」。
+    for cname, cn in (("appointmentSet", "预约充电"),
+                      ("healthyChargingControl", "健康充电")):
+        m = re.search(rf"static let {cname}\s*=", ep)
+        check(f"{cname} 仍在端点表里（逆向记录）", m is not None)
+        if m:
+            head = ep[max(0, m.start() - 900):m.start()]
+            check(f"{cname} 明确标注了「当前未启用」（{cn}实际走 cmdid 通道）",
+                  "当前未启用" in head)
+    check("预约充电实际走 controlRaw(cmdid 161)",
+          re.search(r"saveAppointmentCharge[\s\S]{0,1200}?ChargeCmdid\.appointment", client) is not None)
+    check("健康充电实际走 controlRaw(cmdid 480)",
+          re.search(r"setHealthyCharging[\s\S]{0,600}?ChargeCmdid\.health\b", client) is not None)
+
     # ---- 客户端方法 ----
     for fn in ("setChargingActive", "setChargeLimit", "setHealthyCharging",
                "saveAppointmentCharge", "refreshHealthyCharging"):
