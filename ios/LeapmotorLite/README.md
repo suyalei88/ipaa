@@ -897,7 +897,47 @@ warnView.isHidden = (cmd.risk != .physical)
 |---|---|
 | `client/test_refresh_contract.py` → `[9]` | 定位数据源（40+ 条）：撤 IP 卡 / 本机 GPS / 驻车照片 / 代码里不读 `ipAddress` |
 | 同上 → `[10]` | 新增 6 条：`deviceId` 稳定性 + 健康充电 UI |
-| `ios/tools/lint_swift.py` | `R1~R19` 全过（本轮无新增规则，改动没引入新陷阱） |
+| `ios/tools/lint_swift.py` | `R1~R20` 全过（★ 本轮新增 **R20**：可选链后紧跟 `flatMap` / `compactMap` —— 详见下方「踩坑」） |
+
+#### ★★ 踩坑：可选链会把 `.成员.方法` 整段吞进链内（烧掉一轮 CI）
+
+第一版 `downloadParkingSnapImage()` 写的是：
+
+```swift
+guard let url = parkingSnap?.fileUrl.flatMap(URL.init(string:)) else { return nil }
+```
+
+CI 直接编译失败：
+
+```
+error: cannot convert value of type '(__shared String) -> URL?'
+       to expected argument type '(String.Element) throws -> URL?'
+       (aka '(Character) throws -> Optional<URL>')
+```
+
+**原因**：可选链 `?.` 不是「只作用于 `fileUrl`」，而是把后面的
+`.fileUrl.flatMap(...)` **整段纳入链内**。链内的基类型是**已解包**的
+`LMParkingSnap`（非可选），于是 `fileUrl` 是 `String` 而不是 `String?` ——
+这个 `.flatMap` 于是被解析成 **`Sequence.flatMap`**
+（要求 `(Character) -> SegmentOfResult`），而不是
+**`Optional.flatMap`**（要求 `(String) -> URL?`）。类型对不上，编译失败。
+
+**正确写法**：拆成两句 `guard let`（可选链的基类型回到 `LMParkingSnap?`，
+结果才是 `String?`）：
+
+```swift
+guard let fileUrl = parkingSnap?.fileUrl,
+      let url = URL(string: fileUrl) else { return nil }
+```
+
+**已固化为 lint R20**。只拦 `flatMap` / `compactMap` —— 这两个「压平」方法在
+`Optional` 与 `Sequence` 上**语义完全不同**，撞上必错；
+`map` / `filter` / `count` 不拦，因为 `a?.items.map { ... }`（返回 `[U]?`）
+是正当且常见的写法。正反样本在 `dist/_lint_selftest.py`。
+
+> 教训：本机是 Windows、**没有 `swiftc`**，所有 UIKit / Swift 类型推断错误
+> 都只能在 CI 发现。这类「可选链吞掉成员访问」的坑纯文本闸门看不出来，
+> 所以一旦烧过一次就立刻固化成 lint 规则。
 
 ---
 

@@ -1285,6 +1285,12 @@ def test_dark_theme() -> None:
                     encoding="utf-8").read()
     check("lint 有 R18（薄荷底白字）", '"R18"' in lint_src)
     check("lint 有 R19（系统语义背景色）", '"R19"' in lint_src)
+    # ★ 2026-10-09：R20 是「可选链吞掉 flatMap/compactMap」——
+    #   v1.1.5 真烧过一轮 CI（`parkingSnap?.fileUrl.flatMap(URL.init(string:))`）。
+    #   本地没 swiftc，只能靠这条静态规则拦，必须保证规则真的注册了。
+    check("lint 有 R20（可选链后 flatMap/compactMap）", '"R20"' in lint_src)
+    check("R20 真的挂了检查正则（不只是文档）",
+          "OPTIONAL_CHAIN_FLATTEN_RE.finditer" in lint_src)
 
 
 def main() -> int:

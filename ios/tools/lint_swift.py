@@ -136,6 +136,20 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       混用系统语义色会出现「同一屏两种黑」；一旦有人放开浅色模式，
       系统色变白而文字仍是硬编码的白 → 白底白字。
 
+  R20 可选链后紧跟「成员访问 + flatMap / compactMap」→ 编译必失败
+      ★ 2026-10-09 真烧过一轮 CI（v1.1.5）：
+          `guard let url = parkingSnap?.fileUrl.flatMap(URL.init(string:)) else { ... }`
+        → error: cannot convert value of type '(__shared String) -> URL?'
+                 to expected argument type '(String.Element) throws -> URL?'
+      原因：可选链 `?.` 会把后面的 `.成员.方法` **整段纳入链内**，链内的基类型
+      是**已解包**的 `LMParkingSnap`，于是 `fileUrl` 是非可选 `String`，
+      这个 `.flatMap` 被解析成 `Sequence.flatMap`（要求 `(Character) -> SegmentOfResult`），
+      而不是 `Optional.flatMap`（要求 `(String) -> URL?`）。
+      正确写法：先 `guard let x = a?.b, let y = f(x) else { ... }` 拆开。
+      ⚠️ 只拦 `flatMap` / `compactMap`：这两个「压平」方法在 `Optional` 与
+         `Sequence` 上**语义完全不同**，撞上就是错。
+         `map` / `filter` / `count` 不拦 —— `a?.items.map { ... }` 是正当写法。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -184,6 +198,7 @@ RULES = {
     "R17": "UIControl / UIView 子类里声明了父类保留成员名（如 UIControl 子类的 state → cannot override）",
     "R18": "深色 + 薄荷设计里用白字当按钮前景色（对比度约 1.5:1，应该用 .lmCanvas）",
     "R19": "纯深色设计里还在用系统语义背景色（浅色模式下会白底白字，应该用 .lmCanvas / .lmCard）",
+    "R20": "可选链后紧跟「成员访问 + flatMap / compactMap」（会被解析成 Sequence 版，签名不匹配 → 编译失败）",
 }
 
 # R13 用：Text(...) 参数里允许的最大 `+` 个数。
@@ -270,6 +285,27 @@ SYSTEM_BACKGROUND_NAMES = [
     "secondarySystemGroupedBackground",
     "tertiarySystemGroupedBackground",
 ]
+
+# R20 用：可选链后紧跟「成员访问 + 压平方法」
+#
+# ★ 2026-10-09 真烧过一轮 CI（v1.1.5）：
+#     `parkingSnap?.fileUrl.flatMap(URL.init(string:))`
+#   error: cannot convert value of type '(__shared String) -> URL?'
+#          to expected argument type '(String.Element) throws -> URL?'
+#
+#   原理：可选链 `?.` 会把后面的 `.成员.方法` **整段纳入链内**。链内的基类型是
+#   **已解包**的类型（`LMParkingSnap`，非可选），所以 `fileUrl` 是 `String`
+#   而不是 `String?`，`.flatMap` 于是被解析成 `Sequence.flatMap`
+#   （要求 `(Character) -> SegmentOfResult`），而不是 `Optional.flatMap`
+#   （要求 `(String) -> URL?`）—— 类型对不上，编译失败。
+#
+#   ⚠️ 只拦 `flatMap` / `compactMap`：
+#      · `Optional.flatMap` 与 `Sequence.flatMap` **语义完全不同**
+#        （前者压平嵌套可选，后者拼接序列），撞上必错；
+#      · `map` / `filter` / `count` **不拦** —— `a?.items.map { ... }`
+#        返回 `[U]?` 是正当且常见的写法，一刀切会误报。
+OPTIONAL_CHAIN_FLATTEN_RE = re.compile(
+    r"\?\.[A-Za-z_][A-Za-z0-9_]*\.(flatMap|compactMap)\s*[({]")
 
 # R17 用：UIKit 控件家族（它们的子类里不能再声明同名成员）
 UIKIT_CONTROL_FAMILY = {
@@ -852,6 +888,17 @@ def check(path: str, src: str):
                 f"`.{name}` 是系统语义色：本 App 锁定纯深色，页面底要用 "
                 f"`.lmCanvas`、卡片底要用 `.lmCard`"
                 f"（混用会出现两种黑；放开浅色模式则会白底白字）")
+
+    # R20 —— 可选链后紧跟「成员访问 + flatMap / compactMap」
+    #   可选链 `?.` 把 `.成员.方法` 整段纳入链内 → 链内基类型已解包 →
+    #   这个 flatMap 被解析成 `Sequence.flatMap`，签名不匹配，编译失败。
+    for m in OPTIONAL_CHAIN_FLATTEN_RE.finditer(code):
+        name = m.group(1)
+        add(m.start(), "R20",
+            f"可选链后紧跟 `.{name}(`：`?.` 会把 `.成员.方法` 整段纳入链内，"
+            f"链内基类型**已解包**，这里的 `.{name}` 会被解析成 `Sequence` 版"
+            f"而不是 `Optional` 版 → 参数类型对不上，编译失败"
+            f"（拆成两句 `guard let`，或把整个表达式括起来）")
 
     return hits
 

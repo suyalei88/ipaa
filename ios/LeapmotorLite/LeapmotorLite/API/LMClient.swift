@@ -1252,7 +1252,17 @@ final class LMClient: ObservableObject {
     @discardableResult
     func downloadParkingSnapImage() async -> Data? {
         if let d = parkingSnapImageData { return d }
-        guard let url = parkingSnap?.fileUrl.flatMap(URL.init(string:)) else { return nil }
+        // ★ 2026-10-09 修：原来写的是
+        //     `parkingSnap?.fileUrl.flatMap(URL.init(string:))`
+        //   —— **编译不过**。可选链 `?.` 会把后面的 `.fileUrl.flatMap` 整段纳入链内，
+        //   链内的基类型是**已解包**的 `LMParkingSnap`，于是 `fileUrl` 是非可选 `String`，
+        //   这个 `.flatMap` 被解析成 `Sequence.flatMap`（要求 `(Character) -> SegmentOfResult`），
+        //   而不是 `Optional.flatMap`（要求 `(String) -> URL?`）。CI 报的就是这个：
+        //     cannot convert '(__shared String) -> URL?' to '(String.Element) throws -> URL?'
+        //   正确写法：先解出 `fileUrl`（这一步可选链的基类型是 `LMParkingSnap?`，
+        //   所以结果是 `String?`），再用 `URL(string:)` 构造 —— 语义等价，且没有歧义。
+        guard let fileUrl = parkingSnap?.fileUrl,
+              let url = URL(string: fileUrl) else { return nil }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             guard !data.isEmpty else {
