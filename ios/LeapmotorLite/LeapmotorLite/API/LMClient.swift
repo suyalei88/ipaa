@@ -294,8 +294,26 @@ final class LMClient: ObservableObject {
     @Published private(set) var shareList: LMShareVehicleList?
     /// 消息未读数（`msgcenter`）
     @Published private(set) var noticeCount: LMNoticeCount?
-    /// 健康充电推送开关（`healthyCharging/queryPushState`）
+    /// 健康充电推送开关（`healthyCharging/queryPushState` → `data.isPush`）
+    ///
+    /// ★ 2026-10-09 补：这个字段的**语义要说清**。
+    ///   `queryPushState` 是全网抓包里**唯一**跟健康充电有关的读接口
+    ///   （把 411 个响应键全扫过一遍，只有它带 `isPush`）。
+    ///   但官方 App 自己调的也是 `{"isPush":false}`（`har_appgw.har` #29 / #161），
+    ///   所以：**官方显示「开启」而这里读到 false，说明 `isPush` 不一定是
+    ///   那个功能开关本身**（更像「充电相关推送提醒」）。
+    ///   在没有新抓包之前，本 App 的做法是：**照实显示读到什么**，
+    ///   并把「读取时间 / 原始值 / 出错原因」一起显示出来，
+    ///   让用户能判断是「真关闭」还是「读不到」。
     @Published private(set) var healthyChargingPush: Bool?
+    /// 健康充电状态是否正在读取（UI 用它做「读取中…」反馈）
+    @Published private(set) var healthyChargingLoading = false
+    /// 健康充电读取失败的原因（nil = 没出错）。
+    /// ★ 以前这里没有这个属性 —— `refreshHealthyCharging()` 把异常整个吞掉只 return nil，
+    ///   界面上什么都看不出来，用户点「读取开关状态」就得到一句「没反应」。
+    @Published private(set) var healthyChargingError: String?
+    /// 上一次**成功**读到健康充电状态的时间（用来区分「刚读的」和「很久以前的」）
+    @Published private(set) var healthyChargingReadAt: Date?
     /// 手机侧 IP 归属地文本，例如 `安徽 淮南`（`tecHost` 的 ipAnalysis）
     @Published private(set) var ipAddressText: String?
     /// 手机侧 IP 归属地的结构化值（省 / 市）。
@@ -1249,9 +1267,21 @@ final class LMClient: ObservableObject {
     }
 
     /// 下载驻车照片本体（带内存缓存）。`fileUrl` 为 nil 时直接返回 nil。
+    ///
+    /// ★★ 2026-10-09 修「获取驻车照片报下载失败」：
+    ///   车端返回的 `fileUrl` **是明文 `http://`** —— 实测报文（`har_appgw.har` #42）：
+    ///     `http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/<VIN>?Expires=…&Signature=…`
+    ///   而本 App 的 `NSAllowsArbitraryLoads = false`，ATS 会**直接掐掉**这条请求，
+    ///   用户看到的就是「图片下载失败」。两处一起修：
+    ///     ① `Info.plist` 给 `aliyuncs.com` 开一条窄口径例外（只放开这一个域的明文 HTTP）；
+    ///     ② 这里**优先把 scheme 换成 https** 再试 —— 阿里云 OSS 支持 HTTPS，
+    ///        而且 OSS 的签名覆盖的是 `VERB / Content-MD5 / Content-Type / Expires /
+    ///        CanonicalizedResource`，**scheme 不参与签名**，所以换 https 不会让签名失效。
+    ///        换 https 失败再回退原样（此时由 ① 的例外兜底）。
     @discardableResult
     func downloadParkingSnapImage() async -> Data? {
         if let d = parkingSnapImageData { return d }
+
         // ★ 2026-10-09 修：原来写的是
         //     `parkingSnap?.fileUrl.flatMap(URL.init(string:))`
         //   —— **编译不过**。可选链 `?.` 会把后面的 `.fileUrl.flatMap` 整段纳入链内，
@@ -1261,20 +1291,83 @@ final class LMClient: ObservableObject {
         //     cannot convert '(__shared String) -> URL?' to '(String.Element) throws -> URL?'
         //   正确写法：先解出 `fileUrl`（这一步可选链的基类型是 `LMParkingSnap?`，
         //   所以结果是 `String?`），再用 `URL(string:)` 构造 —— 语义等价，且没有歧义。
-        guard let fileUrl = parkingSnap?.fileUrl,
-              let url = URL(string: fileUrl) else { return nil }
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard !data.isEmpty else {
-                parkingSnapError = "图片下载回来是空的"
-                return nil
-            }
-            parkingSnapImageData = data
-            return data
-        } catch {
-            parkingSnapError = "图片下载失败：\(error.localizedDescription)"
+        guard let fileUrl = parkingSnap?.fileUrl, !fileUrl.isEmpty else {
+            parkingSnapError = "没有可下载的图片地址"
             return nil
         }
+        guard let url = Self.parseSnapURL(fileUrl) else {
+            parkingSnapError = "图片地址不合法，无法解析：\(fileUrl.prefix(120))"
+            return nil
+        }
+
+        // 候选顺序：https 版优先，失败再回退原样（http 由 ATS 例外兜底）
+        var candidates: [URL] = []
+        if url.scheme?.lowercased() == "http",
+           let https = Self.switchingScheme(url, to: "https") {
+            candidates.append(https)
+        }
+        candidates.append(url)
+
+        var lastError: Error?
+        for candidate in candidates {
+            do {
+                var req = URLRequest(url: candidate)
+                req.timeoutInterval = 20
+                // OSS 直链不需要 Cookie / 缓存协商
+                req.cachePolicy = .reloadIgnoringLocalCacheData
+                let (data, resp) = try await URLSession.shared.data(for: req)
+                if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    lastError = LMError.transport("HTTP \(http.statusCode)（\(candidate.scheme ?? "?")）")
+                    continue
+                }
+                guard !data.isEmpty else {
+                    lastError = LMError.transport("服务器返回 0 字节")
+                    continue
+                }
+                parkingSnapImageData = data
+                parkingSnapError = nil
+                return data
+            } catch {
+                lastError = error
+            }
+        }
+
+        let reason = lastError?.localizedDescription ?? "未知错误"
+        parkingSnapError = "图片下载失败（\(candidates.count) 个地址都试过）：\(reason)"
+        return nil
+    }
+
+    /// 解析驻车照片直链。
+    ///
+    /// `fileUrl` 里的 `Signature` 是**已百分号编码**的（如 `%2F` `%3D`），
+    /// `URL(string:)` 能直接吃。但 OSS 偶尔会回未编码的串（含 `+` / 空格 / 中文），
+    /// 那种情况下 `URL(string:)` 会返回 nil —— 这时补一次百分号编码再试。
+    static func parseSnapURL(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let u = URL(string: trimmed) { return u }
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.insert(charactersIn: ":/?&=#[]@!$'()*,;+%~")
+        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: allowed),
+              let u = URL(string: encoded) else { return nil }
+        return u
+    }
+
+    /// 换 scheme（`http` → `https`），host / path / query **原样保留**。
+    ///
+    /// ⚠️ 这里刻意**不用 `URLComponents`**：本仓库的 lint R1 把
+    /// `URLComponents` 列为高危写法（用它 + `queryItems` 重建 query 时
+    /// `+` 不会被转义，会踩到「1019 参数不能为空」）。
+    /// 而且 OSS 的 `Signature` 是**已百分号编码**的，走 `URLComponents` 重建
+    /// 反而可能把 `%2F` 再编码成 `%252F` 让签名失效。
+    /// 所以只做最朴素的「前缀替换」，其余一个字符都不动。
+    static func switchingScheme(_ url: URL, to scheme: String) -> URL? {
+        // ⚠️ `String.Index` 是**绑定到具体字符串实例**的：不能拿 `a` 的 index 去改 `b`。
+        //   所以这里只在 `out` 自己身上取 range、再在 `out` 上替换。
+        var out = url.absoluteString
+        guard let cur = url.scheme, !cur.isEmpty,
+              let r = out.range(of: cur + "://") else { return nil }
+        out.replaceSubrange(r, with: scheme + "://")
+        return URL(string: out)
     }
 
     // MARK: - 车辆档案（★ 2026-10-08 抓包审计补上的数据源）
@@ -2100,15 +2193,39 @@ final class LMClient: ObservableObject {
     /// 手动探测用的，返回人类可读字符串；这个返回 `Bool?` 给界面直接用。
     @discardableResult
     func refreshHealthyCharging() async -> Bool? {
-        guard let vin = selectedVehicle?.vin else { return nil }
+        guard let vin = selectedVehicle?.vin else {
+            healthyChargingError = "还没有选中车辆（拿不到 VIN）"
+            return nil
+        }
+        // ★ 2026-10-09 重写：以前是
+        //     do { … healthyChargingPush = env?.data?.isPush; return healthyChargingPush }
+        //     catch { return nil }        ← 异常被整个吞掉，界面完全看不出来
+        //   现在把「加载中 / 出错原因 / 读取时间」都记下来，UI 才能给反馈。
+        healthyChargingLoading = true
+        healthyChargingError = nil
+        defer { healthyChargingLoading = false }
         do {
             let any = try await request(method: "POST",
                                         path: LMEndpoints.Path.healthyChargingPush,
                                         form: ["carvin": vin, "deviceId": config.deviceId])
-            let env = try? decode(LMEnvelope<LMHealthyChargingPush>.self, from: any)
-            healthyChargingPush = env?.data?.isPush
-            return healthyChargingPush
+            guard let env = try? decode(LMEnvelope<LMHealthyChargingPush>.self, from: any) else {
+                healthyChargingError = "响应解析失败：\(String(describing: any).prefix(160))"
+                return nil
+            }
+            if let code = env.code, code != 0 {
+                healthyChargingError = "服务端返回 code=\(code)"
+                    + (env.message.map { "（\($0)）" } ?? "")
+                return nil
+            }
+            guard let value = env.data?.isPush else {
+                healthyChargingError = "服务端没有返回 isPush 字段"
+                return nil
+            }
+            healthyChargingPush = value
+            healthyChargingReadAt = Date()
+            return value
         } catch {
+            healthyChargingError = "读取失败：\(error.localizedDescription)"
             return nil
         }
     }

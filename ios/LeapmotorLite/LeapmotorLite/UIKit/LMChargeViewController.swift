@@ -86,11 +86,23 @@ final class LMChargeViewController: LMBaseViewController {
     private let healthSwitch = UISwitch()
     private let healthStateLabel = UILabel()
     private let healthReadRow = UIStackView()
+    /// 「读取开关状态」按钮 —— 提成属性才能在 `renderHealth()` 里改标题/可用态
+    /// （用 `configuration` 建的按钮，动态标题必须改 `configuration?.title`）。
+    private let healthReadButton = UIButton()
     /// ★ 2026-10-09 加：把「这个状态是从哪读的」写在卡里。
     ///   用户报「官方是开启的、本 App 显示已关闭」，而我们能查到的根因是
     ///   `deviceId` 每次启动都变（见 `LMConfig.deviceId` 的注释）——
     ///   服务端把本机当成陌生设备，带设备维度的状态一律回默认 false。
     private let healthSourceLabel = UILabel()
+    /// ★ 2026-10-09 加：读取结果反馈行。
+    ///
+    /// 起因：用户报「读取开关状态没反应」。查下来是
+    /// `refreshHealthyCharging()` 以前**把异常整个吞掉**（`catch { return nil }`），
+    /// 而且成功时如果值没变，界面也一个字都不会动 ——
+    /// 点下去完全没有反馈，看起来就像按钮坏了。
+    /// 现在这一行会把「读取中… / 服务端原始值 + 读取时间 / 出错原因」写出来，
+    /// 点一下一定看得见变化。
+    private let healthFeedbackLabel = UILabel()
 
     // MARK: - 控件：充电上限（cmdid 190）
 
@@ -342,15 +354,32 @@ final class LMChargeViewController: LMBaseViewController {
         toggleRow.addArrangedSubview(LMUIKit.spacer())
         healthCard.contentStack.addArrangedSubview(toggleRow)
 
-        let read = LMUIKit.plainButton("读取开关状态")
-        read.addTarget(self, action: #selector(healthReadTapped), for: .touchUpInside)
+        // 与 `LMUIKit.plainButton(_:)` 同款样式，只是这里是属性而不是局部变量
+        var readCfg = UIButton.Configuration.plain()
+        readCfg.title = "读取开关状态"
+        readCfg.baseForegroundColor = .lmAccent
+        readCfg.background.backgroundColor = .lmCard
+        readCfg.background.strokeColor = .lmCardLine
+        readCfg.background.strokeWidth = 1
+        readCfg.background.cornerRadius = 10
+        readCfg.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14,
+                                                        bottom: 10, trailing: 14)
+        healthReadButton.configuration = readCfg
+        healthReadButton.addTarget(self, action: #selector(healthReadTapped), for: .touchUpInside)
         // 用「按钮 + 弹簧」的横排容器，避免按钮被纵向 StackView 拉满宽；
         // 这个容器跟开关互斥，render 里靠 isHidden 折叠（所以做成属性）。
         healthReadRow.axis = .horizontal
         healthReadRow.spacing = 0
-        healthReadRow.addArrangedSubview(read)
+        healthReadRow.addArrangedSubview(healthReadButton)
         healthReadRow.addArrangedSubview(LMUIKit.spacer())
         healthCard.contentStack.addArrangedSubview(healthReadRow)
+
+        // 读取结果反馈（读取中 / 原始值 + 时间 / 出错原因）
+        healthFeedbackLabel.font = .systemFont(ofSize: 11.5)
+        healthFeedbackLabel.textColor = .secondaryLabel
+        healthFeedbackLabel.numberOfLines = 0
+        healthFeedbackLabel.isHidden = true
+        healthCard.contentStack.addArrangedSubview(healthFeedbackLabel)
 
         healthCard.contentStack.addArrangedSubview(LMUIKit.label(
             "打开后，将根据车辆电池状态自动调整充电上限，以保持电池健康。"
@@ -360,9 +389,12 @@ final class LMChargeViewController: LMBaseViewController {
         // ★ 2026-10-09：把状态来源和「读不到怎么办」写清楚。
         //   以前卡里只有一句「已关闭」，用户对着官方 App 的「已开启」完全没辙 ——
         //   既不知道这个值从哪来，也没有重读的入口。
-        healthSourceLabel.text = "状态来源：healthyCharging/queryPushState"
-            + "（按 VIN + 设备号查询，官方 App 的开关也读这条）。"
-            + "和官方显示不一致时，点「读取开关状态」重读一次。"
+        //   ★ 再补一层：这个接口回的 `isPush` **未必等于官方那个功能开关**
+        //     （官方自己调也拿到 false），所以不写「已关闭」，写「服务端返回 …」。
+        healthSourceLabel.text = "状态来源：healthyCharging/queryPushState 的 data.isPush"
+            + "（按 VIN + 设备号查询）。⚠️ 官方 App 自己调这条也拿到 false，"
+            + "所以它更像「充电推送提醒」而不是「健康充电功能开关」——"
+            + "两边不一致时以官方 App 为准。点「读取开关状态」可随时重读。"
         healthSourceLabel.font = .systemFont(ofSize: 11)
         healthSourceLabel.textColor = .secondaryLabel
         healthSourceLabel.numberOfLines = 0
@@ -752,6 +784,8 @@ final class LMChargeViewController: LMBaseViewController {
 
     private func renderHealth() {
         let locked = client.controlLockRemaining() > 0
+        let loading = client.healthyChargingLoading
+
         if let on = client.healthyChargingPush {
             healthUnreadLabel.isHidden = true
             healthSwitch.isHidden = false
@@ -761,17 +795,53 @@ final class LMChargeViewController: LMBaseViewController {
             //   以前两种情况都是同一个颜色，扫一眼分不出开还是关。
             healthStateLabel.textColor = on ? .lmGood : .lmText2
             healthSwitch.setOn(on, animated: false)
-            healthSwitch.isEnabled = !client.isBusy && !locked
+            healthSwitch.isEnabled = !client.isBusy && !locked && !loading
         } else {
             healthUnreadLabel.isHidden = false
             healthSwitch.isHidden = true
             healthStateLabel.isHidden = true
         }
+
         // ★ 2026-10-09：读取按钮**不再隐藏**。
         //   以前读到一次就把它藏了，用户看到「已关闭」却没有任何重读的入口，
         //   对着官方 App 的「已开启」只能干瞪眼。现在随时可点。
         healthReadRow.isHidden = false
-        healthReadRow.isUserInteractionEnabled = !client.isBusy
+        healthReadRow.isUserInteractionEnabled = !client.isBusy && !loading
+        // 读取中要有明确反馈，否则用户以为按钮坏了
+        healthReadRow.alpha = loading ? 0.5 : 1.0
+        // ★ 用 configuration 建的按钮，动态标题必须改 `configuration?.title`
+        //   （写 `titleLabel?.text` 会被配置覆盖，静默失效）。
+        healthReadButton.configuration?.title = loading ? "读取中…" : "读取开关状态"
+        healthReadButton.isEnabled = !client.isBusy && !loading
+
+        // ★ 读取结果反馈：一定要写出「点完之后发生了什么」。
+        //   优先级：读取中 > 出错 > 成功（原始值 + 时间）。
+        if loading {
+            healthFeedbackLabel.isHidden = false
+            healthFeedbackLabel.textColor = .lmAccent
+            healthFeedbackLabel.text = "正在向车端查询…"
+        } else if let err = client.healthyChargingError {
+            healthFeedbackLabel.isHidden = false
+            healthFeedbackLabel.textColor = .lmBad
+            healthFeedbackLabel.text = "⚠️ \(err)"
+        } else if let on = client.healthyChargingPush {
+            healthFeedbackLabel.isHidden = false
+            healthFeedbackLabel.textColor = .secondaryLabel
+            let raw = on ? "true" : "false"
+            healthFeedbackLabel.text =
+                "已读取：服务端返回 isPush = \(raw)"
+                + "（\(Self.healthTimeText(client.healthyChargingReadAt))）"
+        } else {
+            healthFeedbackLabel.isHidden = true
+        }
+    }
+
+    /// `2026-10-09 17:33:08`
+    private static func healthTimeText(_ d: Date?) -> String {
+        guard let d else { return "时间未知" }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: d)
     }
 
     private func renderSoc() {
@@ -976,8 +1046,16 @@ final class LMChargeViewController: LMBaseViewController {
     }
 
     @objc private func healthReadTapped() {
+        // ★ 2026-10-09 修「读取开关状态没反应」：
+        //   以前这里只 `await`，既不先刷「读取中」，也不在结束后显式 render()——
+        //   如果请求抛错（异常被 client 吞掉）或返回值跟上次一样，
+        //   界面**一个字都不会变**，用户就得到「没反应」。
+        //   现在：点下去立刻进「读取中…」态 → 等结果 → 再刷一次把结果/错误写出来。
         Task { @MainActor [weak self] in
-            _ = await self?.client.refreshHealthyCharging()
+            guard let self else { return }
+            self.render()
+            _ = await self.client.refreshHealthyCharging()
+            self.render()
         }
     }
 

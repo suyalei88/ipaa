@@ -725,7 +725,7 @@ UIKit 侧订阅 `objectWillChange` 就够了。
 
 ---
 
-### 1.11 定位与驻车照片（✅ 已完成，v1.1.5）
+### 1.11 定位与驻车照片（✅ 已完成，v1.1.5 → 修 bug 至 v1.1.6）
 
 这一节记两件事，都是用户直接提的：
 ① 定位页撤掉「当前位置（IP 归属地）」，改成**本机 GPS** + **车辆位置**并列；
@@ -897,7 +897,8 @@ warnView.isHidden = (cmd.risk != .physical)
 |---|---|
 | `client/test_refresh_contract.py` → `[9]` | 定位数据源（40+ 条）：撤 IP 卡 / 本机 GPS / 驻车照片 / 代码里不读 `ipAddress` |
 | 同上 → `[10]` | 新增 6 条：`deviceId` 稳定性 + 健康充电 UI |
-| `ios/tools/lint_swift.py` | `R1~R20` 全过（★ 本轮新增 **R20**：可选链后紧跟 `flatMap` / `compactMap` —— 详见下方「踩坑」） |
+| `ios/tools/lint_swift.py` | `R1~R20` 全过（★ v1.1.5 新增 **R20**：可选链后紧跟 `flatMap` / `compactMap` —— 详见下方「踩坑」） |
+| `client/test_refresh_contract.py` → `[9]`/`[10]` | v1.1.6 再加 21 条：ATS 例外 / https 优先+回退 / 状态码校验 / 健康充电 loading+error+readAt / 反馈行 / 前后各 render 一次 |
 
 #### ★★ 踩坑：可选链会把 `.成员.方法` 整段吞进链内（烧掉一轮 CI）
 
@@ -937,7 +938,95 @@ guard let fileUrl = parkingSnap?.fileUrl,
 
 > 教训：本机是 Windows、**没有 `swiftc`**，所有 UIKit / Swift 类型推断错误
 > 都只能在 CI 发现。这类「可选链吞掉成员访问」的坑纯文本闸门看不出来，
-> 所以一旦烧过一次就立刻固化成 lint 规则。
+> 所以烧过一次就立刻固化成 lint 规则。
+
+---
+
+#### ★★ 第二轮修复（v1.1.6）：两个用户报的 bug
+
+装包后用户反馈两条，都复现并修掉了。
+
+##### bug 1 · 「驻车照片获取报下载失败」
+
+**根因：车端返回的 OSS 直链是明文 `http://`，被 ATS 掐掉。**
+
+实测报文（`evidence/har_appgw.har` #42）：
+
+```
+http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/LFZ63AA15TH035113
+    ?Expires=4944944811&OSSAccessKeyId=LTAI4Fmo2WXExVH9PecXNnpy&Signature=L25vvsQntiIdD56f%2Flu%2Bk3xIOJY%3D
+```
+
+而本 App 的 `Info.plist` 里 `NSAllowsArbitraryLoads = false`（为了安全，
+刻意没全开）。ATS 遇到明文 HTTP 会**直接掐掉请求**，`URLSession` 抛错，
+用户看到的就是「图片下载失败」。
+
+**修法（两处一起，缺一条都还会失败）：**
+
+| 位置 | 改动 |
+|---|---|
+| `Support/Info.plist` | 加 `NSExceptionDomains` → `aliyuncs.com`（含子域）的 `NSExceptionAllowsInsecureHTTPLoads`。**窄口径**：只放开这一个域的明文 HTTP，其余域仍强制 HTTPS；`NSAllowsArbitraryLoads` 仍是 `false` |
+| `LMClient.downloadParkingSnapImage()` | 优先把 scheme 换成 `https` 再试（阿里云 OSS 支持 HTTPS，且 **OSS 签名不覆盖 scheme**，换 https 不会让签名失效）；失败回退原 `http` 地址（此时由上面的例外兜底） |
+
+顺带加固：
+
+- 用 `URLRequest` + `timeoutInterval = 20`（原来是裸 `data(from:)`，没有超时）
+- **检查 HTTP 状态码**（非 2xx 算失败并说明）
+- 新增 `parseSnapURL(_:)`：`URL(string:)` 返回 nil 时补一次百分号编码再试
+  （OSS 偶尔回未编码串，含 `+` / 空格 / 中文时 `URL(string:)` 会直接 nil）
+- 失败信息带上**试过几个地址 + 真实原因**，不再是笼统的一句「下载失败」
+- ⚠️ `switchingScheme` 刻意**不用 `URLComponents`** —— 仓库 lint **R1** 把它列为高危
+  （`queryItems` 重建 query 时 `+` 不转义），而且 OSS 的 `Signature` 是已编码的，
+  走 `URLComponents` 重建可能把 `%2F` 再编码成 `%252F` 让签名失效。只做前缀替换。
+
+##### bug 2 · 「健康充电读取开关状态没反应」
+
+**根因（两条叠加）：**
+
+1. `refreshHealthyCharging()` 把异常**整个吞掉**：
+
+   ```swift
+   } catch {
+       return nil          // ← 没有赋值任何 @Published
+   }
+   ```
+
+   `@Published` 没被赋值 → `objectWillChange` 不触发 →
+   `LMBaseViewController` 的订阅不会调 `render()` → 界面**一个字都不会动**。
+
+2. 就算请求成功，`isPush` 的值和上次一样时，`render()` 跑完界面也没有任何变化 ——
+   用户点一下等于什么都没发生。
+
+**修法：把「点完之后发生了什么」全部写出来。**
+
+| 位置 | 改动 |
+|---|---|
+| `LMClient` | 新增 `healthyChargingLoading` / `healthyChargingError` / `healthyChargingReadAt` |
+| `refreshHealthyCharging()` | 开 `loading`（`defer` 兜底关）；`catch` 写 `healthyChargingError`；校验 `code != 0`；校验 `isPush` 字段存在；成功时记 `healthyChargingReadAt` |
+| `LMChargeViewController` | 新增 `healthFeedbackLabel`（读取中 / ⚠️出错原因 / `isPush = true\|false` + 读取时间）；读取按钮提成属性 `healthReadButton`，读取中标题变「读取中…」且整行半透明 |
+| `healthReadTapped()` | **前后各显式 `render()` 一次**（进「读取中」态 → 拿结果 → 再刷） |
+
+定位页的「获取驻车照片」按钮有同样的毛病（点下去没有 loading 反馈），
+一并改成前后各 `render()` 一次。
+
+##### ⚠️ 诚实标注：`isPush` 未必就是「健康充电功能开关」
+
+把**所有抓包响应**的 JSON key 全扫了一遍（411 个去重键），
+跟健康充电有关的**只有** `healthyCharging/queryPushState` 的 `isPush` 一个字段。
+`commonConfig` 里只有 `config["3"]`（预约充电）和 `config["4"]`（蓝牙钥匙 MAC）；
+车机 `signalMap`（140 个信号）里也没有健康充电。
+
+而**官方 App 自己调这条接口拿到的也是 `{"isPush":false}`**
+（`har_appgw.har` #29 / #161）。所以 `isPush` 更像是
+「充电相关**推送提醒**」开关，而不是「健康充电功能开关」。
+
+在没有新抓包之前，本 App 的做法是**照实显示读到什么**，
+并把「读取时间 / 原始值 / 出错原因」一起显示，让用户能判断是
+「真关闭」还是「读不到」，而不是给一个说不清来源的「已关闭」。
+卡片里也写明了「两边不一致时以官方 App 为准」。
+
+**要彻底解决，需要一份「官方 App 显示健康充电=开启」时的抓包**
+（重点看 `healthyCharging/control` 的请求体，以及 cmdid 480 的 `appremotectl` 往返）。
 
 ---
 

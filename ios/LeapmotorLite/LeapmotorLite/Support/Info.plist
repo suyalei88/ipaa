@@ -20,9 +20,9 @@
 	     （2026-10-07 踩过：两版都是 1.0.0 (1)，用户装完说「跟上个版本一样」）。
 	     改完顺便把 LMBuildInfo.tag 也改掉，那里是给人看的说明。 -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.1.5</string>
+	<string>1.1.6</string>
 	<key>CFBundleVersion</key>
-	<string>16</string>
+	<string>17</string>
 
 	<!-- 构建指纹：由 ios/build_ipa.sh 在打包时注入（git 提交号 + UTC 构建时刻）。
 	     这是「这一版到底是哪一次构建」的最终判据 —— 手工改版本号总会忘，
@@ -53,17 +53,34 @@
 	<array>
 		<string>arm64</string>
 	</array>
-	<!-- 全部接口均为 HTTPS，无需 ATS 例外。
-	     ★ 唯一的例外是「3D 看车」：官方车模查看器（three.js）必须在 Web Worker 里
-	       解析 FBX，WKWebView 对 file:// 页面按唯一不透明源处理，Worker/XHR 都会被拦，
+	<!-- 接口本身都是 HTTPS。这里有两类例外：
+	     ★ ①「3D 看车」：官方车模查看器（three.js）必须在 Web Worker 里解析 FBX，
+	       WKWebView 对 file:// 页面按唯一不透明源处理，Worker/XHR 都会被拦，
 	       所以由 Car3DServer 在 127.0.0.1 上起一个只服务 App 内 Car3D/ 目录的本地 HTTP 服务。
-	       NSAllowsLocalNetworking 只放开「本地/回环」地址，不放开任意公网明文 HTTP。 -->
+	       NSAllowsLocalNetworking 只放开「本地/回环」地址，不放开任意公网明文 HTTP。
+	     ★ ②「驻车照片」（2026-10-09 加）：车端上传的驻车照存在阿里云 OSS 上，
+	       `chassis/query` 返回的 `fileUrl` **是明文 http://** —— 实测报文：
+	         http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/<VIN>?Expires=…&Signature=…
+	       `NSAllowsArbitraryLoads=false` 时 ATS 会直接掐掉这条请求，
+	       用户看到的就是「图片下载失败」。所以给 aliyuncs.com 开一条**窄口径**例外：
+	       只放开这一个域的明文 HTTP 加载，其余域仍然强制 HTTPS。
+	       （代码侧同时会优先把 scheme 换成 https 再试一次，这条例外只是兜底。） -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>aliyuncs.com</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
 	<!-- 「车辆定位」页里算「距我多远」要读本机位置。
 	     只有用户点「获取我的位置」时才请求；拒绝也只是不显示距离，不影响其它功能。 -->

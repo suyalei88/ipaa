@@ -1006,6 +1006,9 @@ final class LMLocationViewController: LMBaseViewController {
 
     @objc private func loadSnapTapped() {
         Task { @MainActor in
+            // ★ 2026-10-09：先 render 一次进「获取中」态 ——
+            //   不然网络慢的时候点下去界面毫无变化，看起来像按钮坏了。
+            self.render()
             _ = await client.refreshParkingSnap()
             if client.parkingSnap != nil {
                 _ = await client.downloadParkingSnapImage()

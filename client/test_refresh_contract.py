@@ -458,6 +458,32 @@ def test_location_source() -> None:
     check("图片高度约束在没图时被关掉（否则 stack 会留 260pt 空白）",
           re.search(r"snapHeightConstraint\?\.isActive", loc) is not None)
 
+    # ---- ★★ 2026-10-09 第二轮：用户报「驻车照片获取报下载失败」----
+    #
+    # 根因：车端返回的 `fileUrl` **是明文 http://**（实测 `har_appgw.har` #42）：
+    #   http://lp-carnet.oss-cn-hangzhou.aliyuncs.com/ChassisPicture/prod/<VIN>?Expires=…&Signature=…
+    # 而本 App `NSAllowsArbitraryLoads = false` → ATS 直接掐掉请求。
+    # 两处一起修，缺一条都还会失败，所以两条都钉死。
+    plist = read("Support/Info.plist")
+    check("ATS 给 aliyuncs.com 开了窄口径明文例外（驻车照片走 OSS http 直链）",
+          re.search(r"NSExceptionDomains[\s\S]{0,600}?aliyuncs\.com", plist) is not None
+          and re.search(r"NSExceptionAllowsInsecureHTTPLoads", plist) is not None)
+    check("没有图省事打开 NSAllowsArbitraryLoads（那等于全关 ATS）",
+          re.search(r"<key>NSAllowsArbitraryLoads</key>\s*<false/>", plist) is not None)
+    check("下载时优先把 http 换成 https 再试（OSS 支持 https，且 scheme 不参与签名）",
+          re.search(r"switchingScheme\([\s\S]{0,300}?\"https\"", client) is not None)
+    check("https 失败会回退原地址（不因为换 scheme 就彻底失败）",
+          re.search(r"candidates\.append\(url\)", client) is not None)
+    check("下载用 URLRequest 并设了超时（不再是裸 data(from:)）",
+          re.search(r"var req = URLRequest\(url: candidate\)[\s\S]{0,200}?timeoutInterval", client) is not None)
+    check("下载会检查 HTTP 状态码（非 2xx 算失败）",
+          re.search(r"200\.\.<300\)\.contains\(http\.statusCode\)", client) is not None)
+    check("URL 解析有百分号编码兜底（OSS 偶尔回未编码串）",
+          re.search(r"func parseSnapURL\(", client) is not None
+          and re.search(r"addingPercentEncoding\(withAllowedCharacters", client) is not None)
+    check("下载失败信息带上了试过几个地址 + 真实原因（方便定位）",
+          re.search(r"parkingSnapError = \"图片下载失败（\\\(candidates\.count\)", client) is not None)
+
 
 def test_charging_center() -> None:
     """⑩ 充电中心可写：四个 cmdid 全部来自官方主二进制反汇编。
@@ -617,6 +643,46 @@ def test_charging_center() -> None:
           re.search(r"healthReadRow\.isHidden = false", view) is not None)
     check("健康充电开关状态用颜色区分开/关",
           re.search(r"healthStateLabel\.textColor = on \? \.lmGood", view) is not None)
+
+    # ---- ★★ 2026-10-09 第二轮：用户报「健康充电读取开关状态没反应」----
+    #
+    # 根因（两条叠加）：
+    #   ① `refreshHealthyCharging()` 把异常**整个吞掉**（`catch { return nil }`），
+    #      界面上一个字都看不到；而且 `@Published` 没被赋值 → `objectWillChange`
+    #      不触发 → `render()` 根本不会跑；
+    #   ② 就算成功，`isPush` 值没变时界面也不会动 —— 点下去等于没有反馈。
+    # 修法：把「加载中 / 出错原因 / 读取时间」都记下来并在卡里写出来，
+    #      并且 `healthReadTapped()` 前后各显式 `render()` 一次。
+    check("LMClient 暴露 healthyChargingLoading",
+          re.search(r"var healthyChargingLoading = false", client) is not None)
+    check("LMClient 暴露 healthyChargingError（不再静默吞异常）",
+          re.search(r"var healthyChargingError: String\?", client) is not None)
+    check("LMClient 暴露 healthyChargingReadAt（区分刚读的和很久以前的）",
+          re.search(r"var healthyChargingReadAt: Date\?", client) is not None)
+    check("refreshHealthyCharging 的 catch 会写 healthyChargingError",
+          re.search(r"catch \{[\s\S]{0,300}?healthyChargingError = \"读取失败", client) is not None)
+    check("refreshHealthyCharging 会校验 code != 0",
+          re.search(r"if let code = env\.code, code != 0", client) is not None)
+    check("refreshHealthyCharging 会校验 isPush 字段存在",
+          re.search(r"guard let value = env\.data\?\.isPush", client) is not None)
+    check("refreshHealthyCharging 有 loading 开/关（defer 兜底）",
+          re.search(r"healthyChargingLoading = true[\s\S]{0,200}?defer \{ healthyChargingLoading = false \}",
+                    client) is not None)
+    check("充电页有读取结果反馈行",
+          re.search(r"private let healthFeedbackLabel", view) is not None)
+    check("反馈行会写出「读取中…」",
+          re.search(r"healthFeedbackLabel\.text = \"正在向车端查询", view) is not None)
+    check("反馈行会写出服务端原始值 + 读取时间",
+          re.search(r"isPush = \\\(raw\)[\s\S]{0,200}?healthTimeText", view) is not None)
+    check("读取按钮提成了属性（才能动态改标题/可用态）",
+          re.search(r"private let healthReadButton = UIButton\(\)", view) is not None)
+    check("读取中按钮标题变「读取中…」（用 configuration 改，不是 titleLabel）",
+          re.search(r"healthReadButton\.configuration\?\.title = loading \? \"读取中…\"", view) is not None)
+    check("healthReadTapped 前后各 render 一次（点了必有反馈）",
+          re.search(r"func healthReadTapped\(\)[\s\S]{0,600}?self\.render\(\)[\s\S]{0,300}?await self\.client\.refreshHealthyCharging\(\)[\s\S]{0,120}?self\.render\(\)",
+                    view) is not None)
+    check("卡里如实写明 isPush 未必等于官方那个功能开关",
+          re.search(r"healthSourceLabel\.text[\s\S]{0,600}?以官方 App 为准", view) is not None)
 
 
 def test_car3d_layout() -> None:
