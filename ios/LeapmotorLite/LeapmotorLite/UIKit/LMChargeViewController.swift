@@ -981,7 +981,10 @@ final class LMChargeViewController: LMBaseViewController {
     private func renderEvidence() {
         let votes = "\(client.chargeFlagVotes) / \(LMClient.chargeFlagIDs.count)"
         let hvText = (client.highVoltageActive ? "已激活 · " : "未激活 · ") + votes
-        let currentText = client.chargeCurrentA.map { String(format: "%.2f A", $0) } ?? "0.00 A"
+        // ★ 这一行显示**原始值**（不套阈值）—— 用户要能看到真实的 0.2 A，
+        //   否则「为什么判未充电」会显得莫名其妙。判据在 chargeState 里。
+        let rawCurrent = client.signals["1178"]?.doubleValue
+        let currentText = rawCurrent.map { String(format: "%.2f A", $0) } ?? "--"
         let stateText = client.chargeState.text
         let sig = [hvText, currentText, stateText].joined(separator: "\u{1}")
         rebuildIfNeeded(evidenceStack, signature: sig) { () -> [UIView] in
@@ -991,8 +994,10 @@ final class LMChargeViewController: LMBaseViewController {
             cRow.update(currentText)
             views.append(cRow)
             views.append(LMUIKit.label(
-                "★ 判据只看它：没有电流就一定没有电进电池。电流为零 = 未充电，"
-                + "不管别的标志位怎么翻。", size: 11, color: .secondaryLabel))
+                "★ 判据只看它：没有电流就一定没有电进电池。**电流不到 "
+                + "\(LMClient.chargeCurrentThreshold) A 就判未充电** —— "
+                + "实测车辆通电（未插枪）时这里会有 0.2~0.3 A 的漏电流，"
+                + "所以门槛不能设成「非零」。", size: 11, color: .secondaryLabel))
             views.append(makeDivider())
             // ★ 高压系统状态：以前这 5 位被当成「充电中」投票，是误报来源。
             let hRow = LMChargeKVRow(key: "高压系统")
@@ -1046,9 +1051,10 @@ final class LMChargeViewController: LMBaseViewController {
         //   必须明说「没有电流」，否则用户会以为功率读不到是坏了。
         if v != nil && a == nil {
             powerNote.isHidden = false
-            powerNote.text = "读到了母线电压，但**充电电流为 0** —— 没有电进电池，"
-                + "所以功率不显示。车辆通电（READY）或哨兵模式下就是这个状态，"
-                + "不是读数坏了。"
+            powerNote.text = "读到了母线电压，但**充电电流不到 "
+                + "\(LMClient.chargeCurrentThreshold) A** —— 没有电进电池，"
+                + "所以功率不显示。车辆通电（READY）或哨兵模式下就是这个状态"
+                + "（实测此时约 0.2~0.3 A 的漏电流），不是读数坏了。"
         } else if v == nil && a == nil {
             powerNote.isHidden = true
         } else {

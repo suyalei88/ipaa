@@ -1557,13 +1557,13 @@ def test_cmdid_table() -> None:
     check("官方本地化表 evidence/official/LMV_zh-Hans.json 存在",
           os.path.isfile(os.path.join(ROOT, "evidence", "official", "LMV_zh-Hans.json")))
 
-    # ── 15.11 版本号已升到 1.1.8 (19) ──────────────────────────
+    # ── 15.11 版本号已升到 1.1.9 (20) ──────────────────────────
     plist = read("Support/Info.plist")
-    check("Info.plist 版本 = 1.1.8",
-          re.search(r"CFBundleShortVersionString</key>\s*<string>1\.1\.8</string>", plist)
+    check("Info.plist 版本 = 1.1.9",
+          re.search(r"CFBundleShortVersionString</key>\s*<string>1\.1\.9</string>", plist)
           is not None)
-    check("Info.plist build = 19",
-          re.search(r"CFBundleVersion</key>\s*<string>19</string>", plist) is not None)
+    check("Info.plist build = 20",
+          re.search(r"CFBundleVersion</key>\s*<string>20</string>", plist) is not None)
     bi = read("LMBuildInfo.swift")
     check("LMBuildInfo.tag 提到了这一轮的充电判据修复",
           re.search(r'static\s+let\s+tag\s*=\s*"[^"]*充电', bi) is not None)
@@ -1571,7 +1571,7 @@ def test_cmdid_table() -> None:
 
 def test_charge_and_appointment() -> None:
     """
-    [17] 充电状态判据改版 + 预约充电 payload 修复（v1.1.8）
+    [17] 充电状态判据改版 + 预约充电 payload 修复（v1.1.9）
 
     用户报的两个 bug：
       ① 车辆通电使用 / 开启哨兵模式时**错误显示「充电中」**
@@ -1580,6 +1580,9 @@ def test_charge_and_appointment() -> None:
     ① 的根因是**判据选错了**：老代码拿 5 路「高压系统激活」标志位投票
        （`chargeFlagVotes >= 3`），而那 5 位在车辆通电 / 哨兵模式下同样会亮。
        现在判据换成充电电流 1178 —— 没电流就一定没有电进电池。
+       ★ **第二轮**（用户补的抓包逼出来的）：通电（未插枪）时 `1178` 并不是 0，
+       而是 **0.2~0.3 A**（高压系统漏电流）→ 「非零」照样误报，必须加**量级门槛**
+       `chargeCurrentThreshold = 1.0 A`。
     ② 的根因是 **payload 键名用错了一套**：官方写接口用的是
        `chargesoc` / `chargeEnable`（主二进制字符串池），而老 payload 只带了
        `config["3"]` 的**读取**键名（`percent` / `isEnable`）。
@@ -1620,7 +1623,26 @@ def test_charge_and_appointment() -> None:
     check("充电页不再有「标志位投票」这一行",
           re.search(r'LMChargeKVRow\(key:\s*"标志位投票"\)', charge) is None)
     check("电压有值但电流为 0 时给出「没有电流」的说明",
-          "充电电流为 0" in charge)
+          "充电电流不到" in charge)
+    # ── 17.3b ★ 第二轮修复：判据从「电流非零」升级为「电流达量级」──
+    check("LMClient 定义 chargeCurrentThreshold 常量",
+          re.search(r"static\s+let\s+chargeCurrentThreshold\s*=\s*1\.0", client) is not None)
+    check("★ chargeCurrentNonZero 用阈值而非 > 0.05",
+          re.search(r"abs\(v\)\s*>\s*LMClient\.chargeCurrentThreshold", client_code)
+          is not None
+          and re.search(r"abs\(v\)\s*>\s*0\.05", client_code) is None)
+    check("★ chargeCurrentA 也套阈值（低电流返回 nil，不显示假功率）",
+          re.search(r'guard\s+let\s+v\s*=\s*signals\["1178"\]\?\.doubleValue,\s*'
+                    r'abs\(v\)\s*>\s*LMClient\.chargeCurrentThreshold\s+else\s*\{\s*return\s+nil',
+                    client_code) is not None)
+    check("充电页说明提到「0.2~0.3 A 的漏电流」",
+          "0.2~0.3 A 的漏电流" in charge)
+    check("信号表 1178 注里提到漏电流补正",
+          re.search(r'\.init\("1178"[\s\S]{0,600}?漏电流', catalog) is not None)
+    check("信号表 1177 注里补了 SOC-电压关系（827.0 V）",
+          "827.0 V" in catalog)
+    check("信号表 1177 注里写明「电池包电压」",
+          "坐实「电池包电压」" in catalog)
 
     # ── 17.4 预约充电 payload 补齐官方写接口键名 ─────────────────
     check("saveAppointmentCharge 带上官方键名 chargesoc",
