@@ -742,7 +742,7 @@ final class LMDiagnosticsViewController: LMBaseViewController {
     @objc private func unverifiedRowTapped(_ sender: LMDiagUnverifiedRow) {
         // 填入 = 直接写回两个输入框。这是「动作」不是 render，所以可以动输入控件。
         rawCmdId = String(sender.cmdid)
-        rawState = sender.state
+        rawState = sender.stateText
         rawCmdField.text = rawCmdId
         rawStateField.text = rawState
     }
@@ -1423,11 +1423,16 @@ private final class LMDiagNavRow: UIControl {
 private final class LMDiagUnverifiedRow: UIControl {
 
     let cmdid: Int
-    let state: String
+    /// ★ 不能叫 `state` —— `UIControl` 自己有个 `state: UIControl.State`，
+    ///   同名会让子类属性「覆盖父类属性」而类型不同，直接编译失败：
+    ///     error: property 'state' with type 'String' cannot override
+    ///            a property with type 'UIControl.State'
+    ///   （2026-10-09 真烧过一轮 CI）
+    let stateText: String
 
     init(cmdid: Int, state: String) {
         self.cmdid = cmdid
-        self.state = state
+        self.stateText = state
         super.init(frame: .zero)
 
         let cmdLabel = UILabel()

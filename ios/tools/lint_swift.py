@@ -107,6 +107,22 @@ lint_swift.py —— 拦截「静态审查看不出来、只能靠真机编译/�
       规则只认 MISPLACED_MEMBERS 里显式列出的 (类型, 成员) 组合，宁可窄，
       不做通用类型检查 —— 后者误报率会失控。
 
+  R16 UIStackView.Alignment 用了 SwiftUI 的对齐名
+      ★ 2026-10-09 又烧一轮 CI（Phase 3~6 的充电页）：
+        LMChargeViewController.swift:1256:61: error:
+          type 'UIStackView.Alignment' has no member 'firstTextBaseline'
+      原 SwiftUI 版写 `HStack(alignment: .firstTextBaseline)`，迁 UIKit 时照抄。
+      UIKit 里叫 `.firstBaseline` —— 少了 "Text" 这个词。
+
+  R17 UIControl / UIView 子类里声明了父类保留成员名
+      ★ 同一轮 CI 的第二个错（Phase 3~6 的诊断页）：
+        LMDiagnosticsViewController.swift:1426:9: error:
+          property 'state' with type 'String' cannot override
+          a property with type 'UIControl.State'
+      `LMDiagUnverifiedRow: UIControl` 想存状态文本，直接叫了 `state`。
+      与 R15 的区别：R15 是 no member，本条是 cannot override。
+      带 `override` 的正当重写不会被拦。
+
 用法:
     python3 ios/tools/lint_swift.py            # 扫 ios/ 下所有 .swift
     python3 ios/tools/lint_swift.py --verbose
@@ -151,6 +167,8 @@ RULES = {
     "R13": "Text(...) 里超过 3 个 `+` 拼接 → Swift 类型检查器超时（抽成 String 计算属性）",
     "R14": "static func 读了 @MainActor 的 LMClient 却没标 @MainActor（CI 编译期直接报 actor 隔离错误）",
     "R15": "在 UIKit 类型上写了别的类型才有的成员（如 UILabel.isSelectable → 只有真机编译才报）",
+    "R16": "UIStackView.Alignment 用了 SwiftUI 的对齐名（firstTextBaseline → firstBaseline）",
+    "R17": "UIControl / UIView 子类里声明了父类保留成员名（如 UIControl 子类的 state → cannot override）",
 }
 
 # R13 用：Text(...) 参数里允许的最大 `+` 个数。
@@ -184,6 +202,59 @@ MISPLACED_MEMBERS = [
     ("UIView", "isSelectable", "UITextView 的成员"),
     ("UIView", "textContentType", "UITextField / UITextView 的成员"),
 ]
+
+# R16 用：SwiftUI 的对齐名 → UIKit `UIStackView.Alignment` 的对应名
+#
+# ★ 2026-10-09 真烧过一轮 CI（UIKit 迁移 Phase 3~6 的充电页）：
+#     LMChargeViewController.swift:1256:61: error:
+#       type 'UIStackView.Alignment' has no member 'firstTextBaseline'
+#   起因：原 SwiftUI 版写的是 `HStack(alignment: .firstTextBaseline)`，
+#   迁到 UIKit 时照抄了名字。两套框架的名字**长得像但不一样**：
+#       SwiftUI  HorizontalAlignment: .leading / .center / .trailing
+#                                     / .firstTextBaseline / .lastTextBaseline
+#       UIKit    UIStackView.Alignment: .fill / .leading / .center / .trailing
+#                                     / .top / .bottom
+#                                     / .firstBaseline / .lastBaseline
+#   即 UIKit 里没有 "Text" 这个词。
+SWIFTUI_ALIGNMENT_NAMES = {
+    "firstTextBaseline": "firstBaseline",
+    "lastTextBaseline": "lastBaseline",
+    "centerFirstTextBaseline": "firstBaseline",
+    "centerLastTextBaseline": "lastBaseline",
+}
+
+# R17 用：UIKit 控件家族（它们的子类里不能再声明同名成员）
+UIKIT_CONTROL_FAMILY = {
+    "UIControl", "UIView", "UIButton", "UISwitch", "UISlider", "UISegmentedControl",
+    "UITextField", "UITextView", "UIScrollView", "UIStackView", "UILabel",
+    "UIImageView", "UICollectionView", "UITableView", "UIPageControl",
+    "UIActivityIndicatorView", "UIProgressView", "UIStepper", "UIDatePicker",
+}
+
+# R17 用：父类保留成员名 —— 在子类里用 `let/var` 声明同名会被判
+# 「覆盖父类属性但类型不同」而**直接编译失败**：
+#
+#   ★ 2026-10-09 真烧过一轮 CI（UIKit 迁移 Phase 3~6 的诊断页）：
+#       LMDiagnosticsViewController.swift:1426:9: error:
+#         property 'state' with type 'String' cannot override
+#         a property with type 'UIControl.State'
+#     那个 `LMDiagUnverifiedRow: UIControl` 想存「这条 cmdid 的状态文本」，
+#     直接叫了 `state` —— 与 `UIControl.state` 撞名。
+#
+#   ★ 与 R15 的区别：R15 是「在 A 类型上用了 B 类型才有的成员」（no member），
+#     本条是「子类里声明了父类已有的成员」（cannot override）。两者都在
+#     纯文本闸门里看不出来，只有 CI 编译才报。
+UIKIT_RESERVED_MEMBERS = {
+    # UIControl
+    "state", "isEnabled", "isSelected", "isHighlighted", "isTracking",
+    "isTouchInside", "contentHorizontalAlignment", "contentVerticalAlignment",
+    "allControlEvents", "allTargets",
+    # UIView
+    "tag", "frame", "bounds", "center", "transform", "alpha", "isHidden",
+    "backgroundColor", "tintColor", "layer", "superview", "subviews",
+    "window", "isUserInteractionEnabled", "isOpaque", "clipsToBounds", "mask",
+    "contentMode", "autoresizingMask", "layoutMargins", "semanticContentAttribute",
+}
 
 # R10 用：框架 → 该框架里「一眼能认出来」的符号正则
 #
@@ -681,6 +752,43 @@ def check(path: str, src: str):
         for m in re.finditer(rf"\b{re.escape(host)}\(\)\.{re.escape(member)}\b", code):
             add(m.start(), "R15",
                 f"{host} 没有 `{member}`（{why}）→ 真机编译才报 no member '{member}'")
+
+    # R16 —— UIStackView.Alignment 用了 SwiftUI 的名字
+    #
+    # ★ 2026-10-09 真烧过一轮 CI：`.firstTextBaseline` 是 SwiftUI 的
+    #   `HorizontalAlignment` 成员，UIKit 的 `UIStackView.Alignment` 里
+    #   只有 `.firstBaseline` —— 多了个 "Text" 就是 no member。
+    for m in re.finditer(
+            r"\." + r"(?:" + "|".join(SWIFTUI_ALIGNMENT_NAMES) + r")\b", code):
+        name = m.group(0)[1:]
+        add(m.start(), "R16",
+            f"`.{name}` 是 SwiftUI 的名字；UIKit 的 UIStackView.Alignment 里"
+            f"叫 `.{SWIFTUI_ALIGNMENT_NAMES[name]}`（没有 \"Text\" 这个词）")
+
+    # R17 —— UIControl / UIView 子类里声明了父类保留成员名
+    #
+    # ★ 2026-10-09 真烧过一轮 CI：`LMDiagUnverifiedRow: UIControl` 里
+    #   写 `let state: String` → cannot override `UIControl.state: UIControl.State`。
+    #
+    #   只查「顶格 `}` 之前的类体」，且只认 4 空格缩进的 `let/var` 声明
+    #   （= 类的直接成员）。带 `override` 的**不算错**（那是正当重写）。
+    for m in re.finditer(r"(?m)^(?:@\w+[ \t]+)*(?:final[ \t]+)?class[ \t]+(\w+)"
+                         r"[ \t]*:[ \t]*([^{]+)\{", code):
+        bases = [re.sub(r"<.*", "", b).strip()
+                 for b in m.group(2).split(",")]
+        hit_base = next((b for b in bases if b in UIKIT_CONTROL_FAMILY), None)
+        if hit_base is None:
+            continue
+        body_start = m.end()
+        end = re.search(r"(?m)^\}", code[body_start:])
+        body = code[body_start: body_start + (end.start() if end else len(code))]
+        for mm in re.finditer(r"(?m)^[ \t]{4}(?:let|var)[ \t]+(\w+)\b", body):
+            name = mm.group(1)
+            if name in UIKIT_RESERVED_MEMBERS:
+                add(body_start + mm.start(), "R17",
+                    f"`{m.group(1)}` 是 {hit_base} 子类，`{name}` 是父类保留成员"
+                    f"→ 会被判「覆盖父类属性且类型不同」直接编译失败"
+                    f"（换个名字，如 `{name}Text`）")
 
     return hits
 

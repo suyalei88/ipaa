@@ -481,7 +481,7 @@ final class LMChargeViewController: LMBaseViewController {
         remainingBigLabel.setContentHuggingPriority(.required, for: .horizontal)
         remainingShortLabel.font = .systemFont(ofSize: 15)
         remainingShortLabel.textColor = .secondaryLabel
-        let bigRow = LMUIKit.hStack(spacing: 4, alignment: .firstTextBaseline)
+        let bigRow = LMUIKit.hStack(spacing: 4, alignment: .firstBaseline)
         bigRow.addArrangedSubview(remainingBigLabel)
         bigRow.addArrangedSubview(remainingShortLabel)
         bigRow.addArrangedSubview(LMUIKit.spacer())
@@ -1253,7 +1253,7 @@ final class LMBatteryRingView: UIView {
         captionLabel.text = "剩余电量"
         captionLabel.textAlignment = .center
 
-        let numRow = LMUIKit.hStack(spacing: 1, alignment: .firstTextBaseline)
+        let numRow = LMUIKit.hStack(spacing: 1, alignment: .firstBaseline)
         numRow.addArrangedSubview(valueLabel)
         numRow.addArrangedSubview(percentLabel)
 
