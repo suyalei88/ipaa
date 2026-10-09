@@ -290,12 +290,17 @@ def test_lovecar_page() -> None:
     check("挂了 .lmClock 驱动锁定倒计时", ".lmClock(until:" in love)
 
     # ⑦ Tab 必须换成爱车页，旧的车况页不能留
-    app = read("LeapmotorLiteApp.swift")
-    check("首 Tab 是 LoveCarView", "LoveCarView()" in app)
-    check("Tab 标签叫「爱车」", 'Label("爱车"' in app)
+    #    ★ 2026-10-09：入口从 SwiftUI 的 `LeapmotorLiteApp.swift`
+    #      换成 UIKit 的 `UIKit/LMAppDelegate.swift`，
+    #      Tab 定义搬到了 `UIKit/LMMainTabBarController.swift`。
+    #      被托管的 SwiftUI 页仍然叫 `LoveCarView()`，只是外面多了
+    #      一层 `NavigationStack`（这些页面内部有 NavigationLink）。
+    tabs = read("UIKit/LMMainTabBarController.swift")
+    check("首 Tab 是 LoveCarView", "LoveCarView()" in tabs)
+    check("Tab 标签叫「爱车」", '"爱车"' in tabs)
     check("旧 DashboardView 已移除", not os.path.exists(os.path.join(APP, "Views", "DashboardView.swift")))
     check("代码里没有 DashboardView 残留",
-          "DashboardView" not in app and "DashboardView" not in love)
+          "DashboardView" not in tabs and "DashboardView" not in love)
 
     # ⑧ ★ Car3DConfig.serverJSON 必须标 @MainActor
     #     LMClient 是 @MainActor 隔离的，而 static func 没有任何隔离推断来源。
@@ -518,6 +523,112 @@ def test_car3d_layout() -> None:
     check("拖动/缩放手势提示保留", "hand.draw" in love)
 
 
+# ============================================================
+# 11. UIKit 骨架（2026-10-09 从 SwiftUI 迁到 UIKit · Phase 0）
+# ============================================================
+def test_uikit_skeleton() -> None:
+    """⑪ UIKit 骨架：入口换成 AppDelegate，页面暂时用 UIHostingController 托住。
+
+    背景：用户要求「换个 UI，不使用 SwiftUI」。做法不是一次性重写 7,514 行
+    视图代码，而是先把**壳**换成 UIKit，未迁移的页面用 `UIHostingController`
+    托住 —— 这样每一步 App 都能编译、能出包、能装机验证。
+
+    这组断言钉住三件事：
+      ① 入口只有一处 `@main`，且是 AppDelegate（两处 `@main` 直接编译失败）
+      ② 骨架各件语义正确（订阅 / 注入 / 换根 / 5 个 Tab / 保留 NavigationStack）
+      ③ 六个新文件**真的进了 pbxproj 的 Sources** ——
+         否则会出现「CI 绿了但功能静默缺失」这种最难查的问题
+    """
+    print("\n[11] UIKit 骨架（AppDelegate + HostingController 过渡）")
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    app_dir = APP
+
+    # ---- ① 入口唯一性 ----
+    mains: list[str] = []
+    for dirpath, dirs, fns in os.walk(app_dir):
+        dirs.sort()
+        for fn in sorted(fns):
+            if not fn.endswith(".swift"):
+                continue
+            p = os.path.join(dirpath, fn)
+            with open(p, "r", encoding="utf-8") as f:
+                src = f.read()
+            # 只看行首的真正声明，不看注释里提到的 @main
+            if re.search(r"(?m)^@main\b", src):
+                mains.append(os.path.relpath(p, app_dir).replace(os.sep, "/"))
+    check("全项目只有一处 @main", len(mains) == 1, f"实际 {mains}")
+    check("入口是 UIKit 的 LMAppDelegate.swift",
+          mains == ["UIKit/LMAppDelegate.swift"], f"实际 {mains}")
+
+    # ---- ② 骨架各件的语义 ----
+    delegate = read("UIKit/LMAppDelegate.swift")
+    check("AppDelegate 建 window 并挂 LMRootViewController",
+          "UIWindow(" in delegate and "LMRootViewController(client: client)" in delegate)
+    check("AppDelegate 里创建全局唯一的 LMClient",
+          re.search(r"let\s+client\s*=\s*LMClient\(\)", delegate) is not None)
+    # ★ 这条要查 Info.plist，不能查 AppDelegate 源码 ——
+    #   源码注释里为了解释「为什么不用 SceneDelegate」**必然**会提到
+    #   `UIApplicationSceneManifest` 这个词，查源码等于自己踩自己。
+    plist = read("Support/Info.plist")
+    check("Info.plist 里没有 Scene 清单（所以 AppDelegate+window 就够，不需要 SceneDelegate）",
+          "UIApplicationSceneManifest" not in plist)
+
+    base = read("UIKit/LMBaseViewController.swift")
+    check("基类订阅 objectWillChange 驱动刷新", "client.objectWillChange" in base)
+    check("基类把刷新推到下一轮主 actor（objectWillChange 早于赋值）",
+          "Task { @MainActor in" in base)
+    check("基类提供下拉刷新桥接", "UIRefreshControl" in base)
+    check("基类暴露 buildUI / render 两个钩子",
+          "func buildUI()" in base and "func render()" in base)
+    check("基类持的是外部传入的 client（不自己 new）",
+          "init(client: LMClient)" in base)
+
+    host = read("UIKit/LMHostingController.swift")
+    check("宿主注入 environmentObject(client)", ".environmentObject(client)" in host)
+    check("宿主补回全局 tint（否则 SwiftUI 控件退回系统蓝）",
+          ".tint(Color.lmAccent)" in host)
+
+    tabs = read("UIKit/LMMainTabBarController.swift")
+    for name in ("爱车", "定位", "充电", "车控", "设置"):
+        check(f"Tab 里有「{name}」", f'"{name}"' in tabs)
+    check("被托管的页保留了 NavigationStack（否则内部跳转静默失效）",
+          tabs.count("NavigationStack {") == 5)
+
+    rootvc = read("UIKit/LMRootViewController.swift")
+    check("根容器按 session?.isValid 切换",
+          "client.session?.isValid == true" in rootvc)
+    check("根容器在登录态未变时不重建（否则用户输入会被清空）",
+          "wantMain != showingMain" in rootvc)
+
+    theme = read("UIKit/LMUIKitTheme.swift")
+    for c in ("lmAccent", "lmGood", "lmWarn", "lmBad"):
+        check(f"UIColor.{c} 已定义", f"static let {c}" in theme)
+
+    # ---- ③ 新文件真的进了编译 ----
+    pbx_path = os.path.join(os.path.dirname(app_dir),
+                            "LeapmotorLite.xcodeproj", "project.pbxproj")
+    check("project.pbxproj 存在", os.path.exists(pbx_path))
+    if os.path.exists(pbx_path):
+        with open(pbx_path, "r", encoding="utf-8") as f:
+            pbx = f.read()
+        for fn in ("LMAppDelegate.swift", "LMBaseViewController.swift",
+                   "LMHostingController.swift", "LMMainTabBarController.swift",
+                   "LMRootViewController.swift", "LMUIKitTheme.swift"):
+            check(f"{fn} 已进 Sources（否则 CI 绿但功能静默缺失）",
+                  f"{fn} in Sources" in pbx)
+        check("旧入口 LeapmotorLiteApp.swift 已从工程移除",
+              "LeapmotorLiteApp.swift" not in pbx)
+    check("旧入口文件已删除",
+          not os.path.exists(os.path.join(app_dir, "LeapmotorLiteApp.swift")))
+
+    gen = os.path.join(root, "ios", "tools", "gen_xcodeproj.py")
+    if os.path.exists(gen):
+        with open(gen, "r", encoding="utf-8") as f:
+            gsrc = f.read()
+        check("gen_xcodeproj.py 的 DIR_ORDER 含 UIKit", '"UIKit"' in gsrc)
+
+
 def main() -> int:
     print("=" * 64)
     print("续期契约测试（test_refresh_contract）")
@@ -534,6 +645,7 @@ def main() -> int:
     test_response_shapes()
     test_charging_center()
     test_car3d_layout()
+    test_uikit_skeleton()
     print("\n" + "=" * 64)
     if FAILS:
         print(f"失败 {len(FAILS)} 项：")

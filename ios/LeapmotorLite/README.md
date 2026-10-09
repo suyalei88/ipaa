@@ -498,6 +498,79 @@ stub 地址：`AppointmentContrl @0x10a4d4d40` / `BeginOrEndCharging @0x10a4d4d8
 
 ---
 
+### 1.9 UI 框架迁移：SwiftUI → UIKit（进行中）
+
+**起因**：要求「换个 UI，不使用 SwiftUI」。
+
+**做法不是一次性重写**。先把壳换成 UIKit，未迁移的页面用
+`UIHostingController` 托住 —— 每一步 App 都能编译、能出包、能装机，
+不存在「改到一半整个工程不可用」的中间状态。
+
+代码分界（实测行数）：
+
+| 层 | 文件 | 行数 | 迁移时 |
+|---|---|---|---|
+| 入口 + 视图层 | `UIKit/` + `Views/` | 15 个文件 / 约 7,600 行 | **要重写** |
+| 协议 + 加密 + 蓝牙 + 存储 | `API/` `Crypto/` `BLE/` `Store/` | 17 个文件 / 6,790 行 | **一行不动**（纯 Foundation） |
+
+也就是说 `LMClient`（`ObservableObject` + 29 个 `@Published`）**完全不用改**，
+UIKit 侧订阅 `objectWillChange` 就够了。
+
+**Phase 0（已完成，v1.1.0）**：只换壳，页面行为与上一版完全一致。
+
+- `UIKit/LMAppDelegate.swift` —— `@main` + `UIWindow`。
+  `Info.plist` 里没有 `UIApplicationSceneManifest`，所以走传统生命周期，
+  **不需要 SceneDelegate**（⚠️ 以后要加 Scene 清单必须同时补 SceneDelegate，否则白屏）。
+- `UIKit/LMUIKitTheme.swift` —— `UIColor.lm*` 与 UIKit 版卡片 / 磁贴 / 胶囊 / 导航，
+  颜色值与 `Views/Theme.swift` **逐位对齐**。
+- `UIKit/LMBaseViewController.swift` —— 页面基类。订阅 `client.objectWillChange`
+  驱动 `render()`，并提供滚动容器、下拉刷新、提示框。
+- `UIKit/LMHostingController.swift` —— 过渡桥，把未迁移的 SwiftUI 页包成 VC。
+- `UIKit/LMRootViewController.swift` / `LMMainTabBarController.swift` —— 根容器与 5 个 Tab。
+
+#### ★ 两个必须记住的坑
+
+**① `objectWillChange` 在「赋值之前」触发。**
+`@Published` 在 `willSet` 里发通知，所以回调里读 `client.xxx` 拿到的是**旧值** ——
+表现为「界面永远慢一拍，最后一次变化永远看不到」。必须推到下一轮主 actor。
+代码里用 `Task { @MainActor in }` 而**不是** `DispatchQueue.main.async`：
+后者收的是 `@Sendable` 闭包，**不继承**外层的 `@MainActor` 隔离，
+调用主 actor 隔离方法可能直接编译报错。
+
+**② 一次请求会连着触发十几次刷新。**
+一个接口回来会连写十几个 `@Published`（vehicles / signals / lastUpdate / isBusy…），
+`objectWillChange` 就触发十几次。基类用 `renderPending` 把同一轮内的多次合并成一次；
+并且 `render()` 必须**幂等** —— 只改已有控件的属性，不要在里面 `addSubview`，
+否则每来一次数据就叠一层控件。
+
+#### 后续阶段
+
+按体量从小到大逐页替换，每迁完一页都要 lint + 契约测试通过、CI 绿：
+
+| 阶段 | 页面 | 行数 |
+|---|---|---|
+| Phase 1 | `LoginView` | 285 |
+| Phase 2 | `SettingsView` | 423 |
+| Phase 3 | `VehicleProfileView` | 522 |
+| Phase 4 | `ControlPanelView` | 686 |
+| Phase 5 | `LocationView` | 763 |
+| Phase 6 | `ChargeView` | 884 |
+| Phase 7 | `LoveCarView` | 1114 |
+| Phase 8 | 诊断类（Diagnostics / BLEDebug / SignalExplorer / BLEKey / Car3D / SelfTest） | 2572 |
+
+`Car3DView` 的 `WKWebView` 部分本来就是 UIKit 组件，可以直接复用。
+`Views/Theme.swift` 要等**全部**页面迁完才删（届时把 `LMRadius` 搬进 `LMUIKitTheme.swift`）。
+
+#### 顺带修掉的一处断言
+
+`test_refresh_contract.py` 里有一组断言靠读 `LeapmotorLiteApp.swift` 来确认
+「首 Tab 是爱车页」。入口换成 UIKit 后那个文件已删除，断言改为读
+`UIKit/LMMainTabBarController.swift`；同时新增 `[11]` 一节共 18 条断言，
+把「全项目只有一处 `@main`」「六个新文件真的进了 pbxproj 的 Sources」等钉死 ——
+后者尤其重要：漏了会出现「CI 绿了但功能静默缺失」。
+
+---
+
 ## 2. 编译 / 打包 IPA
 
 ### 方式 A：一键打包（推荐）
@@ -611,7 +684,6 @@ ios/
     ├── README.md
     ├── LeapmotorLite.xcodeproj/     # 由 gen_xcodeproj.py 生成
     └── LeapmotorLite/
-        ├── LeapmotorLiteApp.swift       # App 入口 + RootView + MainTabView
         ├── LMBuildInfo.swift            # ★ 构建标识（版本 + tag + git 提交号）
         ├── Assets.xcassets/             # App 图标（make_icon.py 生成）
         ├── Crypto/
@@ -633,6 +705,13 @@ ios/
         ├── Store/
         │   ├── LMSessionStore.swift     # Keychain 会话持久化
         │   └── LMLocationProvider.swift # 本机定位（只用于「距我多远」）
+        ├── UIKit/                       # ★ 2026-10-09 UI 从 SwiftUI 迁到 UIKit（迁移进行中）
+        │   ├── LMAppDelegate.swift      # App 入口（@main + window；Info.plist 无 Scene 清单）
+        │   ├── LMUIKitTheme.swift       # UIKit 版主题（UIColor 调色板 + 卡片/磁贴/胶囊/导航）
+        │   ├── LMBaseViewController.swift # 页面基类：订阅 objectWillChange → render()
+        │   ├── LMHostingController.swift  # 过渡桥：把未迁移的 SwiftUI 页包成 VC
+        │   ├── LMRootViewController.swift # 根容器：登录页 ↔ 主 Tab
+        │   └── LMMainTabBarController.swift # 5 个 Tab
         ├── Views/
         │   ├── Theme.swift              # 配色 + 复用组件（卡片 / 磁贴 / 电量环 / .lmClock）
         │   ├── LoginView.swift          # 短信验证码登录 / 导入登录态

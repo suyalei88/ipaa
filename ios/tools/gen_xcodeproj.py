@@ -37,7 +37,7 @@ DEPLOYMENT_TARGET = "17.0"
 SWIFT_VERSION = "5.9"
 
 # 这些目录名排在最前（只是美观，不影响构建）
-DIR_ORDER = ["Crypto", "API", "BLE", "Store", "Views", "Support", "Car3D"]
+DIR_ORDER = ["Crypto", "API", "BLE", "Store", "Views", "UIKit", "Support", "Car3D"]
 
 # ★ 整目录资源：这些目录按 Xcode 的「蓝色文件夹引用」（lastKnownFileType = folder）
 #   原样拷进 .app 根目录，**不递归展开**成 PBXGroup。
