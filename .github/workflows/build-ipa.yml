@@ -46,7 +46,7 @@ jobs:
         run: pip install --quiet -r requirements.txt
 
       - name: Swift 陷阱静态检查
-        # 拦截「只能靠真机编译/运行才发现」的坑（R1~R13）：
+        # 拦截「只能靠真机编译/运行才发现」的坑（R1~R17）：
         #   R1 URLComponents 拼 URL（'+' 不转义 → 1019）
         #   R2 [CFString: Any]     R3 foregroundStyle(.自定义色)
         #   R4 三元两分支类型不同   R5 withUnsafe 闭包独占访问
@@ -59,6 +59,12 @@ jobs:
         #   R13 Text(...) 里超过 3 个 `+` 拼接 → Swift 类型检查器超时
         #       （2026-10-08 真烧过一轮：ControlPanelView.swift:595 报
         #        "unable to type-check this expression in reasonable time"）
+        #   R14 static func 读了 @MainActor 的 LMClient 却没标 @MainActor
+        #   R15 在 UIKit 类型上写了别的类型才有的成员（如 UILabel.isSelectable）
+        #   R16 UIStackView.Alignment 用了 SwiftUI 的对齐名
+        #       （.firstTextBaseline → UIKit 里是 .firstBaseline）
+        #   R17 UIControl / UIView 子类里声明了父类保留成员名
+        #       （UIControl 子类写 `let state: String` → cannot override）
         run: python3 ios/tools/lint_swift.py
 
       - name: 生成 App 图标（校验脚本可跑）
