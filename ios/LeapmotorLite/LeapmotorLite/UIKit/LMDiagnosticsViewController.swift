@@ -538,10 +538,10 @@ final class LMDiagnosticsViewController: LMBaseViewController {
         //
         //   用户报「保存预约充电报下发失败」，但手上没有一份「官方保存预约充电」
         //   的抓包样本。与其让他对着空输入框猜 JSON，不如把三种有依据的形状摆出来：
-        //   点一行 → 预填 cmdid 161 + 该 state → 再点上面的「发送原始指令」。
+        //   点一行 → 预填 cmdid 161 + 该 state → 再点上面的「下发这条指令」。
         //   三种都试一次，哪种返回 msgID 哪种就是对的。
         cmdidCard.contentStack.addArrangedSubview(LMUIKit.label(
-            "预约充电（161）payload 候选 —— 点一下预填，再点上面的「发送原始指令」",
+            "预约充电（161）payload 候选 —— 点一下预填，再点上面的「下发这条指令」",
             size: 11, color: .secondaryLabel))
         for (i, probe) in LMEndpoints.appointmentProbes.enumerated() {
             let b = UIButton(type: .system)
