@@ -1,0 +1,10 @@
+.act-label {
+  font-size: 29rpx;
+}
+
+.cmdid {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: #6C7688;
+  font-family: Menlo, Consolas, monospace;
+}

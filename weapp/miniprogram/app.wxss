@@ -1,0 +1,239 @@
+/* ==================================================================
+ * 全局主题 —— 「碳黑霓虹」（对齐 iOS 版 v1.1.x 的视觉重设计）
+ * 深色底 + 薄荷霓虹点缀。刻意不用 CSS 变量：部分低版本基础库对
+ * 自定义属性支持不稳，直接写字面色值最省事。
+ * ================================================================== */
+
+page {
+  background: #0B0E13;
+  color: #E8EDF5;
+  font-size: 28rpx;
+  line-height: 1.55;
+  font-family: -apple-system, "PingFang SC", "Helvetica Neue", Helvetica, sans-serif;
+}
+
+.page {
+  padding: 24rpx 24rpx 48rpx;
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  background: #151A22;
+  border: 1rpx solid #242C38;
+  border-radius: 24rpx;
+  padding: 28rpx;
+  margin-bottom: 20rpx;
+}
+
+.card-title {
+  font-size: 26rpx;
+  color: #8B95A7;
+  letter-spacing: 2rpx;
+  margin-bottom: 20rpx;
+}
+
+.card-title-accent {
+  color: #3DF5C8;
+}
+
+/* ---------- 键值行 ---------- */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #1E252F;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row-label {
+  color: #8B95A7;
+  font-size: 26rpx;
+  flex-shrink: 0;
+  margin-right: 20rpx;
+}
+
+.row-value {
+  color: #E8EDF5;
+  font-size: 28rpx;
+  text-align: right;
+  word-break: break-all;
+}
+
+.row-value-good { color: #3DF5C8; }
+.row-value-warn { color: #FFB454; }
+.row-value-bad  { color: #FF6B6B; }
+.row-value-dim  { color: #6C7688; }
+
+/* ---------- 按钮 ---------- */
+.btn {
+  background: #1E252F;
+  border: 1rpx solid #2A3340;
+  color: #E8EDF5;
+  border-radius: 20rpx;
+  padding: 26rpx 20rpx;
+  font-size: 28rpx;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.btn:active {
+  background: #262F3C;
+}
+
+.btn-primary {
+  background: #3DF5C8;
+  border-color: #3DF5C8;
+  color: #06231C;
+  font-weight: 600;
+}
+
+.btn-primary:active {
+  background: #2FD9B0;
+}
+
+.btn-danger {
+  border-color: #FF6B6B;
+  color: #FF8A8A;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: #2A3340;
+  color: #8B95A7;
+}
+
+.btn[disabled] {
+  opacity: 0.45;
+}
+
+.btn-sm {
+  padding: 16rpx 22rpx;
+  font-size: 25rpx;
+  border-radius: 14rpx;
+}
+
+/* ---------- 栅格 ---------- */
+.grid-2 {
+  display: flex;
+  flex-wrap: wrap;
+  margin: -8rpx;
+}
+
+.grid-2 > .cell {
+  width: 50%;
+  padding: 8rpx;
+  box-sizing: border-box;
+}
+
+.grid-3 > .cell {
+  width: 33.3333%;
+  padding: 8rpx;
+  box-sizing: border-box;
+}
+
+.grid-3 {
+  display: flex;
+  flex-wrap: wrap;
+  margin: -8rpx;
+}
+
+/* ---------- 输入 ---------- */
+.input {
+  background: #11161D;
+  border: 1rpx solid #242C38;
+  border-radius: 18rpx;
+  padding: 24rpx;
+  color: #E8EDF5;
+  font-size: 30rpx;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.input-placeholder {
+  color: #55606F;
+}
+
+/* ---------- 文字工具 ---------- */
+.muted { color: #8B95A7; font-size: 25rpx; }
+.dim   { color: #6C7688; font-size: 24rpx; }
+.mono  { font-family: Menlo, Consolas, monospace; font-size: 24rpx; }
+.good  { color: #3DF5C8; }
+.warn  { color: #FFB454; }
+.bad   { color: #FF6B6B; }
+.center { text-align: center; }
+.strong { font-weight: 600; }
+
+/* ---------- 徽标 ---------- */
+.badge {
+  display: inline-block;
+  font-size: 21rpx;
+  line-height: 1.6;
+  padding: 0 12rpx;
+  border-radius: 8rpx;
+  border: 1rpx solid #2A3340;
+  color: #8B95A7;
+  margin-left: 10rpx;
+}
+
+.badge-good { color: #3DF5C8; border-color: rgba(61,245,200,0.4); }
+.badge-warn { color: #FFB454; border-color: rgba(255,180,84,0.4); }
+.badge-bad  { color: #FF6B6B; border-color: rgba(255,107,107,0.4); }
+
+/* ---------- 提示条 ---------- */
+.notice {
+  border-radius: 18rpx;
+  padding: 20rpx 24rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 20rpx;
+}
+
+.notice-info {
+  background: rgba(108,140,255,0.10);
+  border: 1rpx solid rgba(108,140,255,0.30);
+  color: #A8BAFF;
+}
+
+.notice-warn {
+  background: rgba(255,180,84,0.10);
+  border: 1rpx solid rgba(255,180,84,0.30);
+  color: #FFCB80;
+}
+
+.notice-bad {
+  background: rgba(255,107,107,0.10);
+  border: 1rpx solid rgba(255,107,107,0.30);
+  color: #FF9C9C;
+}
+
+.notice-good {
+  background: rgba(61,245,200,0.10);
+  border: 1rpx solid rgba(61,245,200,0.30);
+  color: #7BF5D8;
+}
+
+/* ---------- 日志区 ---------- */
+.log {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 22rpx;
+  line-height: 1.7;
+  color: #7E8899;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 520rpx;
+  overflow-y: auto;
+}
+
+/* ---------- 分隔 ---------- */
+.divider {
+  height: 1rpx;
+  background: #1E252F;
+  margin: 20rpx 0;
+}
+
+.space-sm { height: 16rpx; }
+.space    { height: 28rpx; }

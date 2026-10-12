@@ -1,0 +1,5 @@
+# 微信开发者工具会往这里写「个人配置」（含你自己的 AppID / 环境 ID / 编译模式）
+project.private.config.json
+
+# 云函数本地安装的依赖（本项目零依赖，一般不会出现）
+cloudfunctions/*/node_modules/

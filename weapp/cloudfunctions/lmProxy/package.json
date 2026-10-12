@@ -1,0 +1,11 @@
+{
+  "name": "lmProxy",
+  "version": "1.0.0",
+  "description": "零跑车控云函数代理 —— 签名/加密全在服务端，零 npm 依赖",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {},
+  "scripts": {
+    "test": "node test/vectors.js && node test/smoke.js"
+  }
+}

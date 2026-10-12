@@ -1,0 +1,32 @@
+.brand {
+  padding: 60rpx 8rpx 40rpx;
+}
+
+.brand-title {
+  font-size: 64rpx;
+  font-weight: 700;
+  letter-spacing: 6rpx;
+  color: #E8EDF5;
+}
+
+.brand-sub {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: #3DF5C8;
+  letter-spacing: 2rpx;
+}
+
+.inline-row {
+  display: flex;
+  align-items: center;
+}
+
+.flex1 {
+  flex: 1;
+}
+
+.send-btn {
+  margin-left: 16rpx;
+  width: 200rpx;
+  flex-shrink: 0;
+}

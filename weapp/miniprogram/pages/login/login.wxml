@@ -1,0 +1,61 @@
+<view class="page">
+
+  <view class="brand">
+    <view class="brand-title">车控</view>
+    <view class="brand-sub">第三方 · 无广告 · 纯功能</view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">手机号登录</view>
+
+    <input
+      class="input"
+      type="number"
+      maxlength="11"
+      placeholder="11 位手机号"
+      placeholder-class="input-placeholder"
+      value="{{phone}}"
+      bindinput="onPhone" />
+
+    <view class="space-sm"></view>
+
+    <view class="inline-row">
+      <input
+        class="input flex1"
+        type="number"
+        maxlength="6"
+        placeholder="短信验证码"
+        placeholder-class="input-placeholder"
+        value="{{code}}"
+        bindinput="onCode" />
+      <button
+        class="btn btn-sm send-btn"
+        bindtap="onSend"
+        disabled="{{sending || countdown > 0}}">
+        {{countdown > 0 ? countdown + 's' : (sending ? '发送中' : '发验证码')}}
+      </button>
+    </view>
+
+    <view class="space"></view>
+
+    <button class="btn btn-primary" bindtap="onLogin" disabled="{{logging}}">
+      {{logging ? '登录中…' : '登录'}}
+    </button>
+  </view>
+
+  <view class="card">
+    <view class="card-title">日志</view>
+    <view class="log">{{log || 'ready'}}</view>
+  </view>
+
+  <view class="notice notice-info">
+    验证码由零跑官方短信网关下发。本小程序只把手机号 RSA 加密后转发给云函数，
+    云函数**完全无状态** —— 不保存你的账号、密码或 token 到任何数据库。
+  </view>
+
+  <view class="notice notice-warn">
+    这是个人自用的第三方客户端，只应操作**你自己的车**、用**你自己的账号**。
+    不要在别人的车上使用。
+  </view>
+
+</view>

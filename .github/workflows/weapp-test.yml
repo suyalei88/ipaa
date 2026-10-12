@@ -1,0 +1,79 @@
+name: WeApp Tests
+
+# ============================================================
+#  小程序 + 云函数的门禁。
+#
+#  和 build-ipa.yml 分开是**故意的**：那个要跑 macOS runner（贵、慢），
+#  而小程序这边全是纯 Node 计算，ubuntu 几秒钟就跑完。
+#  所以只改 weapp/** 时不该去占 macOS 的额度。
+#
+#  这个工作流钉住三件事：
+#    1. 云函数的签名/加密与 Python 参考实现逐字节一致
+#       —— 不一致的话真机会得到 302002002（签名校验失败）或 1019（参数不能为空），
+#          而这两种错在开发者工具里看日志都很绕。
+#    2. 云函数路由没被改坏（未登录拦截 / 未知 action / meta 分组一致性）
+#    3. 小程序静态资产齐全（页面 4 文件、tabBar 注册、require 路径）
+# ============================================================
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'weapp/**'
+      - '.github/workflows/weapp-test.yml'
+  pull_request:
+    paths:
+      - 'weapp/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  weapp:
+    name: 云函数对拍 + 小程序资产
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: JS 语法检查
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            if node --check "$f"; then
+              echo "  ok   $f"
+            else
+              echo "::error file=$f::语法错误"
+              fail=1
+            fi
+          done < <(find weapp -name '*.js' -not -path '*/node_modules/*')
+          exit $fail
+
+      - name: 签名 / 加密对拍（与 Python 参考实现一致）
+        # 25 项：valueStr 构造、双模式签名、signKey 派生、oppwd、parseKey、
+        #        手机号 RSA、严格百分号编码、车控命令表、findValue
+        run: node weapp/cloudfunctions/lmProxy/test/vectors.js
+
+      - name: 云函数路由冒烟
+        # 8 项：meta / ping / 未登录拦截 / 未知 action / 参数校验 / 分组不漂移
+        run: node weapp/cloudfunctions/lmProxy/test/smoke.js
+
+      - name: 小程序静态资产检查
+        # 页面 4 文件齐全 / tabBar 注册 / require 相对路径存在 / 云函数目录结构
+        run: node weapp/tools/check_assets.js
+
+      - name: 校验 project.config.json 的根目录指向正确
+        run: |
+          node -e '
+            const cfg = require("./weapp/project.config.json");
+            const fs = require("fs");
+            const assert = require("assert");
+            assert.ok(fs.existsSync("weapp/" + cfg.miniprogramRoot), "miniprogramRoot 不存在");
+            assert.ok(fs.existsSync("weapp/" + cfg.cloudfunctionRoot), "cloudfunctionRoot 不存在");
+            assert.ok(cfg.appid, "appid 不能为空");
+            console.log("OK miniprogramRoot=" + cfg.miniprogramRoot + " cloudfunctionRoot=" + cfg.cloudfunctionRoot);
+          '

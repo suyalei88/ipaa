@@ -1,0 +1,36 @@
+<view class="page">
+
+  <view wx:if="{{error}}" class="notice notice-bad">{{error}}</view>
+
+  <view class="notice notice-warn">
+    红框动作会改变车辆**物理状态**（开门 / 开后备箱 / 动车窗），点下去会二次确认。
+    执行前请确保车辆周围安全、你能直接看到车。
+  </view>
+
+  <view class="card" wx:for="{{sections}}" wx:for-item="sec" wx:key="key">
+    <view class="card-title">{{sec.name}}</view>
+    <view class="grid-2">
+      <view class="cell" wx:for="{{sec.items}}" wx:for-item="it" wx:key="key">
+        <view class="btn {{it.cls}}" data-key="{{it.key}}" bindtap="onTap">
+          <view class="act-label">{{it.label}}</view>
+          <view class="cmdid">cmdid {{it.cmdid}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row">
+      <text class="row-label">日志</text>
+      <text class="row-value dim" bindtap="clearLog">清空</text>
+    </view>
+    <view class="log">{{log || 'ready'}}</view>
+  </view>
+
+  <view class="notice notice-info">
+    指令下发后会每 1.5 秒轮询一次结果，最多等 22 秒。
+    部分功能需要车辆处于对应状态（例如上电前要先解锁）。
+    同一账号在官方 App 与本小程序之间不要频繁交叉操作。
+  </view>
+
+</view>

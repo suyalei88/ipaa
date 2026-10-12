@@ -1,0 +1,38 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/home/home",
+    "pages/control/control",
+    "pages/location/location",
+    "pages/settings/settings"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#0B0E13",
+    "navigationBarTitleText": "车控",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0B0E13",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#7A8598",
+    "selectedColor": "#3DF5C8",
+    "backgroundColor": "#0F141B",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/home/home", "text": "爱车" },
+      { "pagePath": "pages/control/control", "text": "车控" },
+      { "pagePath": "pages/location/location", "text": "定位" },
+      { "pagePath": "pages/settings/settings", "text": "设置" }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于计算「你的位置距车辆多远」；不授权也不影响其它功能"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ]
+}

@@ -1,0 +1,87 @@
+<view class="page">
+
+  <view wx:if="{{error}}" class="notice notice-bad">{{error}}</view>
+
+  <view class="notice notice-warn">
+    <text class="strong">这个坐标不是实时的。</text>
+    车端下发的 2190/2191 是车机存下来的一份位置（停车点 / 上次上报点），
+    车停着时它本来就不该变。所以「新不新」要看**这个坐标值本身多久没变**，
+    而不是整包车况的采集时间（那个永远是「刚刚」）。
+  </view>
+
+  <view class="card">
+    <view class="card-title">坐标系假设</view>
+    <view class="seg">
+      <view class="seg-item {{mode === 'gcj02' ? 'seg-on' : ''}}" data-mode="gcj02" bindtap="onModeChange">
+        直接使用（车端已是 GCJ-02）
+      </view>
+      <view class="seg-item {{mode === 'wgs84' ? 'seg-on' : ''}}" data-mode="wgs84" bindtap="onModeChange">
+        WGS→GCJ 换算（车端是 WGS-84）
+      </view>
+    </view>
+    <view class="muted seg-hint">
+      零跑下发的坐标属于哪个坐标系**没有证据能定**。两种假设在合肥差约 574 米 ——
+      正是「偏到隔壁小区」的量级。站到车旁，哪种假设把点打在你车上就选哪个。
+    </view>
+  </view>
+
+  <view class="card map-card">
+    <map
+      wx:if="{{dispLat !== null}}"
+      class="map"
+      latitude="{{dispLat}}"
+      longitude="{{dispLng}}"
+      markers="{{markers}}"
+      scale="16"
+      show-location="{{false}}">
+    </map>
+    <view wx:else class="muted center map-empty">还没有坐标</view>
+  </view>
+
+  <view class="card">
+    <view class="row">
+      <text class="row-label">车端原始</text>
+      <text class="row-value mono">{{rawLat}}, {{rawLng}}</text>
+    </view>
+    <view class="row">
+      <text class="row-label">当前显示</text>
+      <text class="row-value mono good">{{dispLat}}, {{dispLng}}</text>
+    </view>
+    <view class="row">
+      <text class="row-label">车况采集</text>
+      <text class="row-value dim">{{collectedText}}</text>
+    </view>
+    <view class="row">
+      <text class="row-label">坐标新鲜度</text>
+      <text class="row-value warn">{{unchangedText}}</text>
+    </view>
+    <view wx:if="{{distanceText}}" class="row">
+      <text class="row-label">距我多远</text>
+      <text class="row-value good">{{distanceText}}</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="grid-2">
+      <view class="cell"><view class="btn" bindtap="onOpenMap">在地图中打开 / 导航</view></view>
+      <view class="cell"><view class="btn" bindtap="copyCoord">复制坐标</view></view>
+      <view class="cell"><view class="btn" bindtap="onDistance">算距我多远</view></view>
+      <view class="cell">
+        <view class="btn" bindtap="onRegeo">
+          {{addressLoading ? '查询中…' : '反查地址（探测）'}}
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{address}}" class="card">
+    <view class="card-title">反查结果</view>
+    <view class="log">{{address}}</view>
+  </view>
+
+  <view class="notice notice-info">
+    「反查地址」走的是官方逆地理编码端点（路径来自 IPA 字符串表，**没有抓包样本**），
+    属于探测性功能 —— 返回什么就是什么，不做加工。
+  </view>
+
+</view>

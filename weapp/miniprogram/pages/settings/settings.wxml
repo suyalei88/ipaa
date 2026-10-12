@@ -1,0 +1,153 @@
+<view class="page">
+
+  <!-- ============ 会话 ============ -->
+  <view class="card">
+    <view class="card-title">会话</view>
+    <view class="row">
+      <text class="row-label">账号 ID</text>
+      <text class="row-value mono">{{accountId || '--'}}</text>
+    </view>
+    <view wx:if="{{nickname}}" class="row">
+      <text class="row-label">昵称</text>
+      <text class="row-value">{{nickname}}</text>
+    </view>
+    <view class="row">
+      <text class="row-label">refreshToken</text>
+      <text class="row-value {{hasRefreshToken ? 'good' : 'bad'}}">
+        {{hasRefreshToken ? '已持有（可自动续期）' : '无（2 小时后要重新登录）'}}
+      </text>
+    </view>
+    <view class="space-sm"></view>
+    <view class="btn" bindtap="onRefreshSession">{{busy ? '处理中…' : '立即续期一次'}}</view>
+  </view>
+
+  <!-- ============ 车辆 ============ -->
+  <view class="card">
+    <view class="card-title">车辆</view>
+    <picker
+      wx:if="{{vehicles.length > 1}}"
+      mode="selector"
+      range="{{vehicles}}"
+      range-key="vin"
+      value="{{vehicleIndex}}"
+      bindchange="onPickVehicle">
+      <view class="row">
+        <text class="row-label">选择车辆</text>
+        <text class="row-value good">{{vehicleLabel || vin || '--'}} ›</text>
+      </view>
+    </picker>
+    <view wx:else class="row">
+      <text class="row-label">当前车辆</text>
+      <text class="row-value">{{vehicleLabel || '--'}}</text>
+    </view>
+    <view class="row">
+      <text class="row-label">VIN</text>
+      <text class="row-value mono">{{vin || '--'}}</text>
+    </view>
+  </view>
+
+  <!-- ============ 操作密码 ============ -->
+  <view class="card">
+    <view class="card-title">车控操作密码</view>
+    <view class="row">
+      <text class="row-label">本地已保存</text>
+      <text class="row-value {{hasOpPassword ? 'good' : 'dim'}}">
+        {{hasOpPassword ? '是' : '否'}}
+      </text>
+    </view>
+    <view class="row">
+      <text class="row-label">记住操作密码</text>
+      <switch checked="{{remember}}" color="#3DF5C8" bindchange="onToggleRemember" />
+    </view>
+    <view class="space-sm"></view>
+    <view class="btn" bindtap="onSetOpPassword">重新录入操作密码</view>
+    <view class="muted op-hint">
+      操作密码只用在本机，用来给车控请求生成 oppwd 密文。
+      关掉「记住」后，每次车控都会现问一次。
+    </view>
+  </view>
+
+  <!-- ============ 坐标系 ============ -->
+  <view class="card">
+    <view class="card-title">车端坐标所属坐标系</view>
+    <view class="seg">
+      <view class="seg-item {{coordSystem === 'gcj02' ? 'seg-on' : ''}}" data-v="gcj02" bindtap="onCoordChange">
+        按 GCJ-02
+      </view>
+      <view class="seg-item {{coordSystem === 'wgs84' ? 'seg-on' : ''}}" data-v="wgs84" bindtap="onCoordChange">
+        按 WGS-84
+      </view>
+    </view>
+    <view class="muted op-hint">
+      没有证据能确定车端下发的是哪个坐标系。两种假设差约 574 米 —— 站到车旁试一下就知道。
+    </view>
+  </view>
+
+  <!-- ============ 全部信号 ============ -->
+  <view class="card">
+    <view class="card-title">全部信号</view>
+    <view class="btn" bindtap="onToggleSignals">
+      {{showSignals ? '收起' : (busy ? '拉取中…' : '展开 signalMap')}}
+    </view>
+
+    <block wx:if="{{showSignals}}">
+      <view wx:for="{{signalGroups}}" wx:for-item="g" wx:key="cat" class="sig-group">
+        <view class="sig-cat">{{g.title}}</view>
+        <view class="row" wx:for="{{g.items}}" wx:for-item="it" wx:key="id">
+          <text class="row-label">{{it.name}}<text class="dim"> · {{it.id}}</text></text>
+          <text class="row-value mono">{{it.value}}{{it.unit}}</text>
+        </view>
+      </view>
+      <view class="divider"></view>
+      <view class="muted">知识库里没有的 id：</view>
+      <view class="muted mono">{{unknownIds}}</view>
+    </block>
+  </view>
+
+  <!-- ============ 诊断 ============ -->
+  <view class="card">
+    <view class="card-title card-title-accent">诊断（未验证 payload）</view>
+    <view class="notice notice-bad diag-note">
+      下面这些 payload 的**键名有证据、但组合没有抓包样本**。
+      发出去车会真的动 —— 请确认车辆周围安全、你能直接看到车再点。
+    </view>
+    <view class="btn btn-danger" wx:for="{{unverified}}" wx:key="note"
+          data-idx="{{index}}" bindtap="onUnverified">
+      cmdid {{item.cmdid}} · {{item.note}}
+    </view>
+    <view class="space-sm"></view>
+    <view class="btn btn-ghost" bindtap="onProbeAppointment">
+      只读探测 getappointment（cmdid 161）
+    </view>
+  </view>
+
+  <!-- ============ 日志 ============ -->
+  <view class="card">
+    <view class="row">
+      <text class="row-label">日志</text>
+      <text class="row-value dim" bindtap="clearLog">清空</text>
+    </view>
+    <view class="log">{{log || 'ready'}}</view>
+  </view>
+
+  <!-- ============ 关于 / 退出 ============ -->
+  <view class="card">
+    <view class="card-title">关于</view>
+    <view class="row">
+      <text class="row-label">云函数构建</text>
+      <text class="row-value mono">{{build || '--'}}</text>
+    </view>
+    <view class="row">
+      <text class="row-label">客户端</text>
+      <text class="row-value mono">weapp 1.0.0</text>
+    </view>
+    <view class="space"></view>
+    <view class="btn btn-danger" bindtap="onLogout">退出登录</view>
+  </view>
+
+  <view class="notice notice-info">
+    第三方客户端 · 无广告 · 纯功能。只应操作**你自己的车**、用**你自己的账号**。
+    云函数完全无状态，不保存任何凭据。
+  </view>
+
+</view>

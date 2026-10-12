@@ -1,0 +1,41 @@
+.op-hint {
+  margin-top: 14rpx;
+  line-height: 1.6;
+}
+
+.seg {
+  display: flex;
+  background: #11161D;
+  border: 1rpx solid #242C38;
+  border-radius: 18rpx;
+  padding: 6rpx;
+}
+
+.seg-item {
+  flex: 1;
+  text-align: center;
+  font-size: 26rpx;
+  padding: 18rpx 8rpx;
+  border-radius: 14rpx;
+  color: #8B95A7;
+}
+
+.seg-on {
+  background: #3DF5C8;
+  color: #06231C;
+  font-weight: 600;
+}
+
+.sig-group {
+  margin-top: 22rpx;
+}
+
+.sig-cat {
+  font-size: 24rpx;
+  color: #3DF5C8;
+  margin-bottom: 6rpx;
+}
+
+.diag-note {
+  margin-bottom: 16rpx;
+}

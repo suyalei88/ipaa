@@ -1,0 +1,74 @@
+<view class="page">
+
+  <view wx:if="{{error}}" class="notice notice-bad">{{error}}</view>
+
+  <!-- ============ 主卡：电量环 + 关键状态 ============ -->
+  <view class="card hero">
+    <view class="hero-top">
+      <view class="ring" style="{{ringStyle}}">
+        <view class="ring-inner">
+          <view class="soc">{{socText}}<text class="soc-unit">%</text></view>
+          <view class="muted">电量</view>
+        </view>
+      </view>
+
+      <view class="hero-right">
+        <view class="stat-line">
+          <text class="muted">剩余续航</text>
+          <text class="stat-value">{{rangeText}}<text class="unit">km</text></text>
+        </view>
+        <view class="stat-line">
+          <text class="muted">门锁</text>
+          <text class="stat-value {{lockClass}}">{{lockText}}</text>
+        </view>
+        <view class="stat-line">
+          <text class="muted">充电</text>
+          <text class="stat-value {{chargeClass}}">{{chargeText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="divider"></view>
+    <view class="muted">车况采集：{{collectedAgo}}</view>
+    <view class="muted mono vin">{{vinText}}</view>
+    <view wx:if="{{coordNote}}" class="muted coord-note">{{coordNote}}</view>
+  </view>
+
+  <!-- ============ 指标磁贴 ============ -->
+  <view class="card">
+    <view class="card-title">指标</view>
+    <view class="grid-2">
+      <view class="cell" wx:for="{{tiles}}" wx:key="label">
+        <view class="tile">
+          <view class="tile-label">{{item.label}}</view>
+          <view class="tile-value {{item.cls}}">{{item.value}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ============ 快捷车控 ============ -->
+  <view class="card">
+    <view class="card-title card-title-accent">快捷车控</view>
+    <view class="grid-2">
+      <view class="cell" wx:for="{{quick}}" wx:key="key">
+        <view class="btn" data-key="{{item.key}}" bindtap="onQuick">
+          {{item.label}}
+        </view>
+      </view>
+    </view>
+    <view class="space-sm"></view>
+    <view class="btn btn-ghost" bindtap="goControl">查看全部车控</view>
+  </view>
+
+  <!-- ============ 定位入口 ============ -->
+  <view class="card" bindtap="goLocation">
+    <view class="row">
+      <text class="row-label">车辆定位</text>
+      <text class="row-value dim">地图 / 坐标 / 导航 ›</text>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="muted center">刷新中…</view>
+
+</view>
